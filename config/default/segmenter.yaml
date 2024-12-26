@@ -1,0 +1,6 @@
+model_type: 'sam2'
+backbone: 'l'
+simplify_tolerance: 1.0
+box_padding_percentage: 0.00
+n_postprocess_workers: 16
+box_batch_size: 50

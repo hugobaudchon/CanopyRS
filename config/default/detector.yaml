@@ -1,0 +1,6 @@
+model: 'faster_rcnn'
+backbone: 'resnet101'
+checkpoint_path: '/mnt/disk2/Models/detector/detector_FINAL_dataset_resnet101_5.pt'
+batch_size: 5
+num_classes: 2
+box_predictions_per_image: 500

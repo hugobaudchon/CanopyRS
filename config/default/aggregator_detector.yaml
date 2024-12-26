@@ -1,0 +1,5 @@
+polygon_type: 'box'
+nms_algorithm: 'iou'
+score_threshold: 0.4
+nms_threshold: 0.7
+scores_weights: {'detector_score': 1.0}
