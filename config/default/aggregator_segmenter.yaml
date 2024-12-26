@@ -1,4 +1,3 @@
-polygon_type: 'segmentation'
 nms_algorithm: 'ioa-disambiguate'
 score_threshold: 0.05
 nms_threshold: 0.5
