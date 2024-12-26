@@ -26,8 +26,6 @@ class DetectorComponent(BaseComponent):
 
         tiles_paths, boxes, boxes_scores, classes = self.detector.infer(infer_ds, collate_fn_images)
 
-        print(len(boxes), len(boxes[0]))
-
         gdf_items = []
         for i in range(len(tiles_paths)):
             for j in range(len(boxes[i])):

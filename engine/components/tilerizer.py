@@ -16,7 +16,6 @@ class TilerizerComponent(BaseComponent):
         aois_config = parse_tilerizer_aoi_config(self.config)
         if self.config.tile_type == 'tile':
             if data_state.results_gdf is not None:
-                print(333, data_state.results_gdf.columns)
                 tilerizer = LabeledRasterTilerizer(
                     raster_path=data_state.imagery_path,
                     labels_path=None,
