@@ -8,8 +8,8 @@ from engine.components.detector import DetectorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
 
-from engine.config_parsers import (AggregatorConfig, ClassifierConfig, ClustererConfig, DetectorConfig,
-                                   EmbedderConfig, InferIOConfig, PipelineConfig, SegmenterConfig, TilerizerConfig)
+from engine.config_parsers import (PipelineConfig, InferIOConfig, TilerizerConfig,
+                                   DetectorConfig, AggregatorConfig, SegmenterConfig)
 from engine.data_state import DataState
 
 
