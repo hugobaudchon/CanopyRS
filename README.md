@@ -26,3 +26,9 @@ See config/
 
 The main entry point of the pipeline is `main.py`. This script accepts command-line arguments specifying the task and subtask to perform, and the path to the configuration file.
 
+Example run:
+
+```bash
+python main.py -t pipeline -c default -i /path/to/raster.tif -o /path/to/output/folder
+```
+
