@@ -1,8 +1,5 @@
-from pathlib import Path
-
 import geopandas as gpd
 
-from config.default import default_path
 from engine.components.aggregator import AggregatorComponent
 from engine.components.detector import DetectorComponent
 from engine.components.segmenter import SegmenterComponent
@@ -10,6 +7,7 @@ from engine.components.tilerizer import TilerizerComponent
 
 from engine.config_parsers import (PipelineConfig, InferIOConfig, TilerizerConfig,
                                    DetectorConfig, AggregatorConfig, SegmenterConfig)
+from engine.config_parsers.base import get_config_path
 from engine.data_state import DataState
 
 
@@ -33,11 +31,8 @@ class Pipeline:
 
     def _get_component(self, component_config, component_id):
         component_type = list(component_config.keys())[0]
-        config_description = list(component_config.values())[0]
-        if config_description.startswith('default'):
-            config_path = Path(default_path) / f'{config_description.split("/")[1]}.yaml'
-        else:
-            config_path = config_description
+        config_name = list(component_config.values())[0]
+        config_path = get_config_path(config_name)
 
         if component_type == 'tilerizer':
             component_config = TilerizerConfig.from_yaml(config_path)

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import psutil
 import torch
-from geodataset.dataset import DetectionLabeledRasterCocoDataset
+from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset, BaseDataset
 import multiprocessing
 
 from geodataset.utils import mask_to_polygon
@@ -69,7 +69,7 @@ class SegmenterWrapperBase(ABC):
         pass
 
     @abstractmethod
-    def infer_on_multi_box_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
+    def infer_on_dataset(self, dataset: BaseDataset):
         pass
 
     def queue_masks(self,
@@ -91,7 +91,7 @@ class SegmenterWrapperBase(ABC):
 
         return n_masks_processed
 
-    def _infer_on_multi_box_dataset(self, dataset: DetectionLabeledRasterCocoDataset, collate_fn: object):
+    def _infer_on_dataset(self, dataset: BaseDataset, collate_fn: object):
         infer_dl = DataLoader(dataset, batch_size=1, shuffle=False,
                               collate_fn=collate_fn,
                               num_workers=3, persistent_workers=True)
@@ -122,17 +122,24 @@ class SegmenterWrapperBase(ABC):
                                      leave=True)                            # TODO check why its so slow here, like 30 seconds
 
         for tile_idx, sample in enumerate(dataset_with_progress):
-            image, boxes_data = sample
-            image = image[:3, :, :]
-            image_hwc = image.transpose((1, 2, 0))
-            image_hwc = (image_hwc * 255).astype(np.uint8)
+            if isinstance(dataset, DetectionLabeledRasterCocoDataset):
+                image, boxes_data = sample
+                boxes_data = np.array(boxes_data['boxes'])
+                tile_path = dataset.tiles[tile_idx]['path']
+            elif isinstance(dataset, UnlabeledRasterDataset):
+                image = sample
+                boxes_data = None
+                tile_path = dataset.tile_paths[tile_idx]
+            else:
+                raise ValueError("Dataset type not supported.")
+
             self.infer_image(
-                image=image_hwc,
-                boxes=np.array(boxes_data['boxes']),
+                image=image,
+                boxes=boxes_data,
                 tile_idx=tile_idx,
                 queue=queue
             )
-            tiles_paths.append(dataset.tiles[tile_idx]['path'])
+            tiles_paths.append(tile_path)
 
         print("Waiting for all postprocessing workers to be finished...")
 
@@ -162,6 +169,6 @@ class SegmenterWrapperBase(ABC):
             tiles_masks_polygons.append(masks_polygons)
             tiles_masks_scores.append(scores)
 
-        print("Finished inferring SAM.")
+        print(f"Finished inferring the segmenter {self.config.model}.")
 
         return tiles_paths, tiles_masks_polygons, tiles_masks_scores

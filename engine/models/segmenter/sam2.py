@@ -39,6 +39,10 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
                     tile_idx: int,
                     queue: multiprocessing.JoinableQueue):
 
+        image = image[:3, :, :]
+        image = image.transpose((1, 2, 0))
+        image = (image * 255).astype(np.uint8)
+
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             pil_image = Image.fromarray(image).convert("RGB")
             self.predictor.set_image(pil_image)
@@ -53,5 +57,5 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
                     masks, scores, tile_idx, n_masks_processed, queue
                 )
 
-    def infer_on_multi_box_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
-        return self._infer_on_multi_box_dataset(dataset, sam_collate_fn)
+    def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
+        return self._infer_on_dataset(dataset, sam_collate_fn)

@@ -34,7 +34,7 @@ class SegmenterComponent(BaseComponent):
                 root_path=data_paths
             )
 
-        tiles_paths, tiles_masks_polygons, tiles_masks_scores = self.segmenter.infer_on_multi_box_dataset(dataset)
+        tiles_paths, tiles_masks_polygons, tiles_masks_scores = self.segmenter.infer_on_dataset(dataset)
 
         attributes_data = {}
         for attribute_name in data_state.results_gdf_columns_to_pass:
