@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Tuple
 
 import numpy as np
 import psutil
@@ -7,6 +8,7 @@ from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRaste
 import multiprocessing
 
 from geodataset.utils import mask_to_polygon
+from shapely.affinity import scale
 
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -27,9 +29,24 @@ def process_masks(queue, output_dict, output_dict_lock, simplify_tolerance, proc
         item = queue.get()
         if item is None:
             break
-        tile_idx, mask_ids, masks, scores = item
+        tile_idx, mask_ids, masks, scores, image_size = item
         masks_polygons = [mask_to_polygon(mask.squeeze(), simplify_tolerance=simplify_tolerance) for mask in masks]
 
+        mask_h, mask_w = masks.shape[-2], masks.shape[-1]  # e.g. 28,28
+        orig_h, orig_w = image_size[0], image_size[1]  # e.g. 1024,1024
+        if (mask_h != orig_h) or (mask_w != orig_w):
+            # Compute scaling factors for x (width) and y (height)
+            scale_x = float(orig_w) / float(mask_w)
+            scale_y = float(orig_h) / float(mask_h)
+            resized_polygons = []
+            for poly in masks_polygons:
+                # Scale shapely polygon from (0,0)
+                poly_scaled = scale(poly, xfact=scale_x, yfact=scale_y, origin=(0, 0))
+                resized_polygons.append(poly_scaled)
+
+            masks_polygons = resized_polygons
+
+        # Store the tile/image results
         if tile_idx not in results:
             results[tile_idx] = []
         [results[tile_idx].append((mask_id, mask_poly, score)) for mask_id, mask_poly, score in
@@ -74,6 +91,7 @@ class SegmenterWrapperBase(ABC):
 
     def queue_masks(self,
                     masks: np.array,
+                    image_size: Tuple[int, int],
                     scores: np.array,
                     tile_idx: int,
                     n_masks_processed: int,
@@ -86,7 +104,7 @@ class SegmenterWrapperBase(ABC):
             chunk_masks = masks[j:j + chunk_size]
             chunk_scores = scores[j:j + chunk_size]
             mask_ids = list(range(n_masks_processed, n_masks_processed + len(chunk_masks)))
-            queue.put((tile_idx, mask_ids, chunk_masks, chunk_scores))
+            queue.put((tile_idx, mask_ids, chunk_masks, chunk_scores, image_size))
             n_masks_processed += len(chunk_masks)
 
         return n_masks_processed

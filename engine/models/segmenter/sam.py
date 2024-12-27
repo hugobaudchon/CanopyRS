@@ -60,9 +60,10 @@ class SamPredictorWrapper(SegmenterWrapperBase):
                 inputs["reshaped_input_sizes"].cpu()
             )
             scores = outputs.iou_scores.cpu()
+            image_size = (image.shape[0], image.shape[1])
 
             n_masks_processed = self.queue_masks(
-                masks[0], scores[0], tile_idx, n_masks_processed, queue
+                masks[0], image_size, scores[0], tile_idx, n_masks_processed, queue
             )
 
     def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
