@@ -8,3 +8,4 @@ class AggregatorConfig(BaseConfig):
     detector_score_weight: float = 0.5
     segmenter_score_weight: float = 0.5
     scores_weighting_method: str = 'weighted_geometric_mean'
+    min_centroid_distance_weight: float = None

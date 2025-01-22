@@ -11,12 +11,19 @@ def pipeline_main():
     if io_config_path and (imagery_path or output_path):
         raise ValueError("Either provide an io config file or imagery path and output path.")
     elif io_config_path:
-        io_config = InferIOConfig.from_config_path(io_config_path)
+        io_config = InferIOConfig.from_yaml(io_config_path)
     elif imagery_path and output_path:
-        io_config = InferIOConfig(
-            input_imagery=imagery_path,
-            output_folder=output_path
-        )
+        config_args = {
+            'input_imagery': imagery_path,
+            'output_folder': output_path
+        }
+        if ground_truth_path:
+            config_args['ground_truth_gpkg'] = ground_truth_path
+        if aoi_path:
+            config_args['aoi_config'] = 'package'
+            config_args['aoi'] = aoi_path
+
+        io_config = InferIOConfig(**config_args)
     else:
         raise ValueError("Provide either an io config file or imagery path and output path.")
 
@@ -33,6 +40,8 @@ if __name__ == '__main__':
     parser.add_argument("-io", "--io_config_path", type=str, help="Path to the appropriate .yaml io config file.")
     parser.add_argument("-i", "--imagery_path", type=str, help="Path to the imagery.")
     parser.add_argument("-o", "--output_path", type=str, help="Path to the output folder.")
+    parser.add_argument("-gt", "--ground_truth_path", type=str, help="Path to the ground truth data.")
+    parser.add_argument("-aoi", "--aoi_path", type=str, help="Path to the area of interest (AOI) geopackage.")
 
     args = parser.parse_args()
 
@@ -42,6 +51,8 @@ if __name__ == '__main__':
     io_config_path = args.io_config_path
     imagery_path = args.imagery_path
     output_path = args.output_path
+    ground_truth_path = args.ground_truth_path
+    aoi_path = args.aoi_path
 
     if task == "pipeline":
         pipeline_main()

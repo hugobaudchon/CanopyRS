@@ -175,8 +175,8 @@ class DetectorWrapperBase(ABC):
             A.RGBShift(p=0.1),
             A.RandomGamma(p=0.1),
             A.Blur(p=0.1),
-            A.ToGray(p=0.02),
-            A.ToSepia(p=0.02),
+            # A.ToGray(p=0.02),     # probably not a good idea as it would start detecting trees in water etc
+            # A.ToSepia(p=0.02),     # probably not a good idea as it would start detecting trees in water etc
         ],
             bbox_params=A.BboxParams(
                 format='pascal_voc',  # Specify the format of your bounding boxes

@@ -1,0 +1,2 @@
+type: 'instance_segmentation'
+raster_eval_ground_resolution: 0.05

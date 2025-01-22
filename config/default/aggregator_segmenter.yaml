@@ -3,3 +3,4 @@ score_threshold: 0.05
 nms_threshold: 0.5
 scores_weights: {'detector_score': 0.5, 'segmenter_score': 0.5}
 scores_weighting_method: 'weighted_geometric_mean'
+min_centroid_distance_weight: 0.8

@@ -1,10 +1,14 @@
+from pathlib import Path
+
 import geopandas as gpd
 
 from geodataset.aggregator import Aggregator
+from geodataset.utils import GeoPackageNameConvention, TileNameConvention
 
 from engine.components.base import BaseComponent
 from engine.config_parsers import AggregatorConfig
 from engine.data_state import DataState
+from engine.utils import infer_aoi_name
 
 
 class AggregatorComponent(BaseComponent):
@@ -16,11 +20,11 @@ class AggregatorComponent(BaseComponent):
     def run(self, data_state: DataState) -> DataState:
         agg_dict = {'geometry': lambda x: list(x)}
 
-        for column in data_state.results_gdf_columns_to_pass:
-            if column in data_state.results_gdf.columns:
+        for column in data_state.infer_gdf_columns_to_pass:
+            if column in data_state.infer_gdf.columns:
                 agg_dict[column] = list
 
-        grouped_gdf = data_state.results_gdf.groupby('tiles_path').agg(agg_dict)
+        grouped_gdf = data_state.infer_gdf.groupby('tiles_path').agg(agg_dict)
         tiles_path = grouped_gdf.index.tolist()
         grouped_gdf = grouped_gdf.reset_index().to_dict(orient='list')
 
@@ -34,18 +38,30 @@ class AggregatorComponent(BaseComponent):
             scores_weights['segmenter_score'] = self.config.segmenter_score_weight
 
         other_attributes = {}
-        for column_name in data_state.results_gdf_columns_to_pass:
+        for column_name in data_state.infer_gdf_columns_to_pass:
             if column_name not in ['detector_score', 'segmenter_score']:
                 other_attributes[column_name] = grouped_gdf[column_name]
 
+        product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
+            Path(tiles_path[0]).name
+        )
+
+        gpkg_name = GeoPackageNameConvention.create_name(
+            product_name=product_name,
+            fold=infer_aoi_name,
+            scale_factor=scale_factor,
+            ground_resolution=ground_resolution
+        )
+
         aggregator = Aggregator.from_polygons(
-            output_path=self.output_path / 'temp_name.gpkg',
+            output_path=self.output_path / gpkg_name,
             tiles_paths=tiles_path,
             polygons=grouped_gdf['geometry'],
             scores=scores,
             other_attributes=other_attributes,
             scores_weights=scores_weights,
             scores_weighting_method=self.config.scores_weighting_method,
+            min_centroid_distance_weight=self.config.min_centroid_distance_weight,
             score_threshold=self.config.score_threshold,
             nms_threshold=self.config.nms_threshold,
             nms_algorithm=self.config.nms_algorithm
@@ -59,6 +75,6 @@ class AggregatorComponent(BaseComponent):
     def update_data_state(self,
                          data_state: DataState,
                          results_gdf: gpd.GeoDataFrame) -> DataState:
-        data_state.results_gdf = results_gdf
+        data_state.infer_gdf = results_gdf
 
         return data_state

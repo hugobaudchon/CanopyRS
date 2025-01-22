@@ -1,17 +1,16 @@
 from abc import ABC, abstractmethod
 from typing import Tuple
-
+import multiprocessing
 import numpy as np
 import psutil
 import torch
-from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset, BaseDataset
-import multiprocessing
-
-from geodataset.utils import mask_to_polygon
-from shapely.affinity import scale
-
 from torch.utils.data import DataLoader
+from shapely import box
+from shapely.affinity import scale
 from tqdm import tqdm
+
+from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset, BaseDataset
+from geodataset.utils import mask_to_polygon
 
 from engine.config_parsers import SegmenterConfig
 
@@ -23,14 +22,31 @@ def get_memory_usage():
     return memory_percentage
 
 
-def process_masks(queue, output_dict, output_dict_lock, simplify_tolerance, processed_counter):
+def process_masks(queue,
+                  output_dict,
+                  output_dict_lock,
+                  simplify_tolerance,
+                  remove_rings,
+                  remove_small_geoms,
+                  processed_counter):
     results = {}
     while True:
         item = queue.get()
         if item is None:
             break
         tile_idx, mask_ids, masks, scores, image_size = item
-        masks_polygons = [mask_to_polygon(mask.squeeze(), simplify_tolerance=simplify_tolerance) for mask in masks]
+        masks_polygons = [mask_to_polygon(mask.squeeze(),
+                                          simplify_tolerance=simplify_tolerance,
+                                          remove_rings=remove_rings,
+                                          remove_small_geoms=remove_small_geoms) for mask in masks]
+
+        for id, polygon in enumerate(masks_polygons):
+            if not polygon.is_valid:
+                masks_polygons[id] = polygon.buffer(0)
+                scores[id] = 0.0
+            elif polygon.is_empty:
+                masks_polygons[id] = box(0, 0, 0, 0)
+                scores[id] = 0.0
 
         mask_h, mask_w = masks.shape[-2], masks.shape[-1]  # e.g. 28,28
         orig_h, orig_w = image_size[0], image_size[1]  # e.g. 1024,1024
@@ -129,7 +145,14 @@ class SegmenterWrapperBase(ABC):
         # Start post-processing processes
         post_process_processes = []
         for _ in range(self.config.n_postprocess_workers):
-            p = multiprocessing.Process(target=process_masks, args=(queue, output_dict, output_dict_lock, self.config.simplify_tolerance, processed_counter))
+            p = multiprocessing.Process(target=process_masks,
+                                        args=(queue,
+                                              output_dict,
+                                              output_dict_lock,
+                                              self.config.pp_simplify_tolerance,
+                                              self.config.pp_remove_rings,
+                                              self.config.pp_remove_small_geoms,
+                                              processed_counter))
             p.start()
             post_process_processes.append(p)
 
@@ -187,6 +210,6 @@ class SegmenterWrapperBase(ABC):
             tiles_masks_polygons.append(masks_polygons)
             tiles_masks_scores.append(scores)
 
-        print(f"Finished inferring the segmenter {self.config.model}.")
+        print(f"Finished inferring the segmenter {self.config.model}-{self.config.backbone}.")
 
         return tiles_paths, tiles_masks_polygons, tiles_masks_scores

@@ -8,7 +8,7 @@ laspy==2.5.3
 numpy>=1.24.0,<2.0.0
 pandas>=2.2.0
 psutil==5.9.3
-warmup-scheduler @ git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git@6b5e8953a80aef5b324104dc0c2e9b8c34d622bd
+pycocotools>=2.0.7
 pytorch-metric-learning>=2.3.0
 PyYAML>=6.0.1
 rasterio==1.3.7
@@ -22,5 +22,6 @@ torchvision>=0.15.2
 torchmetrics>=1.3.0.post0
 tqdm>=4.65.0
 transformers>=4.47.1
-xmltodict==0.13.0
 wandb>=0.19
+warmup-scheduler @ git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git@6b5e8953a80aef5b324104dc0c2e9b8c34d622bd
+xmltodict==0.13.0

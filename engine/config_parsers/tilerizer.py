@@ -1,4 +1,3 @@
-from typing import Dict
 from pydantic import Field
 
 from engine.config_parsers.base import BaseConfig
@@ -6,7 +5,7 @@ from engine.config_parsers.base import BaseConfig
 
 class TilerizerConfig(BaseConfig):
     tile_type: str = 'tile'
-    tile_size: int = 1280
+    tile_size: int = 1024
     tile_overlap: float = 0.5
     ground_resolution: float = None
     scale_factor: float = None
@@ -17,12 +16,3 @@ class TilerizerConfig(BaseConfig):
 
     main_label_category_column_name: str = None
     other_labels_attributes_column_names: list = Field(default_factory=list)
-
-    aoi_config: str = 'generate'
-    aoi_type: str = 'band'
-    aois: Dict[str, dict or str] = Field(default_factory=lambda: {
-        'infer': {
-            'percentage': 1.0,
-            'position': 1
-        }
-    })
