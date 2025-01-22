@@ -26,8 +26,6 @@ def generate_coco(description,
 
     tiles_names = [Path(tile_path).name for tile_path in tiles_paths]
 
-    print(type(other_attributes))
-
     # order all the results by the order of tile_names_order_reference
     ordered_polygons = []
     ordered_scores = []
