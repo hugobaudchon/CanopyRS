@@ -23,6 +23,8 @@ See config/
 
 ## Usage
 
+### Inference
+
 The main entry point of the pipeline is `main.py`. This script accepts command-line arguments specifying the task and subtask to perform, and the path to the configuration file.
 
 Example run:
@@ -31,3 +33,10 @@ Example run:
 python main.py -t pipeline -c default -i /path/to/raster.tif -o /path/to/output/folder
 ```
 
+### Evaluation
+
+Similar as inference, but now we input a ground truth geopackage (optional), an aoi geopackage, and use a different pipeline (default_eval):
+
+```bash
+python main.py -t pipeline -c default_eval -i /path/to/raster.tif -gt /path/to/groundtruth/geopackage.gpkg -aoi /path/to/aoi/geopackage.gpkg -o /path/to/output/folder
+```
