@@ -37,7 +37,7 @@ class DetectorWrapperBase(ABC):
             if "huggingface.co" not in checkpoint_state_dict_path.as_posix():
                 raise ValueError("The provided Path does not contain a valid Hugging Face URL.")
             # Remove the "https://huggingface.co/" part
-            path = Path(str(checkpoint_state_dict_path).split("huggingface.co/")[-1])
+            path = Path(str(checkpoint_state_dict_path).replace("\\", "/").split("huggingface.co/")[-1])
             if "resolve" not in path.parts:
                 raise ValueError("The provided Path is not in the expected Hugging Face format.")
             # Extract repo_id and filename
