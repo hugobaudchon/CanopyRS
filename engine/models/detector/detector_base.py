@@ -1,10 +1,12 @@
 import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from pathlib import Path
 
 import torch
 import torchmetrics
 from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset
+from huggingface_hub import hf_hub_download
 from shapely import box
 from torch import optim
 from torch.utils.data import DataLoader
@@ -30,6 +32,19 @@ class DetectorWrapperBase(ABC):
         ).to(self.device)
 
     def load_checkpoint(self, checkpoint_state_dict_path):
+        checkpoint_state_dict_path = Path(checkpoint_state_dict_path)
+        if 'huggingface.co' in checkpoint_state_dict_path.parts:
+            if "huggingface.co" not in checkpoint_state_dict_path.as_posix():
+                raise ValueError("The provided Path does not contain a valid Hugging Face URL.")
+            # Remove the "https://huggingface.co/" part
+            path = Path(str(checkpoint_state_dict_path).split("huggingface.co/")[-1])
+            if "resolve" not in path.parts:
+                raise ValueError("The provided Path is not in the expected Hugging Face format.")
+            # Extract repo_id and filename
+            repo_id = "/".join(path.parts[:2])
+            filename = path.name
+            checkpoint_state_dict_path = hf_hub_download(repo_id=repo_id, filename=filename)
+
         if checkpoint_state_dict_path:
             try:
                 self.model.load_state_dict(torch.load(checkpoint_state_dict_path, weights_only=False))
