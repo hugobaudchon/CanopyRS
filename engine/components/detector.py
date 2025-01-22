@@ -34,8 +34,6 @@ class DetectorComponent(BaseComponent):
 
         tiles_paths, boxes, boxes_scores, classes = self.detector.infer(infer_ds, collate_fn_images)
 
-        print(min([len(boxes[i]) for i in range(len(boxes))]))
-
         future_coco = self.generate_coco(tiles_paths, data_state.tiles_names, boxes, boxes_scores, classes)
 
         gdf_items = []
