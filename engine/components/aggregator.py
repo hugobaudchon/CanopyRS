@@ -55,7 +55,7 @@ class AggregatorComponent(BaseComponent):
 
         pre_aggregated_gpkg_name = GeoPackageNameConvention.create_name(
             product_name=product_name,
-            fold=f'{infer_aoi_name}preaggregated',
+            fold=f'{infer_aoi_name}notaggregated',
             scale_factor=scale_factor,
             ground_resolution=ground_resolution
         )
