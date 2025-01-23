@@ -53,6 +53,13 @@ class AggregatorComponent(BaseComponent):
             ground_resolution=ground_resolution
         )
 
+        pre_aggregated_gpkg_name = GeoPackageNameConvention.create_name(
+            product_name=product_name,
+            fold=f'{infer_aoi_name}preaggregated',
+            scale_factor=scale_factor,
+            ground_resolution=ground_resolution
+        )
+
         aggregator = Aggregator.from_polygons(
             output_path=self.output_path / gpkg_name,
             tiles_paths=tiles_path,
@@ -64,7 +71,8 @@ class AggregatorComponent(BaseComponent):
             min_centroid_distance_weight=self.config.min_centroid_distance_weight,
             score_threshold=self.config.score_threshold,
             nms_threshold=self.config.nms_threshold,
-            nms_algorithm=self.config.nms_algorithm
+            nms_algorithm=self.config.nms_algorithm,
+            pre_aggregated_output_path=self.output_path / pre_aggregated_gpkg_name,
         )
 
         results_gdf = aggregator.polygons_gdf
