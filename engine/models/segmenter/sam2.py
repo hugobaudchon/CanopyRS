@@ -52,6 +52,11 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
             for i in range(0, len(boxes), self.config.box_batch_size):
                 box_batch = boxes[i:i + self.config.box_batch_size]  # Select a batch of boxes
                 masks, scores, _ = self.predictor.predict(box=box_batch, multimask_output=False, normalize_coords=True)
+
+                # reshaping to (batch_size, h, w)
+                if masks.ndim == 4:
+                    masks = masks[:, 0, :, :]
+
                 image_size = (image.shape[0], image.shape[1])
                 n_masks_processed = self.queue_masks(
                     masks, image_size, scores, tile_idx, n_masks_processed, queue

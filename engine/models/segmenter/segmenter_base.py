@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Tuple
 import multiprocessing
+import cv2
 import numpy as np
 import psutil
 import torch
@@ -35,18 +36,22 @@ def process_masks(queue,
         if item is None:
             break
         tile_idx, mask_ids, masks, scores, image_size = item
-        masks_polygons = [mask_to_polygon(mask.squeeze(),
+        masks_polygons = [mask_to_polygon(mask,
                                           simplify_tolerance=simplify_tolerance,
                                           remove_rings=remove_rings,
                                           remove_small_geoms=remove_small_geoms) for mask in masks]
 
+        # Fix invalid polygons
         for id, polygon in enumerate(masks_polygons):
             if not polygon.is_valid:
-                masks_polygons[id] = polygon.buffer(0)
+                # If the polygon is still invalid, set its score to 0 and create a dummy box polygon
+                polygon = box(0, 0, 1, 1)
                 scores[id] = 0.0
-            elif polygon.is_empty:
-                masks_polygons[id] = box(0, 0, 0, 0)
+            if polygon.is_empty:
+                # If the polygon is empty, set its score to 0 and create a dummy box polygon
+                polygon = box(0, 0, 1, 1)
                 scores[id] = 0.0
+            masks_polygons[id] = polygon
 
         mask_h, mask_w = masks.shape[-2], masks.shape[-1]  # e.g. 28,28
         orig_h, orig_w = image_size[0], image_size[1]  # e.g. 1024,1024
@@ -112,10 +117,23 @@ class SegmenterWrapperBase(ABC):
                     tile_idx: int,
                     n_masks_processed: int,
                     queue: multiprocessing.JoinableQueue):
+        # Scale down the masks to a fixed size to reduce memory footprint during postprocessing
+        if self.config.pp_down_scale_masks_px and masks.shape[-1] > self.config.pp_down_scale_masks_px:
+            resized_list = []
+            for i in range(masks.shape[0]):
+                mask_resized = cv2.resize(
+                    masks[i],
+                    (self.config.pp_down_scale_masks_px, self.config.pp_down_scale_masks_px),
+                    interpolation=cv2.INTER_LINEAR
+                )
+                resized_list.append(mask_resized)
+
+            # Stack them back along the batch dimension if you want a single tensor
+            masks = np.stack(resized_list, axis=0)
 
         # Split masks and scores into chunks and put them into the queue for post-processing
         num_masks = masks.shape[0]
-        chunk_size = max(1, num_masks // self.config.n_postprocess_workers)
+        chunk_size = max(1, num_masks // self.config.pp_n_workers)
         for j in range(0, num_masks, chunk_size):
             chunk_masks = masks[j:j + chunk_size]
             chunk_scores = scores[j:j + chunk_size]
@@ -135,7 +153,7 @@ class SegmenterWrapperBase(ABC):
         tiles_masks_scores = []
         queue = multiprocessing.JoinableQueue()  # Create a JoinableQueue
 
-        print(f"Setting up {self.config.n_postprocess_workers} post-processing workers...")
+        print(f"Setting up {self.config.pp_n_workers} post-processing workers...")
         # Create a manager to share data across processes
         manager = multiprocessing.Manager()
         output_dict = manager.dict()
@@ -144,7 +162,7 @@ class SegmenterWrapperBase(ABC):
 
         # Start post-processing processes
         post_process_processes = []
-        for _ in range(self.config.n_postprocess_workers):
+        for _ in range(self.config.pp_n_workers):
             p = multiprocessing.Process(target=process_masks,
                                         args=(queue,
                                               output_dict,
@@ -188,7 +206,7 @@ class SegmenterWrapperBase(ABC):
         queue.join()
 
         # Signal the end of input to the queue
-        for _ in range(self.config.n_postprocess_workers):
+        for _ in range(self.config.pp_n_workers):
             queue.put(None)
 
         # Wait for post-processing processes to finish
