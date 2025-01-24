@@ -1,4 +1,6 @@
 import argparse
+import multiprocessing
+import os
 
 from engine.config_parsers import InferIOConfig, PipelineConfig
 from engine.config_parsers.base import get_config_path
@@ -32,6 +34,9 @@ def pipeline_main():
 
 
 if __name__ == '__main__':
+    if os.name == 'posix':
+        multiprocessing.set_start_method('spawn')
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--task", type=str, help="The task to perform.", required=True)
     parser.add_argument("-st", "--subtask", type=str, help="The subtask of the task to perform.")
