@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List
 
 import numpy as np
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -133,12 +134,45 @@ def register_detection_dataset(
     print(f"Dataset '{dataset_name}' registered.")
 
 
+def register_combined_datasets(dataset_names: list):
+    """
+    Combine multiple datasets into one.
+
+    Parameters
+    ----------
+    dataset_names: list
+        List of dataset names to combine
+
+    Returns
+    -------
+    str
+        The name of the combined dataset
+    """
+    combined_dataset_name = "_".join(dataset_names)
+    combined_dataset_dicts = []
+
+    for dataset_name in dataset_names:
+        combined_dataset_dicts.extend(DatasetCatalog.get(dataset_name))
+
+    DatasetCatalog.register(
+        combined_dataset_name,
+        lambda: combined_dataset_dicts
+    )
+
+    MetadataCatalog.get(combined_dataset_name).set(
+        thing_classes=MetadataCatalog.get(dataset_names[0]).thing_classes
+    )
+
+    return combined_dataset_name
+
+
 def register_multiple_detection_datasets(
         root_path: str,
         dataset_names: list,
         fold: str,
-        force_binary_class: bool = True
-):
+        force_binary_class: bool = True,
+        combine_datasets: bool = True
+) -> List[str]:
     """
     Register multiple custom datasets with detectron2.
 
@@ -164,4 +198,8 @@ def register_multiple_detection_datasets(
         )
         d2_datasets_names.append(d2_name)
 
-    return d2_datasets_names
+    if combine_datasets and len(d2_datasets_names) > 1:
+        d2_combined_dataset_name = register_combined_datasets(d2_datasets_names)
+        return [d2_combined_dataset_name]
+    else:
+        return d2_datasets_names

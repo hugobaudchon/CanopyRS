@@ -16,12 +16,12 @@ train_output_path: '/mnt/disk2/trainings'
 #main_metric: 'mAP'
 lr: 1e-4
 max_epochs: 100
-freeze_layers: -1
+freeze_layers: 2
 train_log_interval: 10
 eval_epoch_interval: 1
 #grad_accumulation_steps: 1
 backbone_model_pretrained: True
-scheduler_step_size: 10
-scheduler_warmup_steps: 100
+scheduler_epochs_steps: [20, 40, 60]
+scheduler_warmup_steps: 1000
 scheduler_gamma: 0.1
 dataloader_num_workers: 4

@@ -17,9 +17,9 @@ sam2==0.4.1
 shapely==2.0.1
 tensorboard==2.17.0
 tensorboardX==2.6.2.2
-torch>=2.5.1
-torchvision>=0.15.2
-torchmetrics>=1.3.0.post0
+torch==2.3.1
+torchvision==0.18.1
+torchmetrics==1.3.0.post0
 tqdm>=4.65.0
 transformers>=4.47.1
 wandb>=0.19
