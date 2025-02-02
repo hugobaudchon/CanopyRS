@@ -9,6 +9,8 @@ class InferIOConfig(BaseConfig):
     input_imagery: str
     output_folder: str
 
+    tiles_path: Optional[str] = None
+
     input_gpkg: Optional[str] = None
     input_coco: Optional[str] = None
 

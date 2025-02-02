@@ -34,12 +34,14 @@ class SegmenterComponent(BaseComponent):
             dataset = DetectionLabeledRasterCocoDataset(
                 fold=infer_aoi_name,
                 root_path=data_paths,
-                box_padding_percentage=self.config.box_padding_percentage
+                box_padding_percentage=self.config.box_padding_percentage,
+                transform=self.segmenter.infer_transform
             )
         else:
             dataset = UnlabeledRasterDataset(
                 fold=infer_aoi_name,
-                root_path=data_paths
+                root_path=data_paths,
+                transform=self.segmenter.infer_transform
             )
 
         tiles_paths, tiles_masks_polygons, tiles_masks_scores = self.segmenter.infer_on_dataset(dataset)

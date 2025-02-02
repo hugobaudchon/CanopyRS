@@ -22,6 +22,8 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
 
     REQUIRES_BOX_PROMPT = True
 
+    infer_transform = None          # TODO change this to use what is in infer_image
+
     def __init__(self, config: SegmenterConfig):
 
         super().__init__(config)
