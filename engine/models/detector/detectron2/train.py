@@ -1,10 +1,11 @@
 from datetime import datetime
+from pathlib import Path
 from typing import List
 
 from detectron2.data import DatasetCatalog
 from detectron2.evaluation import COCOEvaluator
-from detectron2.engine import DefaultTrainer
-from detectron2.config import get_cfg
+from detectron2.engine import DefaultTrainer, default_argument_parser
+from detectron2.config import get_cfg, LazyConfig
 from detectron2.model_zoo import model_zoo
 import os
 
@@ -148,5 +149,32 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
 
 
 def train_detrex_dino(config):
-    # from detrex.projects
-    a = 0
+    from engine.models.detector.detectron2.detrex_models.dino.train_net import do_train
+    print("Setting up datasets...")
+    d2_train_datasets_names = register_multiple_detection_datasets(
+        root_path=config.data_root_path,
+        dataset_names=config.train_dataset_names,
+        fold="train",
+        force_binary_class=True if config.num_classes == 1 else False
+    )
+
+    d2_valid_datasets_names = register_multiple_detection_datasets(
+        root_path=config.data_root_path,
+        dataset_names=config.train_dataset_names,
+        fold="valid",
+        force_binary_class=True if config.num_classes == 1 else False
+    )
+
+    # cfg = LazyConfig.load(f'/home/hugo/PycharmProjects/CanopyRS/engine/models/detector/detectron2/detrex_models/dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py')
+    cfg = LazyConfig.load(f'/home/hugo/PycharmProjects/CanopyRS/engine/models/detector/detectron2/detrex_models/dino/configs/dino-resnet/dino_r50_4scale_24ep.py')
+    cfg.dataloader.train.dataset.names = tuple(d2_train_datasets_names)
+    cfg.dataloader.test.dataset.names = tuple(d2_valid_datasets_names)
+    cfg.train.output_dir = './output/TEST_DINO_DETREX'
+    cfg.train.init_checkpoint = config.checkpoint_path
+    cfg.dataloader.train.total_batch_size = config.batch_size
+    cfg.model.num_classes = config.num_classes
+    print(cfg)
+    do_train(
+        default_argument_parser().parse_args([]),   # passing empty list to simulate empty command line arguments
+        cfg
+    )
