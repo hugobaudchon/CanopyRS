@@ -19,17 +19,19 @@ conda create -n canopyrs python=3.10
 conda activate canopyrs
 conda install -c conda-forge gdal
 pip install -r requirements.txt
+#pip install git+https://github.com/IDEA-Research/detrex.git
+#pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
+git clone https://github.com/IDEA-Research/detrex.git
+cd detrex
+git submodule init
+git submodule update
+python -m pip install -e detectron2
+pip install -e .
+cd ..
 ```
 
 #### Windows
-On Windows, we need to install torch first to have GPU support. You may change the index url to your installed cuda version (see [pytorch](https://pytorch.org/get-started/locally/)).
-```bash
-conda create -n canopyrs python=3.10
-conda activate canopyrs
-conda install -c conda-forge gdal
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-pip install -r requirements.txt
-```
+Coming soon
 
 ## Configuration
 

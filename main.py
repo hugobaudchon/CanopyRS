@@ -2,12 +2,13 @@ import argparse
 import multiprocessing
 import os
 
-from engine.config_parsers import InferIOConfig, PipelineConfig
+from engine.config_parsers import InferIOConfig, PipelineConfig, DetectorConfig
 from engine.config_parsers.base import get_config_path
+from engine.models.detector.detectron2.train import train_detectron2_fasterrcnn
 from engine.pipeline import Pipeline
 
 def pipeline_main():
-    config_path = get_config_path(f'{config_name}/pipeline')
+    config_path = get_config_path(f'{config_name_or_path}/pipeline')
     config = PipelineConfig.from_yaml(config_path)
 
     if io_config_path and (imagery_path or output_path):
@@ -31,6 +32,13 @@ def pipeline_main():
 
     Pipeline(io_config, config).run()
 
+def train_detector_main():
+    config = DetectorConfig.from_yaml(config_name_or_path)
+    if config.model == 'faster_rcnn_detectron2':
+        train_detectron2_fasterrcnn(config)
+    else:
+        raise ValueError("Invalid model type/name.")
+
 
 
 if __name__ == '__main__':
@@ -52,7 +60,7 @@ if __name__ == '__main__':
 
     task = args.task
     subtask = args.subtask
-    config_name = args.config
+    config_name_or_path = args.config
     io_config_path = args.io_config_path
     imagery_path = args.imagery_path
     output_path = args.output_path
@@ -61,6 +69,10 @@ if __name__ == '__main__':
 
     if task == "pipeline":
         pipeline_main()
+    elif task == "train" and subtask == "detector":
+        train_detector_main()
+    else:
+        raise ValueError("Invalid task or subtask.")
 
 
 
