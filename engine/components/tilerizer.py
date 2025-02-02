@@ -25,7 +25,7 @@ class TilerizerComponent(BaseComponent):
     def run(self, data_state: DataState) -> DataState:
         if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
             raise ValueError(
-                "results_gdf must have a CRS."
+                "infer_gdf must have a CRS."
                 " Please make sure you add an Aggregator in the pipeline before the Tilerizer."
             )
         if data_state.ground_truth_gdf is not None and data_state.ground_truth_gdf.crs is None:
