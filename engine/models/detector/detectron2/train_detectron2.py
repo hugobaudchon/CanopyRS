@@ -1,17 +1,19 @@
 from collections.abc import Mapping
 from datetime import datetime
-from pprint import pprint
 from typing import List
+
+import wandb
 
 from detectron2.data import DatasetCatalog
 from detectron2.evaluation import COCOEvaluator
-from detectron2.engine import DefaultTrainer, default_argument_parser
-from detectron2.config import get_cfg, LazyConfig
+from detectron2.engine import DefaultTrainer
+from detectron2.config import get_cfg
 from detectron2.model_zoo import model_zoo
 import os
 
 from engine.config_parsers import DetectorConfig
 from engine.models.detector.detectron2.dataset import register_multiple_detection_datasets
+from engine.models.detector.detectron2.hook import WandbWriterHook
 
 
 class TrainerWithValidation(DefaultTrainer):
@@ -25,8 +27,41 @@ class TrainerWithValidation(DefaultTrainer):
             dataset_name,
             output_dir=output_folder
         )
-        evaluator._max_dets_per_image = [10, 100, cfg.TEST.DETECTIONS_PER_IMAGE]
+        # evaluator._max_dets_per_image = [10, 100, cfg.TEST.DETECTIONS_PER_IMAGE]
+        evaluator._max_dets_per_image = [1, 10, 100]        # TODO for now just using basic COCO metrics
         return evaluator
+
+    @classmethod
+    def test(cls, cfg, model, evaluators=None):
+        """
+        Override the test method so that after evaluation we log the mAP metrics to wandb.
+        The COCOEvaluator typically returns a dict with keys like "bbox/AP".
+        """
+        results = super().test(cfg, model, evaluators)
+
+        # Log results of first dataset to wandb
+        if len(results) > 0:
+            dataset_name, metrics = results.popitem()
+            if "AP" in metrics:
+                wandb.log({"bbox/AP": metrics["AP"]})
+                wandb.log({"bbox/AP50": metrics["AP50"]})
+                wandb.log({"bbox/AP75": metrics["AP75"]})
+                wandb.log({"bbox/APs": metrics["APs"]})
+                wandb.log({"bbox/APm": metrics["APm"]})
+                wandb.log({"bbox/APl": metrics["APl"]})
+            else:
+                # If you have a different key, adjust here.
+                print(f"Warning: mAP metric not found in evaluation results for dataset {dataset_name}")
+
+        # # Loop over datasets (if more than one was evaluated)
+        # for dataset_name, metrics in results.items():
+        #     if "bbox/AP" in metrics:
+        #         wandb.log({f"eval/{dataset_name}_mAP": metrics["bbox/AP"]})
+        #     else:
+        #         # If you have a different key, adjust here.
+        #         print(f"Warning: mAP metric not found in evaluation results for dataset {dataset_name}")
+
+        return results
 
 
 def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str], config: DetectorConfig, model_name: str):
@@ -97,6 +132,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
 
     # Evaluation config
     cfg.TEST.EVAL_PERIOD = config.eval_epoch_interval * dataset_length // config.batch_size
+    cfg.SOLVER.CHECKPOINT_PERIOD = config.eval_epoch_interval * dataset_length // config.batch_size
     cfg.TEST.DETECTIONS_PER_IMAGE = config.box_predictions_per_image
 
     # Output directory
@@ -104,12 +140,19 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     os.makedirs(output_dir, exist_ok=True)
     cfg.OUTPUT_DIR = output_dir
 
+    print(cfg)
+
     # Save config
     config.to_yaml(os.path.join(output_dir, "config.yaml"))
 
     # Create trainer
     trainer = TrainerWithValidation(cfg)
     trainer.resume_or_load(resume=False)
+
+    trainer.register_hooks([WandbWriterHook(cfg=cfg,
+                                            train_log_interval=config.train_log_interval,
+                                            wandb_project_name=config.wandb_project,
+                                            wandb_model_name=model_name)])
 
     return trainer
 
@@ -147,60 +190,3 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
     print("Starting training...")
     trainer.train()
     print(f"Training completed. Model saved in {config.train_output_path}")
-
-
-def lazyconfig_to_dict(obj):
-    """
-    Recursively convert a LazyConfig object (which acts like nested
-    namespaces/dicts) into a pure Python dict.
-    """
-    if isinstance(obj, Mapping):
-        return {k: lazyconfig_to_dict(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [lazyconfig_to_dict(v) for v in obj]
-    else:
-        return obj
-
-
-def train_detrex_dino(config):
-    from engine.models.detector.detectron2.detrex_models.dino.train_net import do_train
-    print("Setting up datasets...")
-    d2_train_datasets_names = register_multiple_detection_datasets(
-        root_path=config.data_root_path,
-        dataset_names=config.train_dataset_names,
-        fold="train",
-        force_binary_class=True if config.num_classes == 1 else False,
-        combine_datasets=True
-    )
-
-    d2_valid_datasets_names = register_multiple_detection_datasets(
-        root_path=config.data_root_path,
-        dataset_names=config.train_dataset_names,
-        fold="valid",
-        force_binary_class=True if config.num_classes == 1 else False,
-        combine_datasets=True
-    )
-
-    dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in d2_train_datasets_names])
-
-    # cfg = LazyConfig.load(f'/home/hugo/PycharmProjects/CanopyRS/engine/models/detector/detectron2/detrex_models/dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py')
-    cfg = LazyConfig.load(f'/home/hugo/PycharmProjects/CanopyRS/engine/models/detector/detectron2/detrex_models/dino/configs/dino-resnet/dino_r50_4scale_24ep.py')
-    cfg.dataloader.train.dataset.names = d2_train_datasets_names[0]
-    cfg.dataloader.test.dataset.names = d2_valid_datasets_names[0]
-    cfg.dataloader.train.num_workers = config.dataloader_num_workers
-    cfg.dataloader.test.num_workers = config.dataloader_num_workers // 2
-    cfg.train.seed = config.seed
-    cfg.train.output_dir = config.train_output_path
-    cfg.train.init_checkpoint = config.checkpoint_path
-    cfg.train.log_period = config.train_log_interval
-    cfg.train.max_iter = config.max_epochs * dataset_length // config.batch_size
-    cfg.train.eval_period = config.eval_epoch_interval * dataset_length // config.batch_size
-    cfg.dataloader.train.total_batch_size = config.batch_size
-    cfg.model.num_classes = config.num_classes
-
-    pprint(lazyconfig_to_dict(cfg))
-
-    do_train(
-        default_argument_parser().parse_args([]),   # passing empty list to simulate empty command line arguments
-        cfg
-    )

@@ -24,6 +24,7 @@ class DetectorConfig(BaseConfig):
     # Training Params
     main_metric: str = 'mAP'            # TODO add support for this
     seed: int = 42
+    wandb_project: Optional[str] = None
     lr: Optional[float] = 1e-4
     max_epochs: int = 100
     freeze_layers: Optional[int] = -1

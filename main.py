@@ -4,7 +4,8 @@ import os
 
 from engine.config_parsers import InferIOConfig, PipelineConfig, DetectorConfig
 from engine.config_parsers.base import get_config_path
-from engine.models.detector.detectron2.train import train_detectron2_fasterrcnn, train_detrex_dino
+from engine.models.detector.detectron2.train_detectron2 import train_detectron2_fasterrcnn
+from engine.models.detector.detectron2.train_detrex import train_detrex
 from engine.pipeline import Pipeline
 
 def pipeline_main():
@@ -32,12 +33,13 @@ def pipeline_main():
 
     Pipeline(io_config, config).run()
 
+
 def train_detector_main():
     config = DetectorConfig.from_yaml(config_name_or_path)
     if config.model == 'faster_rcnn_detectron2':
         train_detectron2_fasterrcnn(config)
     elif config.model == 'dino_detrex':
-        train_detrex_dino(config)
+        train_detrex(config)
     else:
         raise ValueError("Invalid model type/name.")
 

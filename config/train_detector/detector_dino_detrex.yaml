@@ -15,6 +15,7 @@ train_output_path: './output/detrex_dino_r50_4scale_24ep_2'
 # Training Params
 #main_metric: 'mAP'
 seed: 0
+wandb_project: 'neurips_d&b_detector'
 lr: null
 max_epochs: 100
 freeze_layers: null

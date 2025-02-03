@@ -15,6 +15,7 @@ train_output_path: '/mnt/disk2/trainings'
 # Training Params
 #main_metric: 'mAP'
 lr: 1e-4
+wandb_project: 'neurips_d&b_detector'
 max_epochs: 100
 freeze_layers: 2
 train_log_interval: 10
