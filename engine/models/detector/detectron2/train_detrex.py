@@ -14,6 +14,7 @@ in the config file and implement a new train_net.py to handle them.
 """
 import logging
 import os
+from pathlib import Path
 import sys
 import time
 from datetime import datetime
@@ -316,8 +317,9 @@ def train_detrex(config):
     dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in d2_train_datasets_names])
     output_path = os.path.join(config.train_output_path, model_name)
 
-    # cfg = LazyConfig.load(f'/home/hugo/PycharmProjects/CanopyRS/engine/models/detector/detectron2/detrex_models/dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py')
-    cfg = LazyConfig.load(f'/home/hugo/PycharmProjects/CanopyRS/engine/models/detector/detectron2/detrex_models/dino/configs/dino-resnet/dino_r50_4scale_24ep.py')
+    current_file_path = Path(__file__).resolve().parent
+    # cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py')
+    cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/dino-resnet/dino_r50_4scale_24ep.py')
     cfg.dataloader.train.dataset.names = d2_train_datasets_names[0]
     cfg.dataloader.test.dataset.names = d2_valid_datasets_names[0]
     cfg.dataloader.train.num_workers = config.dataloader_num_workers
