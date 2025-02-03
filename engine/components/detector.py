@@ -59,7 +59,7 @@ class DetectorComponent(BaseComponent):
                           results_gdf: gpd.GeoDataFrame,
                           future_coco: tuple) -> DataState:
         data_state.infer_gdf = results_gdf
-        data_state.infer_gdf_columns_to_pass.extend(['detector_score', 'detector_class'])
+        data_state.infer_gdf_columns_to_pass.update(['detector_score', 'detector_class'])
         data_state.side_processes.append(future_coco)
         return data_state
 

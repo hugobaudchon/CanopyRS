@@ -48,7 +48,6 @@ class Pipeline:
             aois={ground_truth_aoi_name: self.io_config.aoi}
         )
 
-
     def run(self):
         # Run each component in the pipeline, sequentially
         for component_id, component_config in enumerate(self.config.components_configs):
