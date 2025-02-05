@@ -1,6 +1,7 @@
 import wandb
 
 from detectron2.engine import HookBase
+from detectron2.utils import comm
 from engine.models.detector.detectron2.utils import lazyconfig_to_dict
 
 
@@ -18,23 +19,30 @@ class WandbWriterHook(HookBase):
     def before_train(self):
         # Initialize wandb with the trainer’s config.
         # (Replace "your_project_name" with your wandb project name.)
-        wandb.init(
-            project=self.wandb_project_name,
-            name=self.wandb_model_name,
-            config=lazyconfig_to_dict(self.cfg)
-        )
-        print("wandb initialized.")
+        if comm.is_main_process():
+            wandb.init(
+                project=self.wandb_project_name,
+                name=self.wandb_model_name,
+                config=lazyconfig_to_dict(self.cfg)
+            )
+            print("wandb initialized.")
 
     def after_step(self):
         # Log training loss every train_log_interval iterations.
-        if self.trainer.iter % self.train_log_interval == 0:
-            # The Detectron2 storage collects a bunch of metrics.
-            # Here we assume that "total_loss" is logged.
-            # (You can add additional keys if desired.)
+        if self.trainer.iter % self.train_log_interval == 0 and comm.is_main_process():
+            # Retrieve the metrics stored in Detectron2's storage
             metrics = self.trainer.storage.latest()
+
+            # Retrieve total loss if available
+            log_data = {}
             if "total_loss" in metrics:
-                wandb.log({"total_loss": metrics["total_loss"][0]},
-                          step=self.trainer.iter)
+                log_data["total_loss"] = metrics["total_loss"][0]
+
+            # Log learning rate from the first optimizer parameter group (adjust if you have multiple groups)
+            lr = self.trainer.optimizer.param_groups[0]["lr"]
+            log_data["learning_rate"] = lr
+
+            wandb.log(log_data, step=self.trainer.iter)
 
     def after_train(self):
         wandb.finish()

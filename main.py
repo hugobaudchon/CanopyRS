@@ -8,24 +8,24 @@ from engine.models.detector.detectron2.train_detectron2 import train_detectron2_
 from engine.models.detector.detectron2.train_detrex import train_detrex
 from engine.pipeline import Pipeline
 
-def pipeline_main():
-    config_path = get_config_path(f'{config_name_or_path}/pipeline')
+def pipeline_main(args):
+    config_path = get_config_path(f'{args.config}/pipeline')
     config = PipelineConfig.from_yaml(config_path)
 
-    if io_config_path and (imagery_path or output_path):
+    if args.io_config_path and (args.imagery_path or args.output_path):
         raise ValueError("Either provide an io config file or imagery path and output path.")
-    elif io_config_path:
-        io_config = InferIOConfig.from_yaml(io_config_path)
-    elif imagery_path and output_path:
+    elif args.io_config_path:
+        io_config = InferIOConfig.from_yaml(args.io_config_path)
+    elif args.imagery_path and args.output_path:
         config_args = {
-            'input_imagery': imagery_path,
-            'output_folder': output_path
+            'input_imagery': args.imagery_path,
+            'output_folder': args.output_path
         }
-        if ground_truth_path:
-            config_args['ground_truth_gpkg'] = ground_truth_path
-        if aoi_path:
+        if args.ground_truth_path:
+            config_args['ground_truth_gpkg'] = args.ground_truth_path
+        if args.aoi_path:
             config_args['aoi_config'] = 'package'
-            config_args['aoi'] = aoi_path
+            config_args['aoi'] = args.aoi_path
 
         io_config = InferIOConfig(**config_args)
     else:
@@ -34,8 +34,12 @@ def pipeline_main():
     Pipeline(io_config, config).run()
 
 
-def train_detector_main():
-    config = DetectorConfig.from_yaml(config_name_or_path)
+def train_detector_main(args):
+    config = DetectorConfig.from_yaml(args.config)
+
+    if args.dataset:
+        config.data_root_path = args.dataset
+
     if config.model == 'faster_rcnn_detectron2':
         train_detectron2_fasterrcnn(config)
     elif config.model == 'dino_detrex':
@@ -50,6 +54,8 @@ if __name__ == '__main__':
         multiprocessing.set_start_method('spawn')
 
     parser = argparse.ArgumentParser()
+
+    # Inference args
     parser.add_argument("-t", "--task", type=str, help="The task to perform.", required=True)
     parser.add_argument("-st", "--subtask", type=str, help="The subtask of the task to perform.")
     parser.add_argument("-c", "--config", type=str, default='default',
@@ -59,22 +65,19 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--output_path", type=str, help="Path to the output folder.")
     parser.add_argument("-gt", "--ground_truth_path", type=str, help="Path to the ground truth data.")
     parser.add_argument("-aoi", "--aoi_path", type=str, help="Path to the area of interest (AOI) geopackage.")
+    
+    # Training args
+    parser.add_argument("-d", "--dataset", type=str, help="Path to the root folder of the dataset to use for training a model. Will override whatever is in the yaml config file.")
 
     args = parser.parse_args()
 
     task = args.task
     subtask = args.subtask
-    config_name_or_path = args.config
-    io_config_path = args.io_config_path
-    imagery_path = args.imagery_path
-    output_path = args.output_path
-    ground_truth_path = args.ground_truth_path
-    aoi_path = args.aoi_path
 
     if task == "pipeline":
-        pipeline_main()
+        pipeline_main(args)
     elif task == "train" and subtask == "detector":
-        train_detector_main()
+        train_detector_main(args)
     else:
         raise ValueError("Invalid task or subtask.")
 

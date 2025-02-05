@@ -69,7 +69,6 @@ class Trainer(SimpleTrainer):
             grad_scaler=None,
     ):
         super().__init__(model=model, data_loader=dataloader, optimizer=optimizer)
-
         unsupported = "AMPTrainer does not support single-process multi-device training!"
         if isinstance(model, DistributedDataParallel):
             assert not (model.device_ids and len(model.device_ids) > 1), unsupported
@@ -188,13 +187,14 @@ def do_test(cfg, model, eval_only=False):
                     print_csv_format(ema_ret)
                     ret.update(ema_ret)
 
-        ret_bbox = ret["bbox"]
-        wandb.log({"bbox/AP": ret_bbox["AP"]})
-        wandb.log({"bbox/AP50": ret_bbox["AP50"]})
-        wandb.log({"bbox/AP75": ret_bbox["AP75"]})
-        wandb.log({"bbox/APs": ret_bbox["APs"]})
-        wandb.log({"bbox/APm": ret_bbox["APm"]})
-        wandb.log({"bbox/APl": ret_bbox["APl"]})
+        if comm.is_main_process():
+            ret_bbox = ret["bbox"]
+            wandb.log({"bbox/AP": ret_bbox["AP"]})
+            wandb.log({"bbox/AP50": ret_bbox["AP50"]})
+            wandb.log({"bbox/AP75": ret_bbox["AP75"]})
+            wandb.log({"bbox/APs": ret_bbox["APs"]})
+            wandb.log({"bbox/APm": ret_bbox["APm"]})
+            wandb.log({"bbox/APl": ret_bbox["APl"]})
 
         return ret
 
@@ -294,7 +294,22 @@ def do_train(args, cfg):
     trainer.train(start_iter, cfg.train.max_iter)
 
 
+
 def train_detrex(config):
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_name = f"{config.model}_{now}"
+
+    launch(
+        _train_detrex_process,
+        torch.cuda.device_count(),
+        num_machines=1,
+        machine_rank=0,
+        dist_url="env://",
+        args=(config, model_name),
+    )
+
+
+def _train_detrex_process(config, model_name):
     print("Setting up datasets...")
     d2_train_datasets_names = register_multiple_detection_datasets(
         root_path=config.data_root_path,
@@ -312,14 +327,12 @@ def train_detrex(config):
         combine_datasets=True
     )
 
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = f"{config.model}_{now}"
     dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in d2_train_datasets_names])
     output_path = os.path.join(config.train_output_path, model_name)
-
     current_file_path = Path(__file__).resolve().parent
-    # cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py')
-    cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/dino-resnet/dino_r50_4scale_24ep.py')
+
+    cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/{config.architecture}')
+
     cfg.dataloader.train.dataset.names = d2_train_datasets_names[0]
     cfg.dataloader.test.dataset.names = d2_valid_datasets_names[0]
     cfg.dataloader.train.num_workers = config.dataloader_num_workers
@@ -335,6 +348,13 @@ def train_detrex(config):
     cfg.train.checkpointer.period = config.eval_epoch_interval * dataset_length // config.batch_size
     cfg.model.num_classes = config.num_classes
 
+    # Enable checkpointing in the transformer encoder, lowering memory consumption.
+    config["model"]["value"]["transformer"]["encoder"]["use_checkpoint"] = True
+    config["model"]["value"]["transformer"]["decoder"]["use_checkpoint"] = True
+
+    # Enable AMP (mixed-precision) in the training configuration.
+    config["train"]["value"]["amp"]["enabled"] = True
+
     if config.wandb_project is not None:
         cfg.train.wandb.enabled = True
         cfg.train.wandb.params.project = config.wandb_project
@@ -343,10 +363,35 @@ def train_detrex(config):
 
     pprint(lazyconfig_to_dict(cfg))
 
-    do_train(
-        default_argument_parser().parse_args([]),   # passing empty list to simulate empty command line arguments
-        cfg
+    args = default_argument_parser().parse_args([])
+    do_train(args, cfg)
+
+
+def setup_mila_cluster_ddp():
+    assert torch.distributed.is_available()
+    print("PyTorch Distributed available.")
+    print("  Backends:")
+    print(f"    Gloo: {torch.distributed.is_gloo_available()}")
+    print(f"    NCCL: {torch.distributed.is_nccl_available()}")
+    print(f"    MPI:  {torch.distributed.is_mpi_available()}")
+
+    # DDP Job is being run via `srun` on a slurm cluster.
+    rank = int(os.environ["SLURM_PROCID"]) if "SLURM_PROCID" in os.environ else 0
+    world_size = int(os.environ["SLURM_NTASKS"]) if "SLURM_NTASKS" in os.environ else 1
+
+    # SLURM var -> torch.distributed vars in case needed
+    # NOTE: Setting these values isn't exactly necessary, but some code might assume it's
+    # being run via torchrun or torch.distributed.launch, so setting these can be a good idea.
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+
+    torch.distributed.init_process_group(
+        backend="nccl",
+        init_method="env://",
+        world_size=world_size,
+        rank=rank,
     )
+    return rank, world_size
 
 
 def main(args):

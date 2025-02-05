@@ -1,0 +1,41 @@
+model: 'dino_detrex'
+architecture: 'dino-swin/dino_swin_large_384_5scale_36ep.py'
+checkpoint_path: '/home/mila/h/hugo.baudchon/CanopyRS/models/dino_swin_large_384_5scale_36ep.pth'
+batch_size: 8
+num_classes: 1
+box_predictions_per_image: null
+box_score_thresh: null
+box_nms_thresh: null
+
+# Training Data and Output path
+data_root_path: '/network/scratch/h/hugo.baudchon/data/tilerized/tilerized__False_2048_0p5_None_1p0'
+train_dataset_names: [
+   'brazil_zf2',
+   'ecuador_tiputini',
+   'panama_aguasalud',
+
+   'quebec_trees',
+   'quebec_plantations',
+
+   'unitedstates_neon',
+   'ecuador_reforestree',
+   'global_oamtcd',
+   'panama_bci50ha'
+   ]
+train_output_path: '/network/scratch/h/hugo.baudchon/training/detector'
+
+# Training Params
+#main_metric: 'mAP'
+seed: 0
+wandb_project: 'neurips_d&b_detector'
+lr: null
+max_epochs: 100
+freeze_layers: null
+train_log_interval: 10
+eval_epoch_interval: 1
+#grad_accumulation_steps: 1
+backbone_model_pretrained: null
+scheduler_epochs_steps: null
+scheduler_warmup_steps: null
+scheduler_gamma: null
+dataloader_num_workers: 4
