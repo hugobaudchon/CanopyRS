@@ -1,6 +1,6 @@
 # Training outputs
 wandb/
-models/
+pretrained_models/
 jobs/
 
 # Byte-compiled / optimized / DLL files
