@@ -209,62 +209,17 @@ class AugmentationAdder:
         Build a list of detectron2 augmentations (or custom augmentations)
         based on the parameters in cfg.AUGMENTATION.
         """
-        augs = []
-
-        # Conditional resize
-        augs.append(
-            ConditionalResize(min_size=cfg.AUGMENTATION.IMAGE_SIZE)
-        )
-
-        # Horizontal flip
-        if cfg.AUGMENTATION.FLIP_HORIZONTAL:
-            augs.append(RandomFlip(prob=0.5, horizontal=True, vertical=False))
-
-        # Vertical flip
-        if cfg.AUGMENTATION.FLIP_VERTICAL:
-            augs.append(RandomFlip(prob=0.5, horizontal=False, vertical=True))
-
-        # Random rotation (custom augmentation)
-        if cfg.AUGMENTATION.ROTATION:
-            augs.append(
-                RandomRotationWithProb(
-                    angle=cfg.AUGMENTATION.ROTATION,
-                    prob=cfg.AUGMENTATION.ROTATION_PROB
-                )
-            )
-
-        # Random brightness
-        if cfg.AUGMENTATION.BRIGHTNESS:
-            brightness_min = 1.0 - cfg.AUGMENTATION.BRIGHTNESS
-            brightness_max = 1.0 + cfg.AUGMENTATION.BRIGHTNESS
-            augs.append(RandomBrightness(intensity_min=brightness_min, intensity_max=brightness_max))
-
-        # Random contrast
-        if cfg.AUGMENTATION.CONTRAST:
-            contrast_min = 1.0 - cfg.AUGMENTATION.CONTRAST
-            contrast_max = 1.0 + cfg.AUGMENTATION.CONTRAST
-            augs.append(RandomContrast(intensity_min=contrast_min, intensity_max=contrast_max))
-
-        if cfg.AUGMENTATION.SATURATION:
-            saturation_min = 1.0 - cfg.AUGMENTATION.SATURATION
-            saturation_max = 1.0 + cfg.AUGMENTATION.SATURATION
-            augs.append(RandomSaturation(intensity_min=saturation_min, intensity_max=saturation_max))
-
-        # Random crop (custom) - SquareRandomCropWithBoxDiscard
-        augs.append(
-            SquareRandomCropWithBoxDiscard(
-                crop_range=cfg.AUGMENTATION.CROP_SIZE_RANGE,
-                min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO
-            )
-        )
-
-        # Resize to final, fixed size
-        augs.append(
-            ResizeShortestEdge(
-                short_edge_length=[cfg.AUGMENTATION.IMAGE_SIZE],
-                max_size=cfg.AUGMENTATION.IMAGE_SIZE,
-                sample_style="choice"
-            )
+        augs = AugmentationAdder._get_augmentation_list_train(
+            image_size=cfg.AUGMENTATION.IMAGE_SIZE,
+            flip_vertical=cfg.AUGMENTATION.FLIP_VERTICAL,
+            flip_horizontal=cfg.AUGMENTATION.FLIP_HORIZONTAL,
+            rotation=cfg.AUGMENTATION.ROTATION,
+            rotation_prob=cfg.AUGMENTATION.ROTATION_PROB,
+            brightness=cfg.AUGMENTATION.BRIGHTNESS,
+            contrast=cfg.AUGMENTATION.CONTRAST,
+            saturation=cfg.AUGMENTATION.SATURATION,
+            crop_size_range=cfg.AUGMENTATION.CROP_SIZE_RANGE,
+            crop_min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO
         )
 
         return augs
@@ -274,98 +229,145 @@ class AugmentationAdder:
         """
         Build the test-time augmentation. Typically just a fixed resize.
         """
-        return [
-            ResizeShortestEdge(
-                short_edge_length=[cfg.AUGMENTATION.IMAGE_SIZE],
-                max_size=cfg.AUGMENTATION.IMAGE_SIZE,
-                sample_style="choice"
-            )
-        ]
+        augs = AugmentationAdder._get_augmentation_list_test(
+            image_size=cfg.AUGMENTATION.IMAGE_SIZE
+        )
+
+        return augs
 
     @staticmethod
     def get_augmentation_detrex_train(config: DetectorConfig):
-        new_augmentations = []
-
-        # Resize small images
-        new_augmentations.append(
-            f"{{'_target_': 'engine.models.detector.detectron2.augmentation.ConditionalResize',"
-            f" 'min_size': {config.augmentation_image_size}}}"
+        augs = AugmentationAdder._get_augmentation_list_train(
+            image_size=config.augmentation_image_size,
+            flip_vertical=config.augmentation_flip_vertical,
+            flip_horizontal=config.augmentation_flip_horizontal,
+            rotation=config.augmentation_rotation,
+            rotation_prob=config.augmentation_rotation_prob,
+            brightness=config.augmentation_brightness,
+            contrast=config.augmentation_contrast,
+            saturation=config.augmentation_saturation,
+            crop_size_range=config.augmentation_train_crop_size_range,
+            crop_min_intersection_ratio=config.augmentation_crop_min_intersection_ratio
         )
 
-        # Horizontal flip
-        if config.augmentation_flip_horizontal:
-            new_augmentations.append(
-                f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.RandomFlip',"
-                f" 'horizontal': True,"
-                f" 'vertical': False,"
-                f" 'prob': 0.5}}"
-            )
-
-        # Vertical flip
-        if config.augmentation_flip_vertical:
-            new_augmentations.append(
-                f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.RandomFlip',"
-                f" 'horizontal': False,"
-                f" 'vertical': True,"
-                f" 'prob': 0.5}}"
-            )
-
-        # Random rotation
-        if config.augmentation_rotation:
-            new_augmentations.append(
-                f"{{'_target_': 'engine.models.detector.detectron2.augmentation.RandomRotationWithProb',"
-                f" 'angle': {config.augmentation_rotation},"
-                f" 'prob': {config.augmentation_rotation_prob}}}"
-            )
-
-        # Random brightness
-        if config.augmentation_brightness:
-            new_augmentations.append(
-                f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.RandomBrightness',"
-                f" 'intensity_min': {1.0 - config.augmentation_brightness},"
-                f" 'intensity_max': {1.0 + config.augmentation_brightness}}}"
-            )
-
-        # Random contrast
-        if config.augmentation_contrast:
-            new_augmentations.append(
-                f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.RandomContrast',"
-                f" 'intensity_min': {1.0 - config.augmentation_contrast},"
-                f" 'intensity_max': {1.0 + config.augmentation_contrast}}}"
-            )
-
-        # Random saturation
-        if config.augmentation_saturation:
-            new_augmentations.append(
-                f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.RandomSaturation',"
-                f" 'intensity_min': {1.0 - config.augmentation_saturation},"
-                f" 'intensity_max': {1.0 + config.augmentation_saturation}}}"
-            )
-
-        # Random crop
-        new_augmentations.append(
-            f"{{'_target_': 'engine.models.detector.detectron2.augmentation.SquareRandomCropWithBoxDiscard',"
-            f" 'crop_range': {config.augmentation_train_crop_size_range},"
-            f" 'min_intersection_ratio': {config.augmentation_crop_min_intersection_ratio}}}"
-        )
-
-        # Resize to a final, fixed size
-        new_augmentations.append(
-            f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.ResizeShortestEdge',"
-            f" 'short_edge_length': [{config.augmentation_image_size}],"
-            f" 'max_size': {config.augmentation_image_size},"
-            f" 'sample_style': 'choice'}}"
-        )
-
-        return new_augmentations
+        return augs
 
     @staticmethod
     def get_augmentation_detrex_test(config: DetectorConfig):
         # Resize to a final, fixed size
-        new_augmentations = [
-            f"{{'_target_': 'detectron2.data.transforms.augmentation_impl.ResizeShortestEdge',"
-            f" 'short_edge_length': [{config.augmentation_image_size}],"
-            f" 'max_size': {config.augmentation_image_size},"
-            f" 'sample_style': 'choice'}}"
+        augs = AugmentationAdder._get_augmentation_list_test(
+            image_size=config.augmentation_image_size
+        )
+
+        return augs
+
+    @staticmethod
+    def _get_augmentation_list_train(
+            image_size: int,
+            flip_vertical: bool,
+            flip_horizontal: bool,
+            rotation: float,
+            rotation_prob: float,
+            brightness: float,
+            contrast: float,
+            saturation: float,
+            crop_size_range: tuple or list,
+            crop_min_intersection_ratio: float,
+    ):
+        """
+        Build a list of Detectron2 augmentations based on the given parameters.
+
+        Args:
+            image_size (int): minimum size used for ConditionalResize and final ResizeShortestEdge.
+            flip_vertical (bool): if True, applies RandomFlip( vertical=True ).
+            flip_horizontal (bool): if True, applies RandomFlip( horizontal=True ).
+            rotation (float): if non-zero, range of angles (e.g., [-rotation, rotation]) for random rotation.
+            rotation_prob (float): probability of applying the random rotation.
+            brightness (float): amount for RandomBrightness (e.g., 0.2 means ±20%).
+            contrast (float): amount for RandomContrast (e.g., 0.2 means ±20%).
+            saturation (float): amount for RandomSaturation (e.g., 0.2 means ±20%).
+            crop_size_range (tuple or list): (min_side, max_side) range for SquareRandomCropWithBoxDiscard.
+            crop_min_intersection_ratio (float): ratio threshold to keep boxes that partially fall outside the crop.
+
+        Returns:
+            list[Augmentation]: a list of Detectron2-compatible augmentation objects.
+        """
+        augs = []
+
+        # 1) Conditional resize
+        augs.append(
+            ConditionalResize(min_size=image_size)
+        )
+
+        # 2) Horizontal flip
+        if flip_horizontal:
+            augs.append(RandomFlip(prob=0.5, horizontal=True, vertical=False))
+
+        # 3) Vertical flip
+        if flip_vertical:
+            augs.append(RandomFlip(prob=0.5, horizontal=False, vertical=True))
+
+        # 4) Random rotation (custom augmentation)
+        #    If rotation is non-zero, we apply a random rotation from [-rotation, rotation].
+        if rotation:
+            # e.g., angle = [-rotation, rotation]
+            angle_range = (-rotation, rotation)
+            augs.append(
+                RandomRotationWithProb(angle=angle_range, prob=rotation_prob)
+            )
+
+        # 5) Random brightness
+        if brightness:
+            brightness_min = 1.0 - brightness
+            brightness_max = 1.0 + brightness
+            augs.append(RandomBrightness(intensity_min=brightness_min, intensity_max=brightness_max))
+
+        # 6) Random contrast
+        if contrast:
+            contrast_min = 1.0 - contrast
+            contrast_max = 1.0 + contrast
+            augs.append(RandomContrast(intensity_min=contrast_min, intensity_max=contrast_max))
+
+        # 7) Random saturation
+        if saturation:
+            saturation_min = 1.0 - saturation
+            saturation_max = 1.0 + saturation
+            augs.append(RandomSaturation(intensity_min=saturation_min, intensity_max=saturation_max))
+
+        # 8) Random crop (custom) - SquareRandomCropWithBoxDiscard
+        augs.append(
+            SquareRandomCropWithBoxDiscard(
+                crop_range=crop_size_range,
+                min_intersection_ratio=crop_min_intersection_ratio
+            )
+        )
+
+        # 9) Resize to final, fixed size
+        augs.append(
+            ResizeShortestEdge(
+                short_edge_length=[image_size],
+                max_size=image_size,
+                sample_style="choice"
+            )
+        )
+
+        return augs
+
+    @staticmethod
+    def _get_augmentation_list_test(image_size: int):
+        """
+        Build a list of Detectron2 augmentations for test-time based on the given parameters.
+
+        Args:
+            image_size (int): final image size for resizing.
+
+        Returns:
+            list[Augmentation]: a list of Detectron2-compatible augmentation objects.
+        """
+        return [
+            ResizeShortestEdge(
+                short_edge_length=[image_size],
+                max_size=image_size,
+                sample_style="choice"
+            )
         ]
-        return new_augmentations
