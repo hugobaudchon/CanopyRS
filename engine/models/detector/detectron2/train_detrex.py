@@ -47,6 +47,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 # from detrex.utils import WandbWriter
 from detrex.modeling import ema
+from engine.models.detector.detectron2.augmentation import AugmentationAdder
 from engine.models.detector.detectron2.dataset import register_multiple_detection_datasets
 from engine.models.detector.detectron2.hook import WandbWriterHook
 from engine.models.detector.detectron2.utils import lazyconfig_to_dict
@@ -348,12 +349,18 @@ def _train_detrex_process(config, model_name):
     cfg.train.checkpointer.period = config.eval_epoch_interval * dataset_length // config.batch_size
     cfg.model.num_classes = config.num_classes
 
+    # Custom Augmentations
+    augmentation_adder = AugmentationAdder()
+    config["dataloader"]["value"]["train"]["mapper"]["augmentation"] = augmentation_adder.get_augmentation_detrex_train(config)
+    config["dataloader"]["value"]["train"]["mapper"]["augmentation_with_crop"] = None   # cropping will always be performed, so just setting it once
+    config["dataloader"]["value"]["test"]["mapper"]["augmentation"] = augmentation_adder.get_augmentation_detrex_test(config)
+
     # Enable checkpointing in the transformer encoder, lowering memory consumption.
-    config["model"]["value"]["transformer"]["encoder"]["use_checkpoint"] = True
-    config["model"]["value"]["transformer"]["decoder"]["use_checkpoint"] = True
+    config["model"]["value"]["transformer"]["encoder"]["use_checkpoint"] = config.use_gradient_checkpointing
+    config["model"]["value"]["transformer"]["decoder"]["use_checkpoint"] = config.use_gradient_checkpointing
 
     # Enable AMP (mixed-precision) in the training configuration.
-    config["train"]["value"]["amp"]["enabled"] = True
+    config["train"]["value"]["amp"]["enabled"] = config.use_amp
 
     if config.wandb_project is not None:
         cfg.train.wandb.enabled = True

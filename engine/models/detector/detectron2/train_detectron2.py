@@ -1,10 +1,9 @@
-from collections.abc import Mapping
 from datetime import datetime
 from typing import List
 
 import wandb
 
-from detectron2.data import DatasetCatalog
+from detectron2.data import DatasetCatalog, build_detection_train_loader, DatasetMapper, build_detection_test_loader
 from detectron2.evaluation import COCOEvaluator
 from detectron2.engine import DefaultTrainer
 from detectron2.config import get_cfg
@@ -12,6 +11,7 @@ from detectron2.model_zoo import model_zoo
 import os
 
 from engine.config_parsers import DetectorConfig
+from engine.models.detector.detectron2.augmentation import AugmentationAdder
 from engine.models.detector.detectron2.dataset import register_multiple_detection_datasets
 from engine.models.detector.detectron2.hook import WandbWriterHook
 
@@ -27,9 +27,29 @@ class TrainerWithValidation(DefaultTrainer):
             dataset_name,
             output_dir=output_folder
         )
-        # evaluator._max_dets_per_image = [10, 100, cfg.TEST.DETECTIONS_PER_IMAGE]
-        evaluator._max_dets_per_image = [1, 10, 100]        # TODO for now just using basic COCO metrics
         return evaluator
+
+    @classmethod
+    def build_train_loader(cls, cfg):
+        return build_detection_train_loader(
+            cfg,
+            mapper=DatasetMapper(
+                cfg,
+                augmentations=AugmentationAdder().get_augmentation_detectron2_train(cfg),   # Using my custom augmentations here
+                is_train=True)
+        )
+
+    @classmethod
+    def build_test_loader(cls, cfg, dataset_name):
+        return build_detection_test_loader(
+            cfg,
+            dataset_name,
+            mapper=DatasetMapper(
+                cfg,
+                augmentations=AugmentationAdder().get_augmentation_detectron2_test(cfg),   # Using my custom augmentations here
+                is_train=False
+            )
+        )
 
     @classmethod
     def test(cls, cfg, model, evaluators=None):
@@ -109,6 +129,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     cfg.SOLVER.LOG_PERIOD = config.train_log_interval
     # cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = config.num_classes
+    cfg.SOLVER.AMP.ENABLED = config.use_amp
 
     if config.scheduler_epochs_steps is not None:
         steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]

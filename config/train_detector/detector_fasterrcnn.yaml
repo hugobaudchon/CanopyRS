@@ -28,6 +28,18 @@ train_output_path: '/network/scratch/h/hugo.baudchon/data/tilerized/tilerized__F
 #main_metric: 'mAP'
 lr: 1e-4
 wandb_project: 'neurips_d&b_detector'
+
+augmentation_image_size: 1024     # Final image size for both training and evaluation
+augmentation_train_crop_size_range: [784, 2048]
+augmentation_crop_min_intersection_ratio: 0.5
+augmentation_flip_horizontal: True
+augmentation_flip_vertical: True
+augmentation_rotation: 30
+augmentation_rotation_prob: 0.5
+augmentation_contrast: 0.2
+augmentation_brightness: 0.2
+augmentation_saturation: 0.2
+
 max_epochs: 100
 freeze_layers: 2
 train_log_interval: 10
@@ -38,3 +50,6 @@ scheduler_epochs_steps: [20, 40, 60]
 scheduler_warmup_steps: 1000
 scheduler_gamma: 0.1
 dataloader_num_workers: 4
+
+use_gradient_checkpointing: null
+use_amp: true

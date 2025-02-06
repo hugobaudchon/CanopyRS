@@ -25,6 +25,18 @@ class DetectorConfig(BaseConfig):
     main_metric: str = 'mAP'            # TODO add support for this
     seed: int = 42
     wandb_project: Optional[str] = None
+
+    augmentation_image_size: int = 1024     # Final image size for both training and evaluation
+    augmentation_train_crop_size_range: List[int] = [784, 2048]
+    augmentation_crop_min_intersection_ratio: float = 0.5
+    augmentation_flip_horizontal: bool = True
+    augmentation_flip_vertical: bool = True
+    augmentation_rotation: float = 30
+    augmentation_rotation_prob: float = 0.5
+    augmentation_contrast: float = 0.2
+    augmentation_brightness: float = 0.2
+    augmentation_saturation: float = 0.2
+
     lr: Optional[float] = 1e-4
     max_epochs: int = 100
     freeze_layers: Optional[int] = -1
@@ -36,3 +48,5 @@ class DetectorConfig(BaseConfig):
     scheduler_gamma: Optional[float] = 0.9
     scheduler_warmup_steps: Optional[int] = 1000
     dataloader_num_workers: int = 4
+    use_gradient_checkpointing: Optional[bool] = False  # Used for detrex training
+    use_amp: bool = True        # Automatic Mixed Precision
