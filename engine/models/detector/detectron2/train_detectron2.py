@@ -106,11 +106,11 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     cfg = get_cfg()
 
     # Load base configs for Faster R-CNN
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
+    cfg.merge_from_file(model_zoo.get_config_file(config.architecture))
 
     # Load pre-trained model weights
     if config.backbone_model_pretrained:
-        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml")
+        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config.architecture)
 
     if config.checkpoint_path is not None:
         cfg.MODEL.WEIGHTS = config.checkpoint_path
@@ -123,8 +123,11 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
 
     # Training config
     cfg.DATALOADER.NUM_WORKERS = config.dataloader_num_workers
+    print(f"Changing batch size from {cfg.SOLVER.IMS_PER_BATCH} to {config.batch_size}.")
     cfg.SOLVER.IMS_PER_BATCH = config.batch_size  # This is the real "batch size"
+    print(f"Changing base learning rate from {cfg.SOLVER.BASE_LR} to {config.lr}.")
     cfg.SOLVER.BASE_LR = config.lr
+    print(f"Changing scheduler gamma from {cfg.SOLVER.GAMMA} to {config.scheduler_gamma}.")
     cfg.SOLVER.MAX_ITER = config.max_epochs * dataset_length // config.batch_size
     cfg.SOLVER.LOG_PERIOD = config.train_log_interval
     # cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
@@ -150,6 +153,9 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     if config.box_nms_thresh is not None:
         print(f"Changing box NMS threshold from {cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST} to {config.box_nms_thresh}.")
         cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = config.box_nms_thresh
+
+    # Augmentations
+    AugmentationAdder().modify_detectron2_augmentation_config(config, cfg)
 
     # Evaluation config
     cfg.TEST.EVAL_PERIOD = config.eval_epoch_interval * dataset_length // config.batch_size

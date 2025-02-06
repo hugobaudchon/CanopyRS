@@ -1,7 +1,7 @@
 model: 'dino_detrex'
 architecture: 'dino-resnet/dino_r50_4scale_24ep.py'
-checkpoint_path: '/home/mila/h/hugo.baudchon/CanopyRS/models/dino_r50_4scale_24ep.pth'
-batch_size: 8
+checkpoint_path: '/home/mila/h/hugo.baudchon/CanopyRS/pretrained_models/dino_r50_4scale_24ep.pth'
+batch_size: 16
 num_classes: 1
 box_predictions_per_image: null
 box_score_thresh: null

@@ -1,6 +1,7 @@
 model: 'dino_detrex'
 architecture: 'dino-swin/dino_swin_large_384_5scale_36ep.py'
-checkpoint_path: '/home/mila/h/hugo.baudchon/CanopyRS/models/dino_swin_large_384_5scale_36ep.pth'
+checkpoint_path: '/home/mila/h/hugo.baudchon/CanopyRS/pretrained_models/dino_swin_large_384_5scale_36ep.pth'
+# checkpoint_path: '/network/scratch/h/hugo.baudchon/training/detector/dino_detrex_20250206_023506/model_0006239.pth'
 batch_size: 8
 num_classes: 1
 box_predictions_per_image: null

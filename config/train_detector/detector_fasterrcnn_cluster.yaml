@@ -1,32 +1,32 @@
 model: 'faster_rcnn_detectron2'
 architecture: 'COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml'
 checkpoint_path: null
-batch_size: 8
+batch_size: 16
 num_classes: 1
 box_predictions_per_image: 500
 box_score_thresh: 0.05
 box_nms_thresh: 0.5
 
 # Training Data and Output path
-data_root_path: '/mnt/disk2/Data/tilerized'
+data_root_path: '/network/scratch/h/hugo.baudchon/data/tilerized/tilerized__False_2048_0p5_None_1p0'
 train_dataset_names: [
    'brazil_zf2',
    'ecuador_tiputini',
    'panama_aguasalud',
 
-   # 'quebec_trees',
-   # 'quebec_plantations',
+   'quebec_trees',
+   'quebec_plantations',
 
-   # 'unitedstates_neon',
-   # 'ecuador_reforestree',
-   # 'global_oamtcd',
-   # 'panama_bci50ha'
+   'unitedstates_neon',
+   'ecuador_reforestree',
+   'global_oamtcd',
+   'panama_bci50ha'
    ]
-train_output_path: '/network/scratch/h/hugo.baudchon/data/tilerized/tilerized__False_2048_0p5_None_1p0'
+train_output_path: '/network/scratch/h/hugo.baudchon/training/detector'
 
 # Training Params
 #main_metric: 'mAP'
-lr: 1e-4
+lr: 1e-3
 wandb_project: 'neurips_d&b_detector'
 
 augmentation_image_size: 1024     # Final image size for both training and evaluation

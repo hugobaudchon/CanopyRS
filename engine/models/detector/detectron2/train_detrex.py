@@ -351,16 +351,16 @@ def _train_detrex_process(config, model_name):
 
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()
-    config["dataloader"]["value"]["train"]["mapper"]["augmentation"] = augmentation_adder.get_augmentation_detrex_train(config)
-    config["dataloader"]["value"]["train"]["mapper"]["augmentation_with_crop"] = None   # cropping will always be performed, so just setting it once
-    config["dataloader"]["value"]["test"]["mapper"]["augmentation"] = augmentation_adder.get_augmentation_detrex_test(config)
+    cfg.dataloader.train.mapper.augmentation = augmentation_adder.get_augmentation_detrex_train(config)
+    cfg.dataloader.train.mapper.augmentation_with_crop = None   # cropping will always be performed, so just setting it once
+    cfg.dataloader.test.mapper.augmentation = augmentation_adder.get_augmentation_detrex_test(config)
 
     # Enable checkpointing in the transformer encoder, lowering memory consumption.
-    config["model"]["value"]["transformer"]["encoder"]["use_checkpoint"] = config.use_gradient_checkpointing
-    config["model"]["value"]["transformer"]["decoder"]["use_checkpoint"] = config.use_gradient_checkpointing
+    cfg.model.transformer.encoder.use_checkpoint = config.use_gradient_checkpointing
+    cfg.model.transformer.decoder.use_checkpoint = config.use_gradient_checkpointing
 
     # Enable AMP (mixed-precision) in the training configuration.
-    config["train"]["value"]["amp"]["enabled"] = config.use_amp
+    cfg.train.amp.enabled = config.use_amp
 
     if config.wandb_project is not None:
         cfg.train.wandb.enabled = True
