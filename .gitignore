@@ -1,3 +1,8 @@
+# Training outputs
+wandb/
+models/
+jobs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
