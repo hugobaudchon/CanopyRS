@@ -38,8 +38,7 @@ class WandbWriterHook(HookBase):
             if "total_loss" in metrics:
                 log_data["total_loss"] = metrics["total_loss"][0]
 
-            # Log learning rate from the first optimizer parameter group (adjust if you have multiple groups)
-            lr = self.trainer.optimizer.param_groups[0]["lr"]
+            lr = self.trainer.storage.history("lr").latest()
             log_data["learning_rate"] = lr
 
             wandb.log(log_data, step=self.trainer.iter)
