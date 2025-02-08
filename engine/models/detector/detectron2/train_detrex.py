@@ -364,6 +364,10 @@ def _train_detrex_process(config, model_name):
         if len(cfg.lr_multiplier.value.scheduler.milestones) != len(cfg.lr_multiplier.value.scheduler.values):
             raise ValueError("Number of steps and values in the scheduler must be equal."
                              " If you changed scheduler_epochs_steps, you should probably also input scheduler_gamma.")
+    if config.scheduler_warmup_steps:
+        warmup_length = config.scheduler_warmup_steps / cfg.train.max_iter
+        print(f"Changing scheduler warmup length from {cfg.lr_multiplier.value.warmup_iters} to {warmup_length}.")
+        cfg.lr_multiplier.value.warmup_length = warmup_length
 
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()
