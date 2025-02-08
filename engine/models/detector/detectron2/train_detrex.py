@@ -354,20 +354,20 @@ def _train_detrex_process(config, model_name):
         cfg.optimizer.params.lr = config.lr
     if config.scheduler_epochs_steps:
         steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
-        print(f"Changing scheduler steps from {cfg.lr_multiplier.value.scheduler.milestones} to {steps}.")
-        cfg.lr_multiplier.value.scheduler.milestones = steps
+        print(f"Changing scheduler steps from {cfg.lr_multiplier.scheduler.milestones} to {steps}.")
+        cfg.lr_multiplier.scheduler.milestones = steps
     if config.scheduler_gamma:
-        values = [config.scheduler_gamma ** i for i in range(len(cfg.lr_multiplier.value.scheduler.milestones))]
-        print(f"Changing scheduler values steps from {cfg.lr_multiplier.value.scheduler.gamma} to {config.scheduler_gamma}.")
-        cfg.lr_multiplier.value.scheduler.values = values
+        values = [config.scheduler_gamma ** i for i in range(len(cfg.lr_multiplier.scheduler.milestones))]
+        print(f"Changing scheduler values steps from {cfg.lr_multiplier.scheduler.values} to {values}.")
+        cfg.lr_multiplier.scheduler.values = values
     else:
-        if len(cfg.lr_multiplier.value.scheduler.milestones) != len(cfg.lr_multiplier.value.scheduler.values):
+        if len(cfg.lr_multiplier.scheduler.milestones) != len(cfg.lr_multiplier.scheduler.values):
             raise ValueError("Number of steps and values in the scheduler must be equal."
                              " If you changed scheduler_epochs_steps, you should probably also input scheduler_gamma.")
     if config.scheduler_warmup_steps:
         warmup_length = config.scheduler_warmup_steps / cfg.train.max_iter
-        print(f"Changing scheduler warmup length from {cfg.lr_multiplier.value.warmup_iters} to {warmup_length}.")
-        cfg.lr_multiplier.value.warmup_length = warmup_length
+        print(f"Changing scheduler warmup length from {cfg.lr_multiplier.warmup_length} to {warmup_length}.")
+        cfg.lr_multiplier.warmup_length = warmup_length
 
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()

@@ -45,7 +45,7 @@ class DetectorConfig(BaseConfig):
     grad_accumulation_steps: int = 1
     backbone_model_pretrained: Optional[bool] = True
     scheduler_epochs_steps: Optional[List[int]] = [10, 20, 30]
-    scheduler_gamma: Optional[float] = 0.9
+    scheduler_gamma: Optional[float] = 0.1
     scheduler_warmup_steps: Optional[int] = 1000
     dataloader_num_workers: int = 4
     use_gradient_checkpointing: Optional[bool] = False  # Used for detrex training
