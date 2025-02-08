@@ -349,6 +349,22 @@ def _train_detrex_process(config, model_name):
     cfg.train.checkpointer.period = config.eval_epoch_interval * dataset_length // config.batch_size
     cfg.model.num_classes = config.num_classes
 
+    if config.lr:
+        print(f"Changing base learning rate from {cfg.optimizer.params.lr} to {config.lr}.")
+        cfg.optimizer.params.lr = config.lr
+    if config.scheduler_epochs_steps:
+        steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
+        print(f"Changing scheduler steps from {cfg.lr_multiplier.value.scheduler.milestones} to {steps}.")
+        cfg.lr_multiplier.value.scheduler.milestones = steps
+    if config.scheduler_gamma:
+        values = [config.scheduler_gamma ** i for i in range(len(cfg.lr_multiplier.value.scheduler.milestones))]
+        print(f"Changing scheduler values steps from {cfg.lr_multiplier.value.scheduler.gamma} to {config.scheduler_gamma}.")
+        cfg.lr_multiplier.value.scheduler.values = values
+    else:
+        if len(cfg.lr_multiplier.value.scheduler.milestones) != len(cfg.lr_multiplier.value.scheduler.values):
+            raise ValueError("Number of steps and values in the scheduler must be equal."
+                             " If you changed scheduler_epochs_steps, you should probably also input scheduler_gamma.")
+
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()
     cfg.dataloader.train.mapper.augmentation = augmentation_adder.get_augmentation_detrex_train(config)
