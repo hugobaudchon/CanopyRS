@@ -2,7 +2,8 @@ from typing import List
 
 import torch
 from detectron2.config import instantiate
-from detectron2.data.transforms import AugmentationList, AugInput
+from detectron2.data.transforms import AugmentationList, AugInput, ResizeShortestEdge
+from detectron2.modeling import build_model
 from detrex.checkpoint import DetectionCheckpointer as DetrexDetectionCheckpointer
 from detectron2.checkpoint import DetectionCheckpointer as Detectron2DetectionCheckpointer
 from torch import Tensor
@@ -12,9 +13,10 @@ from engine.models.detector.detector_base import DetectorWrapperBase
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
 from engine.models.detector.train_detectron2.train_detectron2 import get_base_detectron2_model_cfg
 from engine.models.detector.train_detectron2.train_detrex import get_base_detrex_model_cfg
+from engine.models.segmenter.detectree2 import setup_detectree2_cfg
 
 
-class Detectron2PredictorWrapper(DetectorWrapperBase):
+class Detectron2DetectorWrapper(DetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
         super().__init__(config)
 
@@ -24,9 +26,16 @@ class Detectron2PredictorWrapper(DetectorWrapperBase):
             self.model.eval()
             checkpointer = Detectron2DetectionCheckpointer(self.model)
             checkpointer.load(cfg.MODEL.WEIGHTS)
-            # Instantiate the augmentations from the config
             self.aug = AugmentationList(AugmentationAdder().get_augmentation_detectron2_test(cfg))
-            self.input_format = cfg.input.format
+            self.input_format = cfg.INPUT.FORMAT
+        elif self.config.model == 'detectree2':
+            cfg = setup_detectree2_cfg(base_model=self.config.architecture, update_model=self.config.checkpoint_path)
+            self.model = build_model(cfg)
+            self.model.eval()
+            checkpointer = Detectron2DetectionCheckpointer(self.model)
+            checkpointer.load(cfg.MODEL.WEIGHTS)
+            self.aug = ResizeShortestEdge([cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST)
+            self.input_format = cfg.INPUT.FORMAT
         elif self.config.model.endswith('detrex'):
             cfg = get_base_detrex_model_cfg(self.config)
             self.model = instantiate(cfg.model)

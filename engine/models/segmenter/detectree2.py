@@ -1,9 +1,14 @@
+import json
+import pickle
 import random
+from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 from albumentations import ImageOnlyTransform
+from detectron2.config import get_cfg
+from detectron2.model_zoo import model_zoo
 from geodataset.dataset import UnlabeledRasterDataset
 import multiprocessing
 import albumentations as A
@@ -12,122 +17,127 @@ from matplotlib import pyplot as plt
 from engine.config_parsers import SegmenterConfig
 from engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 
-class ConvertRGB2BGR(ImageOnlyTransform):
-    def apply(self, img, **params):
-        # Albumentations calls apply(...) with (img, rows=..., cols=..., etc.)
-        return img[..., ::-1]
+def load_class_mapping(file_path: str):
+    """Function to load class-to-index mapping from a file.
+    -> Taken from https://github.com/PatBall1/detectree2
 
-def collate_fn(single_image_batch):
-    return single_image_batch[0]
+    Args:
+        file_path: Path to the file (json or pickle)
 
-class Detectree2TracedWrapper(SegmenterWrapperBase):
-    REQUIRES_BOX_PROMPT = False
+    Returns:
+        class_to_idx: Loaded class-to-index mapping
+    """
+    file_ext = Path(file_path).suffix
 
-    infer_transform = A.Compose([
-        # A.SmallestMaxSize(max_size=800, interpolation=cv2.INTER_LINEAR),
-        # A.LongestMaxSize(max_size=1333, interpolation=cv2.INTER_LINEAR),
-        ConvertRGB2BGR(),      # RGB to BGR
-    ])
-    detectree2_means = [103.53 / 255.0, 116.28 / 255.0, 123.675 / 255.0]
-    detectree2_stds = [1.0, 1.0, 1.0]
+    if file_ext == '.json':
+        with open(file_path, 'r') as f:
+            class_to_idx = json.load(f)
+    elif file_ext == '.pkl':
+        with open(file_path, 'rb') as f:
+            class_to_idx = pickle.load(f)
+    else:
+        raise ValueError("Unsupported file format. Use '.json' or '.pkl'.")
 
-    def __init__(self, config: SegmenterConfig):
-        super().__init__(config)
+    return class_to_idx
 
-        # Load SAM model and processor
-        print(f"Loading model {self.config.model}")
-        self.model = torch.jit.load('/home/hugo/PycharmProjects/detectree2/230103_randresize_full_traced_cuda.pt')    # TODO change this path
-        self.model.to(self.device)
-        self.model.eval()
-        print(f"Model {self.config.model} loaded")
+def setup_detectree2_cfg(
+    base_model: str = "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml",
+    trains=("trees_train",),
+    tests=("trees_val",),
+    update_model=None,
+    workers=2,
+    ims_per_batch=2,
+    gamma=0.1,
+    backbone_freeze=3,
+    warm_iter=120,
+    momentum=0.9,
+    batch_size_per_im=1024,
+    base_lr=0.0003389,
+    weight_decay=0.001,
+    max_iter=1000,
+    eval_period=100,
+    resize="fixed",    # "fixed" or "random" or "rand_fixed"
+    imgmode="rgb",
+    num_bands=3,
+    class_mapping_file=None,
+):
+    """Set up config object # noqa: D417.
+    -> Taken from https://github.com/PatBall1/detectree2
 
-    def infer_image(self,
-                    image: np.array,
-                    boxes: np.array,
-                    tile_idx: int,
-                    queue: multiprocessing.JoinableQueue):
-        original_image = image[:3, :, :].copy()  # Keep a copy for visualization
-        image = image[:3, :, :]
-        # image = image.transpose((1, 2, 0))
-        image = (image * 255).astype(np.uint8)
-        for c in range(3):
-            image[c] = (image[c] - self.detectree2_means[c]) / self.detectree2_stds[c]
+    Args:
+        base_model: base pre-trained model from detectron2 model_zoo
+        trains: names of registered data to use for training
+        tests: names of registered data to use for evaluating models
+        update_model: updated pre-trained model from detectree2 model_garden
+        workers: number of workers for dataloader
+        ims_per_batch: number of images per batch
+        gamma: gamma for learning rate scheduler
+        backbone_freeze: backbone layer to freeze
+        warm_iter: number of iterations for warmup
+        momentum: momentum for optimizer
+        batch_size_per_im: batch size per image
+        base_lr: base learning rate
+        weight_decay: weight decay for optimizer
+        max_iter: maximum number of iterations
+        num_classes: number of classes
+        eval_period: number of iterations between evaluations
+        out_dir: directory to save outputs
+        resize: resize strategy for images
+        imgmode: image mode (rgb or multispectral)
+        num_bands: number of bands in the image
+        class_mapping_file: path to class mapping file
+    """
 
-        with torch.no_grad():
-            image = torch.from_numpy(image).float()
-            outputs = self.model(image)
-            bboxes, class_indices, mask_logits, scores, image_size = outputs
-            # print(bboxes.shape, class_indices.shape, mask_logits.shape, scores.shape, image_size)
-            bboxes = bboxes.cpu().numpy()
-            # print(bboxes)
-            class_indices = class_indices.cpu().numpy()
-            mask_logits = mask_logits.cpu().numpy().astype(np.uint8)
-            scores = scores.cpu().numpy()
-            image_size = (image_size[0].item(), image_size[1].item())
-            print(image_size)
-            # print(mask_logits.shape, mask_logits.dtype)
-            # print(scores)
-            # Debug: Display the image and one random mask using Matplotlib
-            # Debug: Display the image and one random mask using Matplotlib
-            # if mask_logits.shape[0] > 0:
-            #     selected_mask = mask_logits[0]
-            #
-            #     # Debug: Inspect the selected mask
-            #     print(f"Selected mask shape: {selected_mask.shape}")
-            #     print(f"Selected mask unique values: {np.unique(selected_mask)}")
-            #
-            #     # Resize mask to match the original image size if necessary
-            #     mask_resized = cv2.resize(selected_mask, (image_size[1], image_size[0]),
-            #                               interpolation=cv2.INTER_NEAREST)
-            #     mask_binary = (mask_resized > 0).astype(np.uint8)  # Binary mask
-            #
-            #     # Debug: Inspect the resized mask
-            #     print(f"Resized mask shape: {mask_resized.shape}")
-            #     print(f"Resized mask unique values: {np.unique(mask_resized)}")
-            #
-            #     # Convert original image to HWC and RGB for Matplotlib
-            #     display_image = original_image.transpose(1, 2, 0)
-            #     display_image = (display_image * 255).astype(np.uint8)
-            #
-            #     # Debug: Inspect the display image
-            #     print(f"Display image shape: {display_image.shape}")
-            #     print(f"Display image dtype: {display_image.dtype}")
-            #
-            #     # Create a colormap for the mask
-            #     cmap = plt.cm.jet  # You can choose other colormaps like 'viridis', 'hot', etc.
-            #
-            #     # Create a figure with two subplots side by side
-            #     fig, axes = plt.subplots(1, 2, figsize=(20, 10))
-            #
-            #     # First subplot: Original Image
-            #     axes[0].imshow(display_image)
-            #     axes[0].set_title("Original Image")
-            #     axes[0].axis('off')
-            #
-            #     # Second subplot: Image with Mask
-            #     axes[1].imshow(display_image)
-            #     # Overlay the mask with transparency
-            #     axes[1].imshow(mask_binary, alpha=0.5, cmap=cmap)
-            #     axes[1].set_title(f"Image with Mask")
-            #     axes[1].axis('off')
-            #
-            #     plt.show()
-            #
-            #     # Optional: Save the figure instead of displaying (useful for multiprocessing)
-            #     # fig.savefig(f"debug_figure_{tile_idx}_mask_{random_idx}.png")
-            #     # print(f"Saved debug figure with mask {random_idx} as debug_figure_{tile_idx}_mask_{random_idx}.png")
-            #     # plt.close(fig)  # Close the figure to free memory
-            #
-            #     # Optional: Save the image instead of displaying (useful for multiprocessing)
-            #     # plt.imsave(f"debug_image_{tile_idx}_mask_{random_idx}.png", display_image)
-            #     # print(f"Saved debug image with mask {random_idx} as debug_image_{tile_idx}_mask_{random_idx}.png")
-            #
-            # else:
-            #     print("No masks to display for this image.")
+    # Load the class mapping if provided
+    if class_mapping_file:
+        class_mapping = load_class_mapping(class_mapping_file)
+        num_classes = len(
+            class_mapping)    # Set the number of classes based on the mapping
+    else:
+        num_classes = 1    # Default to 1 class if no mapping is provided
 
-            self.queue_masks(
-                mask_logits, image_size, scores, tile_idx, 0, queue,
-            )
+    # Validate the resize parameter
+    if resize not in {"fixed", "random", "rand_fixed"}:
+        raise ValueError(
+            f"Invalid resize option '{resize}'. Must be 'fixed', 'random', or 'rand_fixed'."
+        )
 
-    def infer_on_dataset(self, dataset: UnlabeledRasterDataset):
-        return self._infer_on_dataset(dataset, collate_fn)
+    cfg = get_cfg()
+    cfg.merge_from_file(model_zoo.get_config_file(base_model))
+    cfg.DATASETS.TRAIN = trains
+    cfg.DATASETS.TEST = tests
+    cfg.DATALOADER.NUM_WORKERS = workers
+    cfg.SOLVER.IMS_PER_BATCH = ims_per_batch
+    cfg.SOLVER.GAMMA = gamma
+    cfg.MODEL.BACKBONE.FREEZE_AT = backbone_freeze
+    cfg.SOLVER.WARMUP_ITERS = warm_iter
+    cfg.SOLVER.MOMENTUM = momentum
+    cfg.MODEL.RPN.BATCH_SIZE_PER_IMAGE = batch_size_per_im
+    cfg.SOLVER.WEIGHT_DECAY = weight_decay
+    cfg.SOLVER.BASE_LR = base_lr
+
+    if update_model is not None:
+        cfg.MODEL.WEIGHTS = update_model
+    else:
+        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(base_model)
+
+    cfg.SOLVER.IMS_PER_BATCH = ims_per_batch
+    cfg.SOLVER.BASE_LR = base_lr
+    cfg.SOLVER.MAX_ITER = max_iter
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
+    cfg.TEST.EVAL_PERIOD = eval_period
+    cfg.RESIZE = resize
+    cfg.INPUT.MIN_SIZE_TRAIN = 1000
+    cfg.IMGMODE = imgmode    # "rgb" or "ms" (multispectral)
+    if num_bands > 3:
+        # Adjust PIXEL_MEAN and PIXEL_STD for the number of bands
+        default_pixel_mean = cfg.MODEL.PIXEL_MEAN
+        default_pixel_std = cfg.MODEL.PIXEL_STD
+        # Extend or truncate the PIXEL_MEAN and PIXEL_STD based on num_bands
+        cfg.MODEL.PIXEL_MEAN = (
+            default_pixel_mean * (num_bands // len(default_pixel_mean)) +
+            default_pixel_mean[:num_bands % len(default_pixel_mean)])
+        cfg.MODEL.PIXEL_STD = (
+            default_pixel_std * (num_bands // len(default_pixel_std)) +
+            default_pixel_std[:num_bands % len(default_pixel_std)])
+    return cfg
