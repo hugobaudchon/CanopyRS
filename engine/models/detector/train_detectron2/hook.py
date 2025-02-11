@@ -2,7 +2,7 @@ import wandb
 
 from detectron2.engine import HookBase
 from detectron2.utils import comm
-from engine.models.detector.detectron2.utils import lazyconfig_to_dict
+from engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
 
 
 class WandbWriterHook(HookBase):

@@ -47,10 +47,10 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 # from detrex.utils import WandbWriter
 from detrex.modeling import ema
-from engine.models.detector.detectron2.augmentation import AugmentationAdder
-from engine.models.detector.detectron2.dataset import register_multiple_detection_datasets
-from engine.models.detector.detectron2.hook import WandbWriterHook
-from engine.models.detector.detectron2.utils import lazyconfig_to_dict
+from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
+from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
+from engine.models.detector.train_detectron2.hook import WandbWriterHook
+from engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
@@ -156,7 +156,7 @@ class Trainer(SimpleTrainer):
 
 
 def do_test(cfg, model, eval_only=False):
-    logger = logging.getLogger("detectron2")
+    logger = logging.getLogger("train_detectron2")
 
     if eval_only:
         logger.info("Run evaluation under eval-only mode")
@@ -220,7 +220,7 @@ def do_train(args, cfg):
                 ddp (dict)
     """
     model = instantiate(cfg.model)
-    logger = logging.getLogger("detectron2")
+    logger = logging.getLogger("train_detectron2")
     logger.info("Model:\n{}".format(model))
     model.to(cfg.train.device)
 
@@ -310,6 +310,23 @@ def train_detrex(config):
     )
 
 
+def get_base_detrex_model_cfg(config):
+    current_file_path = Path(__file__).resolve().parent
+    cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/{config.architecture}')
+    cfg.train.init_checkpoint = config.checkpoint_path
+    cfg.model.num_classes = config.num_classes
+
+    # Custom Augmentations
+    augmentation_adder = AugmentationAdder()
+    cfg.dataloader.train.mapper.augmentation = augmentation_adder.get_augmentation_detrex_train(config)
+    cfg.dataloader.train.mapper.augmentation_with_crop = None   # cropping will always be performed, so just setting it once
+    cfg.dataloader.test.mapper.augmentation = augmentation_adder.get_augmentation_detrex_test(config)
+
+    # Enable AMP (mixed-precision).
+    cfg.train.amp.enabled = config.use_amp
+
+    return cfg
+
 def _train_detrex_process(config, model_name):
     print("Setting up datasets...")
     d2_train_datasets_names = register_multiple_detection_datasets(
@@ -330,24 +347,21 @@ def _train_detrex_process(config, model_name):
 
     dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in d2_train_datasets_names])
     output_path = os.path.join(config.train_output_path, model_name)
-    current_file_path = Path(__file__).resolve().parent
 
-    cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/{config.architecture}')
+    cfg = get_base_detrex_model_cfg(config)
 
     cfg.dataloader.train.dataset.names = d2_train_datasets_names[0]
     cfg.dataloader.test.dataset.names = d2_valid_datasets_names[0]
     cfg.dataloader.train.num_workers = config.dataloader_num_workers
-    cfg.dataloader.test.num_workers = config.dataloader_num_workers // 2
+    cfg.dataloader.test.num_workers = config.dataloader_num_workers
     cfg.dataloader.evaluator.output_dir = os.path.join(output_path, f"eval")
     cfg.dataloader.train.total_batch_size = config.batch_size
     cfg.train.seed = config.seed
     cfg.train.output_dir = output_path
-    cfg.train.init_checkpoint = config.checkpoint_path
     cfg.train.log_period = config.train_log_interval
     cfg.train.max_iter = config.max_epochs * dataset_length // config.batch_size
     cfg.train.eval_period = config.eval_epoch_interval * dataset_length // config.batch_size
     cfg.train.checkpointer.period = config.eval_epoch_interval * dataset_length // config.batch_size
-    cfg.model.num_classes = config.num_classes
 
     if config.lr:
         print(f"Changing base learning rate from {cfg.optimizer.params.lr} to {config.lr}.")
@@ -369,18 +383,9 @@ def _train_detrex_process(config, model_name):
         print(f"Changing scheduler warmup length from {cfg.lr_multiplier.warmup_length} to {warmup_length}.")
         cfg.lr_multiplier.warmup_length = warmup_length
 
-    # Custom Augmentations
-    augmentation_adder = AugmentationAdder()
-    cfg.dataloader.train.mapper.augmentation = augmentation_adder.get_augmentation_detrex_train(config)
-    cfg.dataloader.train.mapper.augmentation_with_crop = None   # cropping will always be performed, so just setting it once
-    cfg.dataloader.test.mapper.augmentation = augmentation_adder.get_augmentation_detrex_test(config)
-
     # Enable checkpointing in the transformer encoder, lowering memory consumption.
     cfg.model.transformer.encoder.use_checkpoint = config.use_gradient_checkpointing
     cfg.model.transformer.decoder.use_checkpoint = config.use_gradient_checkpointing
-
-    # Enable AMP (mixed-precision) in the training configuration.
-    cfg.train.amp.enabled = config.use_amp
 
     if config.wandb_project is not None:
         cfg.train.wandb.enabled = True

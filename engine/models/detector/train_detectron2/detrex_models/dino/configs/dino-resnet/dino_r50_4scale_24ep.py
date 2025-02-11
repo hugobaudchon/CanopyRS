@@ -15,7 +15,7 @@ model.position_embedding.temperature = 20
 model.position_embedding.offset = 0.0
 
 # modify training config
-train.init_checkpoint = "detectron2://ImageNetPretrained/torchvision/R-50.pkl"
+train.init_checkpoint = "train_detectron2://ImageNetPretrained/torchvision/R-50.pkl"
 train.output_dir = "./output/dino_r50_4scale_24ep"
 
 # max training iterations

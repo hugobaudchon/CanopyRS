@@ -25,7 +25,7 @@ pip install git+https://github.com/IDEA-Research/detrex.git
 # cd detrex
 # git submodule init
 # git submodule update
-# python -m pip install -e detectron2
+# python -m pip install -e train_detectron2
 # pip install -e .
 # cd ..
 ```

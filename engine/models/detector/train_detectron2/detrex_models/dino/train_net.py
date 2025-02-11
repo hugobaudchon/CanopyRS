@@ -166,7 +166,7 @@ def do_train(args, cfg):
                 ddp (dict)
     """
     model = instantiate(cfg.model)
-    logger = logging.getLogger("detectron2")
+    logger = logging.getLogger("train_detectron2")
     logger.info("Model:\n{}".format(model))
     model.to(cfg.train.device)
 

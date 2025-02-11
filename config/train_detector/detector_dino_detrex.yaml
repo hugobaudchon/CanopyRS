@@ -1,5 +1,5 @@
 model: 'dino_detrex'
-architecture: ''
+architecture: 'dino-resnet/dino_r50_4scale_24ep.py'
 checkpoint_path: '/home/hugo/Downloads/dino_r50_4scale_24ep.pth'
 batch_size: 1
 num_classes: 1
@@ -9,7 +9,10 @@ box_nms_thresh: null
 
 # Training Data and Output path
 data_root_path: '/mnt/disk2/Data/tilerized'
-train_dataset_names: ['panama_bci50ha', 'ecuador_reforestree']
+train_dataset_names: [
+  'panama_bci50ha',
+  'ecuador_reforestree'
+]
 train_output_path: './output/detrex_dino_r50_4scale_24ep_2'
 
 # Training Params
@@ -35,9 +38,9 @@ train_log_interval: 10
 eval_epoch_interval: 1
 #grad_accumulation_steps: 1
 backbone_model_pretrained: null
-scheduler_epochs_steps: null
-scheduler_warmup_steps: null
-scheduler_gamma: null
+scheduler_epochs_steps: [20, 40, 60]
+scheduler_warmup_steps: 1000
+scheduler_gamma: 0.1
 dataloader_num_workers: 4
 
 use_gradient_checkpointing: null

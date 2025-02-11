@@ -179,7 +179,7 @@ class AugmentationAdder:
     @staticmethod
     def modify_detectron2_augmentation_config(config: DetectorConfig, cfg):
         """
-        Insert your augmentation parameters from `config` into the detectron2 `cfg`.
+        Insert your augmentation parameters from `config` into the train_detectron2 `cfg`.
 
         Typically, you can store them inside a sub-config node such as:
             cfg.AUGMENTATION.<PARAM_NAME> = ...
@@ -206,7 +206,7 @@ class AugmentationAdder:
     @staticmethod
     def get_augmentation_detectron2_train(cfg):
         """
-        Build a list of detectron2 augmentations (or custom augmentations)
+        Build a list of train_detectron2 augmentations (or custom augmentations)
         based on the parameters in cfg.AUGMENTATION.
         """
         augs = AugmentationAdder._get_augmentation_list_train(

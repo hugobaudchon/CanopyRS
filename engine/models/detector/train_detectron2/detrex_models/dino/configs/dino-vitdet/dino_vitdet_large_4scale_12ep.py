@@ -21,7 +21,7 @@ model.backbone.net.window_block_indexes = (
 )
 
 # modify training config
-train.init_checkpoint = "detectron2://ImageNetPretrained/MAE/mae_pretrain_vit_large.pth"
+train.init_checkpoint = "train_detectron2://ImageNetPretrained/MAE/mae_pretrain_vit_large.pth"
 train.output_dir = "./output/dino_vitdet_large_12ep"
 
 

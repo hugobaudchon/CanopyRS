@@ -38,7 +38,7 @@ class Detectron2DetectionLabeledRasterCocoDataset(DetectionLabeledRasterCocoData
 
 def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
     """
-    Convert the custom dataset format to detectron2's dictionary format.
+    Convert the custom dataset format to train_detectron2's dictionary format.
 
     Parameters
     ----------
@@ -48,7 +48,7 @@ def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
     Returns
     -------
     list
-        List of dictionaries in detectron2 format
+        List of dictionaries in train_detectron2 format
     """
     dataset_dicts = []
 
@@ -75,7 +75,7 @@ def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
             obj = {
                 "bbox": bbox,
                 "bbox_mode": BoxMode.XYXY_ABS,
-                "category_id": int(category_id) - 1,        # 0-indexed in detectron2, but 1-indexed in COCO, so substracting 1
+                "category_id": int(category_id) - 1,        # 0-indexed in train_detectron2, but 1-indexed in COCO, so substracting 1
                 "iscrowd": int(iscrowd),
                 "area": float(area)
             }
@@ -94,7 +94,7 @@ def register_detection_dataset(
         force_binary_class: bool = True
 ):
     """
-    Register a custom dataset with detectron2.
+    Register a custom dataset with train_detectron2.
 
     Parameters
     ----------
@@ -174,7 +174,7 @@ def register_multiple_detection_datasets(
         combine_datasets: bool = True
 ) -> List[str]:
     """
-    Register multiple custom datasets with detectron2.
+    Register multiple custom datasets with train_detectron2.
 
     Parameters
     ----------

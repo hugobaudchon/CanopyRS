@@ -156,7 +156,7 @@ class DINO(nn.Module):
                 - dict["image"] (torch.Tensor): The unnormalized image tensor.
                 - dict["height"] (int): The original image height.
                 - dict["width"] (int): The original image width.
-                - dict["instance"] (detectron2.structures.Instances):
+                - dict["instance"] (train_detectron2.structures.Instances):
                     Image meta informations and ground truth boxes and labels during training.
                     Please refer to
                     https://detectron2.readthedocs.io/en/latest/modules/structures.html#detectron2.structures.Instances

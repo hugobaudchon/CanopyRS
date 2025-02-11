@@ -25,6 +25,41 @@ class DetectorWrapperBase(ABC):
 
         self.model = None
 
+    @abstractmethod
+    def forward(self, images, targets=None):
+        pass
+
+    def _infer(self, data_loader):
+        self.model.eval()
+
+        predictions = []
+
+        with torch.no_grad():
+            data_loader_with_progress = tqdm(data_loader,
+                                             desc="Inferring detector...",
+                                             leave=True)
+            for images in data_loader_with_progress:
+                images = list(img.to(self.device) for img in images)
+                outputs = self.forward(images)
+                predictions.extend(outputs)
+
+        return predictions
+
+    def infer(self, infer_ds: UnlabeledRasterDataset, collate_fn: callable):
+        infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
+                              collate_fn=collate_fn,
+                              num_workers=3, persistent_workers=True)
+
+        results = self._infer(infer_dl)
+        boxes, boxes_scores, classes = detector_result_to_lists(results)
+        tiles_paths = infer_ds.tile_paths
+        return tiles_paths, boxes, boxes_scores, classes
+
+
+class TorchTrainerDetectorWrapperBase(DetectorWrapperBase, ABC):
+    def __init__(self, config, ):
+        super().__init__(config)
+
         self.map_metric = torchmetrics.detection.MeanAveragePrecision(
             # backend='faster_coco_eval',   # Requires additional dependencies
             iou_type="bbox",
@@ -51,10 +86,6 @@ class DetectorWrapperBase(ABC):
             except RuntimeError as e:
                 state_dict = try_rename_state_dict_keys_with_model(checkpoint_state_dict_path)
                 self.model.load_state_dict(state_dict)
-
-    @abstractmethod
-    def forward(self, images, targets=None):
-        pass
 
     def _evaluate(self, data_loader, epoch=None):
         self.model.eval()
@@ -89,7 +120,7 @@ class DetectorWrapperBase(ABC):
 
         scores, predictions = self._evaluate(test_dl)
         print(f"Score results: {scores}")
-        boxes, boxes_scores = detector_result_to_lists(predictions)
+        boxes, boxes_scores, classes = detector_result_to_lists(predictions)
         # Map tile paths to their corresponding raster names
         # it's important to get the paths sorted by ids as the associated predictions will also be sorted by those ids.
         tiles_paths = [value["path"] for key, value in sorted(test_ds.tiles.items(), key=lambda item: item[0])]
@@ -202,32 +233,6 @@ class DetectorWrapperBase(ABC):
                 # Minimum visibility of a bounding box. All bboxes that have a visibility smaller than this value will be removed
             ))
         return data_augmentation_transform
-
-    def _infer(self, data_loader):
-        self.model.eval()
-
-        predictions = []
-
-        with torch.no_grad():
-            data_loader_with_progress = tqdm(data_loader,
-                                             desc="Inferring detector...",
-                                             leave=True)
-            for images in data_loader_with_progress:
-                images = list(img.to(self.device) for img in images)
-                outputs = self.forward(images)
-                predictions.extend(outputs)
-
-        return predictions
-
-    def infer(self, infer_ds: UnlabeledRasterDataset, collate_fn: callable):
-        infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
-                              collate_fn=collate_fn,
-                              num_workers=3, persistent_workers=True)
-
-        results = self._infer(infer_dl)
-        boxes, boxes_scores, classes = detector_result_to_lists(results)
-        tiles_paths = infer_ds.tile_paths
-        return tiles_paths, boxes, boxes_scores, classes
 
 
 def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):

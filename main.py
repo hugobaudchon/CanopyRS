@@ -1,12 +1,23 @@
 import argparse
+import logging
 import multiprocessing
 import os
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message="Importing from timm.models.layers is deprecated"
+)
+detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
+detrex_logger.disabled = True
 
 from engine.config_parsers import InferIOConfig, PipelineConfig, DetectorConfig
 from engine.config_parsers.base import get_config_path
-from engine.models.detector.detectron2.train_detectron2 import train_detectron2_fasterrcnn
-from engine.models.detector.detectron2.train_detrex import train_detrex
+from engine.models.detector.train_detectron2.train_detectron2 import train_detectron2_fasterrcnn
+from engine.models.detector.train_detectron2.train_detrex import train_detrex
 from engine.pipeline import Pipeline
+
 
 def pipeline_main(args):
     config_path = get_config_path(f'{args.config}/pipeline')

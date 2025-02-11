@@ -12,5 +12,5 @@ lr_multiplier = get_config("common/coco_schedule.py").lr_multiplier_50ep
 
 # modify training config
 train.max_iter = 375000
-train.init_checkpoint = "detectron2://ImageNetPretrained/MAE/mae_pretrain_vit_base.pth"
+train.init_checkpoint = "train_detectron2://ImageNetPretrained/MAE/mae_pretrain_vit_base.pth"
 train.output_dir = "./output/dino_vitdet_base_50ep"
