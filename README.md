@@ -21,13 +21,6 @@ conda install -c conda-forge gdal
 pip install -r requirements.txt
 pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
 pip install git+https://github.com/IDEA-Research/detrex.git
-# git clone https://github.com/IDEA-Research/detrex.git
-# cd detrex
-# git submodule init
-# git submodule update
-# python -m pip install -e train_detectron2
-# pip install -e .
-# cd ..
 ```
 
 #### Windows
