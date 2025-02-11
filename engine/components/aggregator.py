@@ -76,7 +76,6 @@ class AggregatorComponent(BaseComponent):
         )
 
         results_gdf = aggregator.polygons_gdf
-        results_gdf['area'] = results_gdf['geometry'].area
 
         return self.update_data_state(data_state, results_gdf)
 
@@ -84,6 +83,6 @@ class AggregatorComponent(BaseComponent):
                          data_state: DataState,
                          results_gdf: gpd.GeoDataFrame) -> DataState:
         data_state.infer_gdf = results_gdf
-        data_state.infer_gdf_columns_to_pass.update(['aggregator_score', 'area'])
+        data_state.infer_gdf_columns_to_pass.update(['aggregator_score'])
 
         return data_state
