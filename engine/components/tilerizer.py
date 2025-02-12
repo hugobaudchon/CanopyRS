@@ -22,7 +22,7 @@ class TilerizerComponent(BaseComponent):
         self.infer_aois_config = infer_aois_config
         self.ground_truth_aois_config = ground_truth_aois_config
 
-    def run(self, data_state: DataState) -> DataState:
+    def __call__(self, data_state: DataState) -> DataState:
         if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
             raise ValueError(
                 "infer_gdf must have a CRS."

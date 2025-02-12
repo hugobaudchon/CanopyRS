@@ -10,7 +10,7 @@ from engine.components.tilerizer import TilerizerComponent
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
-from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name
+from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name, green_print
 
 
 class Pipeline:
@@ -45,8 +45,9 @@ class Pipeline:
             aois={ground_truth_aoi_name: self.io_config.aoi}
         )
 
+        green_print("Pipeline initialized")
 
-    def run(self):
+    def __call__(self):
         # Run each component in the pipeline, sequentially
         for component_id, component_config_tuple in enumerate(self.config.components_configs):
             component = self._get_component(component_config_tuple, component_id)
@@ -54,6 +55,8 @@ class Pipeline:
 
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
         self._clean_side_processes()
+
+        green_print("Pipeline finished")
 
     def _get_component(self, component_config_tuple, component_id):
         component_type, component_config = component_config_tuple

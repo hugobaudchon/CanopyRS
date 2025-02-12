@@ -24,7 +24,7 @@ class EvaluatorComponent(BaseComponent):
     def __init__(self, config: EvaluatorConfig, parent_output_path: str, component_id: int):
         super().__init__(config, parent_output_path, component_id)
 
-    def run(self, data_state: DataState) -> DataState:
+    def __call__(self, data_state: DataState) -> DataState:
         if self.config.type == 'instance_detection':
             iou_type = 'bbox'
         elif self.config.type == 'instance_segmentation':

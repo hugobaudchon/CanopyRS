@@ -17,7 +17,7 @@ class AggregatorComponent(BaseComponent):
     def __init__(self, config: AggregatorConfig, parent_output_path: str, component_id: int):
         super().__init__(config, parent_output_path, component_id)
 
-    def run(self, data_state: DataState) -> DataState:
+    def __call__(self, data_state: DataState) -> DataState:
         agg_dict = {'geometry': lambda x: list(x)}
 
         for column in data_state.infer_gdf_columns_to_pass:

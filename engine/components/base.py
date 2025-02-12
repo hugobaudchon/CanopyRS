@@ -3,6 +3,7 @@ from pathlib import Path
 
 from engine.config_parsers import BaseConfig
 from engine.data_state import DataState
+from engine.utils import green_print
 
 
 class BaseComponent(ABC):
@@ -14,8 +15,13 @@ class BaseComponent(ABC):
         self.output_path = Path(parent_output_path) / f'{component_id}_{self.name}'
         self.output_path.mkdir(parents=True, exist_ok=True)
 
-    @abstractmethod
+        green_print(f"Running component '{self.name}'")
+
     def run(self, data_state: DataState) -> DataState:
+        return self(data_state)
+
+    @abstractmethod
+    def __call__(self, data_state: DataState) -> DataState:
         pass
 
     @abstractmethod

@@ -1,17 +1,14 @@
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Process
 from pathlib import Path
 
 import geopandas as gpd
 
 from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset
-from geodataset.utils import CocoNameConvention, TileNameConvention
 
 from engine.components.base import BaseComponent
 from engine.config_parsers import SegmenterConfig
 from engine.data_state import DataState
 from engine.models.registry import SEGMENTER_REGISTRY
-from engine.utils import generate_coco, infer_aoi_name
+from engine.utils import infer_aoi_name, generate_future_coco
 
 
 class SegmenterComponent(BaseComponent):
@@ -24,7 +21,7 @@ class SegmenterComponent(BaseComponent):
         else:
             raise ValueError(f'Invalid detector model {config.model}')
 
-    def run(self, data_state: DataState) -> DataState:
+    def __call__(self, data_state: DataState) -> DataState:
         data_paths = [data_state.tiles_path]
         if self.segmenter.REQUIRES_BOX_PROMPT:
             assert data_state.infer_coco_path is not None, \
@@ -51,7 +48,20 @@ class SegmenterComponent(BaseComponent):
         for attribute_name in data_state.infer_gdf_columns_to_pass:
             attributes_data[attribute_name] = get_attribute_from_dataset(dataset, attribute_name, tiles_paths, tiles_masks_polygons)
 
-        future_coco = self.generate_coco(tiles_paths, data_state.tiles_names, tiles_masks_polygons, tiles_masks_scores)
+        future_coco = generate_future_coco(
+            future_key='infer_coco_path',
+            description="Segmenter inference",
+            tiles_paths=tiles_paths,
+            tile_names_order_reference=data_state.tiles_names,
+            polygons=tiles_masks_polygons,
+            scores=tiles_masks_scores,
+            categories=None,
+            other_attributes={},
+            output_path=self.output_path,
+            use_rle_for_labels=True,
+            n_workers=2,
+            coco_categories_list=None
+        )
 
         gdf_items = []
         for i in range(len(tiles_paths)):
@@ -83,37 +93,6 @@ class SegmenterComponent(BaseComponent):
         data_state.infer_gdf_columns_to_pass.append('segmenter_score')
         data_state.side_processes.append(future_coco)
         return data_state
-
-    def generate_coco(self, tiles_paths, tile_names_order_reference, masks_polygons, masks_polygons_scores):
-        """
-        Starts a side process for generating the COCO file, this way the main process isn't blocked in the meantime.
-        """
-
-        product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
-            Path(tiles_paths[0]).name
-        )
-        coco_output_name = CocoNameConvention().create_name(
-            product_name=product_name,
-            fold=aoi,
-            scale_factor=scale_factor,
-            ground_resolution=ground_resolution
-        )
-        with ProcessPoolExecutor(max_workers=1) as executor:
-            future_coco = executor.submit(
-                generate_coco,
-                description="Segmenter inference",
-                tiles_paths=tiles_paths,
-                tile_names_order_reference=tile_names_order_reference,
-                polygons=masks_polygons,
-                scores=masks_polygons_scores,
-                categories=None,
-                other_attributes={},
-                output_path=self.output_path / coco_output_name,
-                use_rle_for_labels=True,
-                n_workers=2,
-                coco_categories_list=None
-            )
-        return tuple(['infer_coco_path', future_coco])
 
 
 def get_attribute_from_dataset(dataset, attribute_name, tiles_paths, tiles_masks_polygons):
