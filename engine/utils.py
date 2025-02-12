@@ -27,9 +27,43 @@ def generate_future_coco(
     n_workers: int,
     coco_categories_list: List[dict] or None,
     tiles_paths_order: List[Path] or None
-):
+) -> tuple:
     """
     Starts a side process for generating the COCO file, this way the main process isn't blocked in the meantime.
+
+    Parameters
+    ----------
+    future_key : str
+        The key to be used to store the future result in the data state.
+    description : str
+        Description of the COCO file.
+    gdf : gpd.GeoDataFrame
+        GeoDataFrame containing the data to be used for generating the COCO file.
+    tiles_paths_column : str
+        Name of the column containing the paths to the tiles.
+    polygons_column : str
+        Name of the column containing the polygons.
+    scores_column : str or None
+        Name of the column containing the scores.
+    categories_column : str or None
+        Name of the column containing the categories.
+    other_attributes_columns : List[str] or None
+        List of names of the columns containing other attributes.
+    output_path : Path
+        Path to the output directory.
+    use_rle_for_labels : bool
+        Whether to use RLE encoding for the labels.
+    n_workers : int
+        Number of workers to use for the process.
+    coco_categories_list : List[dict] or None
+        List of categories to be used in the COCO file.
+    tiles_paths_order : List[Path] or None
+        List of paths to the tiles in the order they should be processed.
+
+    Returns
+    -------
+    tuple
+        Tuple containing the future key and the future COCO file path: (future_key, future_coco_path).
     """
 
     print('Starting side process for generating COCO file...')
@@ -66,7 +100,43 @@ def generate_coco(
     n_workers: int,
     coco_categories_list: List[dict] or None,
     tiles_paths_order: List[Path] or None
-):
+) -> Path:
+
+    """
+    Generates a COCO file from a GeoDataFrame.
+
+    Parameters
+    ----------
+    description : str
+        Description of the COCO file.
+    gdf : gpd.GeoDataFrame
+        GeoDataFrame containing the data to be used for generating the COCO file.
+    tiles_paths_column : str
+        Name of the column containing the paths to the tiles.
+    polygons_column : str
+        Name of the column containing the polygons.
+    scores_column : str or None
+        Name of the column containing the scores.
+    categories_column : str or None
+        Name of the column containing the categories.
+    other_attributes_columns : List[str] or None
+        List of names of the columns containing other attributes.
+    output_path : Path
+        Path to the output directory.
+    use_rle_for_labels : bool
+        Whether to use RLE encoding for the labels.
+    n_workers : int
+        Number of workers to use for the process.
+    coco_categories_list : List[dict] or None
+        List of categories to be used in the COCO file.
+    tiles_paths_order : List[Path] or None
+        List of paths to the tiles in the order they should be processed.
+
+    Returns
+    -------
+    Path
+        Path to the generated COCO file.
+    """
 
     product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
         Path(gdf[tiles_paths_column].iloc[0]).name
