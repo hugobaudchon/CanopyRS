@@ -16,7 +16,7 @@ class PipelineConfig(BaseConfig):
     components_configs: List[tuple[str, BaseConfig]]
 
     @classmethod
-    def from_yaml(cls, path: str or Path) -> 'BaseConfig':
+    def from_yaml(cls, path: str or Path) -> 'PipelineConfig':
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
 
