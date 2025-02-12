@@ -8,10 +8,7 @@ from engine.components.evaluator import EvaluatorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
 
-from engine.config_parsers import (PipelineConfig, InferIOConfig, TilerizerConfig,
-                                   DetectorConfig, AggregatorConfig, SegmenterConfig)
-from engine.config_parsers.base import get_config_path
-from engine.config_parsers.evaluator import EvaluatorConfig
+from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
 from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name
 
@@ -51,33 +48,26 @@ class Pipeline:
 
     def run(self):
         # Run each component in the pipeline, sequentially
-        for component_id, component_config in enumerate(self.config.components_configs):
-            component = self._get_component(component_config, component_id)
+        for component_id, component_config_tuple in enumerate(self.config.components_configs):
+            component = self._get_component(component_config_tuple, component_id)
             self.data_state = component.run(self.data_state)
 
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
         self._clean_side_processes()
 
-    def _get_component(self, component_config, component_id):
-        component_type = list(component_config.keys())[0]
-        config_name = list(component_config.values())[0]
-        config_path = get_config_path(config_name)
+    def _get_component(self, component_config_tuple, component_id):
+        component_type, component_config = component_config_tuple
 
         if component_type == 'tilerizer':
-            component_config = TilerizerConfig.from_yaml(config_path)
             return TilerizerComponent(component_config, self.io_config.output_folder, component_id,
                                       self.infer_aois_config, self.ground_truth_aoi_config)
         elif component_type == 'detector':
-            component_config = DetectorConfig.from_yaml(config_path)
             return DetectorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'aggregator':
-            component_config = AggregatorConfig.from_yaml(config_path)
             return AggregatorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'segmenter':
-            component_config = SegmenterConfig.from_yaml(config_path)
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'evaluator':
-            component_config = EvaluatorConfig.from_yaml(config_path)
             self._clean_side_processes()    # making sure COCO files are generated before starting evaluation
             return EvaluatorComponent(component_config, self.io_config.output_folder, component_id)
         # elif isinstance(component_config, EmbedderConfig):
