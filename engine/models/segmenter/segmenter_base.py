@@ -184,7 +184,6 @@ class SegmenterWrapperBase(ABC):
             tiles_idx = list(range(i * self.config.image_batch_size, (i + 1) * self.config.image_batch_size))[:len(sample)]
             if isinstance(dataset, DetectionLabeledRasterCocoDataset):
                 images, boxes = sample
-                boxes = np.array(boxes['boxes'])
                 tiles_paths.extend([dataset.tiles[tile_idx]['path'] for tile_idx in tiles_idx])     # TODO tiles idx should be returned by the dataset __getitem__ method
             elif isinstance(dataset, UnlabeledRasterDataset):
                 images = list(sample)

@@ -28,7 +28,8 @@ class SegmenterComponent(BaseComponent):
         data_paths = [data_state.tiles_path]
         if self.segmenter.REQUIRES_BOX_PROMPT:
             assert data_state.infer_coco_path is not None, \
-                ("Segmenter requires a COCO file with boxes to prompt. Either input it, add a detector before the"
+                ("The selected Segmenter model requires a COCO file with boxes to prompt. Either input it,"
+                 " add a tilerizer before the segmenter, add a detector before the"
                  " segmenter in the pipeline, or choose a segmenter model that doesn't require boxes prompts.")
             data_paths.append(Path(data_state.infer_coco_path).parent)
             dataset = DetectionLabeledRasterCocoDataset(
@@ -66,7 +67,7 @@ class SegmenterComponent(BaseComponent):
 
                 gdf_items.append(data)
 
-        results_gdf = gpd.GeoDataFrame(    # TODO should I store this as results_gdf or as multiple lists in data_state? Maybe results_gdf should be kept for the aggregated results, in CRS coordinates?
+        results_gdf = gpd.GeoDataFrame(
             data=gdf_items,
             geometry='geometry',
             crs=None

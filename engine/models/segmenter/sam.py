@@ -11,8 +11,10 @@ from engine.config_parsers import SegmenterConfig
 from engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 
 
-def collate_fn(image_batch):
-    return image_batch
+def collate_fn_image_box(data_batch):
+    image_batch = [data[0] for data in data_batch]
+    boxes_batch = [np.array(data[1]['boxes']) for data in data_batch]
+    return image_batch, boxes_batch
 
 class SamPredictorWrapper(SegmenterWrapperBase):
     MODEL_TYPE_MAPPING = {
@@ -78,4 +80,4 @@ class SamPredictorWrapper(SegmenterWrapperBase):
                 )
 
     def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
-        return self._infer_on_dataset(dataset, collate_fn)
+        return self._infer_on_dataset(dataset, collate_fn_image_box)
