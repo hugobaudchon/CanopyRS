@@ -10,7 +10,8 @@ from engine.components.tilerizer import TilerizerComponent
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
-from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name, green_print
+from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name, green_print, \
+    clean_side_processes
 
 
 class Pipeline:
@@ -54,7 +55,7 @@ class Pipeline:
             self.data_state = component.run(self.data_state)
 
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
-        self._clean_side_processes()
+        clean_side_processes(self.data_state)
 
         green_print("Pipeline finished")
 
@@ -71,7 +72,7 @@ class Pipeline:
         elif component_type == 'segmenter':
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'evaluator':
-            self._clean_side_processes()    # making sure COCO files are generated before starting evaluation
+            clean_side_processes(self.data_state)    # making sure COCO files are generated before starting evaluation
             return EvaluatorComponent(component_config, self.io_config.output_folder, component_id)
         # elif isinstance(component_config, EmbedderConfig):
         #     return build_embedder()
@@ -81,14 +82,6 @@ class Pipeline:
         #     return build_clusterer()
         else:
             raise ValueError(f'Invalid component {component_config}')
-
-    def _clean_side_processes(self):
-        for side_process in self.data_state.side_processes:
-            attribute_name = side_process[0]
-            result = side_process[1].result()
-            if attribute_name:
-                # Updating the correct attribute in the data state
-                setattr(self.data_state, attribute_name, result)
 
     def _validate_components_order(self):
         pass    # TODO

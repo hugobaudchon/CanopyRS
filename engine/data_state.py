@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from multiprocessing import Queue
 
 import geopandas as gpd
 

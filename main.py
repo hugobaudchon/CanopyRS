@@ -1,13 +1,17 @@
 import argparse
 import logging
-import multiprocessing
-import os
 import warnings
+
+from engine.utils import init_spawn_method
 
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
     message="Importing from timm.models.layers is deprecated"
+)
+warnings.filterwarnings(
+    "ignore",
+    message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument."
 )
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
@@ -61,9 +65,7 @@ def train_detector_main(args):
 
 
 if __name__ == '__main__':
-    if os.name == 'posix':
-        multiprocessing.set_start_method('spawn')
-
+    init_spawn_method()
     parser = argparse.ArgumentParser()
 
     # Inference args
