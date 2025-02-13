@@ -1,9 +1,14 @@
 components_configs:
+  # detection
   - tilerizer: default/tilerizer_detector
   - detector: default/detector
+  - evaluator: default_eval/evaluator_detector_tile
   - aggregator: default/aggregator_detector
-  - evaluator: default_eval/evaluator_detector
+  - evaluator: default_eval/evaluator_detector_raster
+
+  # segmentation
   - tilerizer: default/tilerizer_segmenter
   - segmenter: default/segmenter
+  - evaluator: default_eval/evaluator_segmenter_tile
   - aggregator: default/aggregator_segmenter
-  - evaluator: default_eval/evaluator_segmenter
+  - evaluator: default_eval/evaluator_segmenter_raster

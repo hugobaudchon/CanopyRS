@@ -8,7 +8,7 @@ from geodataset.utils import GeoPackageNameConvention, TileNameConvention
 from engine.components.base import BaseComponent
 from engine.config_parsers import AggregatorConfig
 from engine.data_state import DataState
-from engine.utils import infer_aoi_name
+from engine.utils import infer_aoi_name, generate_future_coco
 
 
 class AggregatorComponent(BaseComponent):
@@ -79,12 +79,34 @@ class AggregatorComponent(BaseComponent):
         )
         results_gdf = aggregator.polygons_gdf
 
-        return self.update_data_state(data_state, results_gdf)
+        columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'aggregator_score'})
+
+        future_coco = generate_future_coco(
+            future_key='infer_coco_path',
+            description="Aggregator inference",
+            gdf=results_gdf,
+            tiles_paths_column='tile_path',
+            polygons_column='geometry',
+            scores_column='aggregator_score',
+            categories_column='segmenter_score' if 'segmenter_score' in grouped_gdf
+                              else 'detector_score' if 'detector_score' in grouped_gdf
+                              else None,
+            other_attributes_columns=columns_to_pass,
+            output_path=self.output_path,
+            use_rle_for_labels=False,
+            n_workers=4,
+            coco_categories_list=None
+        )
+
+        return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
 
     def update_data_state(self,
                          data_state: DataState,
-                         results_gdf: gpd.GeoDataFrame) -> DataState:
+                         results_gdf: gpd.GeoDataFrame,
+                         columns_to_pass: set,
+                         future_coco: tuple) -> DataState:
         data_state.infer_gdf = results_gdf
-        data_state.infer_gdf_columns_to_pass.extend(['aggregator_score'])
+        data_state.infer_gdf_columns_to_pass = columns_to_pass
+        data_state.side_processes.append(future_coco)
 
         return data_state

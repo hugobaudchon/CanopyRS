@@ -25,8 +25,6 @@ class Pipeline:
             imagery_path=self.io_config.input_imagery,
             parent_output_path=self.io_config.output_folder,
             tiles_path=self.io_config.tiles_path,
-            tiles_names=list([tile.name for  tile in Path(self.io_config.tiles_path).rglob('*.tif')])
-                        if self.io_config.tiles_path else None,
             infer_coco_path=self.io_config.input_coco,
             infer_gdf=gpd.read_file(self.io_config.input_gpkg)
                       if self.io_config.input_gpkg else None,

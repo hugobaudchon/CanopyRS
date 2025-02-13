@@ -1,6 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import List
+from typing import List, Set
 
 import geopandas as gpd
 from geodataset.aoi import AOIGeneratorConfig, AOIFromPackageConfig
@@ -21,12 +21,11 @@ def generate_future_coco(
     polygons_column: str,
     scores_column: str or None,
     categories_column: str or None,
-    other_attributes_columns: List[str] or None,
+    other_attributes_columns: Set[str] or None,
     output_path: Path,
     use_rle_for_labels: bool,
     n_workers: int,
-    coco_categories_list: List[dict] or None,
-    tiles_paths_order: List[Path] or None
+    coco_categories_list: List[dict] or None
 ) -> tuple:
     """
     Starts a side process for generating the COCO file, this way the main process isn't blocked in the meantime.
@@ -47,7 +46,7 @@ def generate_future_coco(
         Name of the column containing the scores.
     categories_column : str or None
         Name of the column containing the categories.
-    other_attributes_columns : List[str] or None
+    other_attributes_columns : Set[str] or None
         List of names of the columns containing other attributes.
     output_path : Path
         Path to the output directory.
@@ -57,8 +56,6 @@ def generate_future_coco(
         Number of workers to use for the process.
     coco_categories_list : List[dict] or None
         List of categories to be used in the COCO file.
-    tiles_paths_order : List[Path] or None
-        List of paths to the tiles in the order they should be processed.
 
     Returns
     -------
@@ -80,8 +77,7 @@ def generate_future_coco(
         output_path=output_path,
         use_rle_for_labels=use_rle_for_labels,
         n_workers=n_workers,
-        coco_categories_list=coco_categories_list,
-        tiles_paths_order=tiles_paths_order
+        coco_categories_list=coco_categories_list
     )
 
     return tuple([future_key, future_coco])
@@ -94,12 +90,11 @@ def generate_coco(
     polygons_column: str,
     scores_column: str or None,
     categories_column: str or None,
-    other_attributes_columns: List[str] or None,
+    other_attributes_columns: Set[str] or None,
     output_path: Path,
     use_rle_for_labels: bool,
     n_workers: int,
-    coco_categories_list: List[dict] or None,
-    tiles_paths_order: List[Path] or None
+    coco_categories_list: List[dict] or None
 ) -> Path:
 
     """
@@ -119,7 +114,7 @@ def generate_coco(
         Name of the column containing the scores.
     categories_column : str or None
         Name of the column containing the categories.
-    other_attributes_columns : List[str] or None
+    other_attributes_columns : Set[str] or None
         List of names of the columns containing other attributes.
     output_path : Path
         Path to the output directory.
@@ -129,8 +124,6 @@ def generate_coco(
         Number of workers to use for the process.
     coco_categories_list : List[dict] or None
         List of categories to be used in the COCO file.
-    tiles_paths_order : List[Path] or None
-        List of paths to the tiles in the order they should be processed.
 
     Returns
     -------
@@ -157,12 +150,11 @@ def generate_coco(
         polygons_column=polygons_column,
         scores_column=scores_column,
         categories_column=categories_column,
-        other_attributes_columns=other_attributes_columns,
+        other_attributes_columns=list(other_attributes_columns),
         output_path=output_path,
         use_rle_for_labels=use_rle_for_labels,
         n_workers=n_workers,
-        coco_categories_list=coco_categories_list,
-        tiles_paths_order=tiles_paths_order
+        coco_categories_list=coco_categories_list
     ).generate_coco()
 
     print('COCO file generated!')

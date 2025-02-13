@@ -71,7 +71,7 @@ class SegmenterComponent(BaseComponent):
             crs=None
         )
 
-        columns_to_pass = data_state.infer_gdf_columns_to_pass + ['segmenter_score']
+        columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'segmenter_score'})
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
@@ -85,8 +85,7 @@ class SegmenterComponent(BaseComponent):
             output_path=self.output_path,
             use_rle_for_labels=False,
             n_workers=4,
-            coco_categories_list=None,
-            tiles_paths_order=None
+            coco_categories_list=None
         )
 
         return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
@@ -94,7 +93,7 @@ class SegmenterComponent(BaseComponent):
     def update_data_state(self,
                           data_state: DataState,
                           results_gdf: gpd.GeoDataFrame,
-                          columns_to_pass: list,
+                          columns_to_pass: set,
                           future_coco: tuple) -> DataState:
         data_state.infer_gdf = results_gdf
         data_state.infer_gdf_columns_to_pass = columns_to_pass

@@ -41,7 +41,7 @@ class TilerizerComponent(BaseComponent):
                     data_state=data_state,
                     labels_gdf=data_state.ground_truth_gdf,
                     aois_config=self.ground_truth_aois_config,
-                    other_labels_attributes_column_names=data_state.ground_truth_gdf_columns_to_pass
+                    other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass)
                 )
                 ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
                 tiles_path = tilerizer.tiles_path
@@ -53,7 +53,7 @@ class TilerizerComponent(BaseComponent):
                     aoi_name_mapping={ground_truth_aoi_name: infer_aoi_name},
                     geopackage_layer_name=None,
                     main_label_category_column_name=self.config.main_label_category_column_name,
-                    other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names)))
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
                 infer_coco_path = second_result[infer_aoi_name]
 
@@ -63,7 +63,7 @@ class TilerizerComponent(BaseComponent):
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
                     aois_config=self.infer_aois_config,
-                    other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names)))
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
 
                 ground_truth_coco_path = None
@@ -77,7 +77,7 @@ class TilerizerComponent(BaseComponent):
                     data_state=data_state,
                     labels_gdf=data_state.ground_truth_gdf,
                     aois_config=self.ground_truth_aois_config,
-                    other_labels_attributes_column_names=data_state.ground_truth_gdf_columns_to_pass
+                    other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass)
                 )
 
                 ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
@@ -122,7 +122,6 @@ class TilerizerComponent(BaseComponent):
         data_state.tiles_path = tiles_path
         data_state.infer_coco_path = infer_coco_path
         data_state.ground_truth_coco_path = ground_truth_coco_path
-        data_state.tiles_names = tiles_names
 
         return data_state
 
