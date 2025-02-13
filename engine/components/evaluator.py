@@ -35,6 +35,8 @@ class EvaluatorComponent(BaseComponent):
         else:
             raise ValueError(f'Unknown evaluator type: {self.config.type}')
 
+        print(f"Evaluating the predictions at the '{self.config.level}' level.")
+
         if self.config.level == 'tile':
             if data_state.infer_coco_path is not None and data_state.ground_truth_coco_path is not None:
                 truth_coco = COCO(data_state.ground_truth_coco_path)
@@ -114,6 +116,8 @@ class EvaluatorComponent(BaseComponent):
                         f.write(string + "\n")
             else:
                 raise Exception("Missing a GeoDataFrame.")
+        else:
+            raise ValueError(f"Unsupported evaluation level: {self.config.level}")
 
         return self.update_data_state(data_state)
 
