@@ -1,8 +1,9 @@
 from random import random
 
+import cv2
 import numpy as np
 
-from detectron2.data.transforms import Augmentation, RandomRotation, NoOpTransform, CropTransform, ResizeTransform, \
+from detectron2.data.transforms import Augmentation, Transform, RandomRotation, NoOpTransform, CropTransform, ResizeTransform, \
     ResizeShortestEdge, RandomContrast, RandomBrightness, RandomFlip, RandomSaturation
 from engine.config_parsers import DetectorConfig
 
@@ -175,6 +176,44 @@ class ConditionalResize(Augmentation):
             return ResizeTransform(0, 0, new_w, new_h)
 
 
+class RandomHueTransform(Transform):
+    def __init__(self, hue_delta: int):
+        """
+        Args:
+            hue_delta (int): Amount to shift the hue channel. This value will be added
+                             to the hue channel (in OpenCV’s 0-179 scale) and wrapped around.
+        """
+        self.hue_delta = hue_delta
+
+    def apply_image(self, img):
+        # Convert BGR to HSV
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.int32)
+        # Modify the hue channel and wrap-around using modulo 180
+        hsv[..., 0] = (hsv[..., 0] + self.hue_delta) % 180
+        # Convert back to uint8 and then to BGR
+        hsv = hsv.astype(np.uint8)
+        img_aug = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+        return img_aug
+
+    def apply_coords(self, coords):
+        # Hue changes do not affect coordinates.
+        return coords
+
+class RandomHueAugmentation(Augmentation):
+    def __init__(self, hue_delta_range: tuple = (-10, 10)):
+        """
+        Args:
+            hue_delta_range (tuple): A tuple specifying the minimum and maximum delta to apply
+                                     to the hue channel.
+        """
+        self.hue_delta_range = hue_delta_range
+
+    def get_transform(self, image):
+        # Randomly select a hue delta within the provided range.
+        hue_delta = random.randint(self.hue_delta_range[0], self.hue_delta_range[1])
+        return RandomHueTransform(hue_delta)
+
+
 class AugmentationAdder:
     @staticmethod
     def modify_detectron2_augmentation_config(config: DetectorConfig, cfg):
@@ -200,6 +239,7 @@ class AugmentationAdder:
         cfg.AUGMENTATION.BRIGHTNESS = config.augmentation_brightness
         cfg.AUGMENTATION.CONTRAST = config.augmentation_contrast
         cfg.AUGMENTATION.SATURATION = config.augmentation_saturation
+        cfg.AUGMENTATION.HUE = config.augmentation_hue
         cfg.AUGMENTATION.CROP_SIZE_RANGE = config.augmentation_train_crop_size_range
         cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO = config.augmentation_crop_min_intersection_ratio
 
@@ -218,6 +258,7 @@ class AugmentationAdder:
             brightness=cfg.AUGMENTATION.BRIGHTNESS,
             contrast=cfg.AUGMENTATION.CONTRAST,
             saturation=cfg.AUGMENTATION.SATURATION,
+            hue=cfg.AUGMENTATION.HUE,
             crop_size_range=cfg.AUGMENTATION.CROP_SIZE_RANGE,
             crop_min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO
         )
@@ -246,6 +287,7 @@ class AugmentationAdder:
             brightness=config.augmentation_brightness,
             contrast=config.augmentation_contrast,
             saturation=config.augmentation_saturation,
+            hue=config.augmentation_hue,
             crop_size_range=config.augmentation_train_crop_size_range,
             crop_min_intersection_ratio=config.augmentation_crop_min_intersection_ratio
         )
@@ -271,6 +313,7 @@ class AugmentationAdder:
             brightness: float,
             contrast: float,
             saturation: float,
+            hue: float,
             crop_size_range: tuple or list,
             crop_min_intersection_ratio: float,
     ):
@@ -286,6 +329,7 @@ class AugmentationAdder:
             brightness (float): amount for RandomBrightness (e.g., 0.2 means ±20%).
             contrast (float): amount for RandomContrast (e.g., 0.2 means ±20%).
             saturation (float): amount for RandomSaturation (e.g., 0.2 means ±20%).
+            hue (int): amount for RandomHue (e.g., ±hue, in [0, 255]).
             crop_size_range (tuple or list): (min_side, max_side) range for SquareRandomCropWithBoxDiscard.
             crop_min_intersection_ratio (float): ratio threshold to keep boxes that partially fall outside the crop.
 
@@ -334,7 +378,11 @@ class AugmentationAdder:
             saturation_max = 1.0 + saturation
             augs.append(RandomSaturation(intensity_min=saturation_min, intensity_max=saturation_max))
 
-        # 8) Random crop (custom) - SquareRandomCropWithBoxDiscard
+        # 8) Random hue
+        if hue:
+            augs.append(RandomHueAugmentation(hue_delta_range=(-hue, hue)))
+
+        # 9) Random crop (custom) - SquareRandomCropWithBoxDiscard
         augs.append(
             SquareRandomCropWithBoxDiscard(
                 crop_range=crop_size_range,
@@ -342,7 +390,7 @@ class AugmentationAdder:
             )
         )
 
-        # 9) Resize to final, fixed size
+        # 10) Resize to final, fixed size
         augs.append(
             ResizeShortestEdge(
                 short_edge_length=[image_size],

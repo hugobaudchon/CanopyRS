@@ -37,6 +37,7 @@ class DetectorConfig(BaseConfig):
     augmentation_contrast: float = 0.2
     augmentation_brightness: float = 0.2
     augmentation_saturation: float = 0.2
+    augmentation_hue: float = 0.1
 
     lr: Optional[float] = 1e-4
     max_epochs: int = 100
