@@ -46,9 +46,9 @@ class DetectorConfig(BaseConfig):
     eval_epoch_interval: int = 1
     grad_accumulation_steps: int = 1
     backbone_model_pretrained: Optional[bool] = True
-    scheduler_type: str = 'MultiStepLR' # 'ExponentialLR'
-    scheduler_epochs_steps: Optional[List[int]] = [10, 20, 30]  # for MultiStepLR
-    scheduler_gamma: Optional[float] = 0.1  # for ExponentialLR and MultiStepLR
+    scheduler_type: str = 'WarmupMultiStepLR' # 'WarmupExponentialLR'
+    scheduler_epochs_steps: Optional[List[int]] = [10, 20, 30]  # for WarmupMultiStepLR
+    scheduler_gamma: Optional[float] = 0.1  # for WarmupExponentialLR and WarmupMultiStepLR
     scheduler_warmup_steps: Optional[int] = 1000
     dataloader_num_workers: int = 4
     use_gradient_checkpointing: Optional[bool] = False  # Used for detrex training
