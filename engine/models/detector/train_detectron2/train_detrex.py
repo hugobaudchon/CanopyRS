@@ -349,7 +349,7 @@ def _train_detrex_process(config, model_name):
 
     d2_valid_datasets_names = register_multiple_detection_datasets(
         root_path=config.data_root_path,
-        dataset_names=config.train_dataset_names,
+        dataset_names=config.valid_dataset_names,
         fold="valid",
         force_binary_class=True if config.num_classes == 1 else False,
         combine_datasets=True
