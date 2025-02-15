@@ -379,7 +379,7 @@ def _train_detrex_process(config, model_name):
     cfg.lr_multiplier.warmup_method = "linear"
 
     cfg.lr_multiplier.scheduler = CfgNode()
-    cfg.lr_multiplier.scheduler.name = config.scheduler_name
+    cfg.lr_multiplier.scheduler.name = config.scheduler_type
     cfg.lr_multiplier.scheduler.steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
     cfg.lr_multiplier.scheduler.gamma = config.scheduler_gamma
 
