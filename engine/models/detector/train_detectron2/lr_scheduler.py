@@ -1,6 +1,7 @@
 import logging
 
 import torch
+from detectron2.config import instantiate
 from detectron2.engine import LRScheduler
 from detectron2.solver import WarmupParamScheduler, LRMultiplier
 from detrex.config.configs.common.common_schedule import exponential_lr_scheduler
@@ -37,14 +38,14 @@ def build_lr_scheduler(
         )
     elif name == "ExponentialLR":
         # already has a warmup so return it directly
-        return exponential_lr_scheduler(
+        return instantiate(exponential_lr_scheduler(
             start_value=1.0,
             decay=lr_gamma,
             warmup_steps=warmup_iters,
             num_updates=max_iter,
             warmup_method="linear",
             warmup_factor=warmup_factor,
-        )
+        ))
 
     else:
         raise ValueError("Unknown LR scheduler: {}".format(name))
