@@ -35,7 +35,7 @@ def build_lr_scheduler(
             milestones=steps,
             num_updates=max_iter,
         )
-    elif name == "ExponentialLR":
+    elif name == "WarmupExponentialLR":
         # already has a warmup so return it directly
         return exponential_lr_scheduler(
             start_value=1.0,
