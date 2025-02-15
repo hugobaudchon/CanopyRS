@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -15,10 +16,13 @@ class BaseComponent(ABC):
         self.output_path = Path(parent_output_path) / f'{component_id}_{self.name}'
         self.output_path.mkdir(parents=True, exist_ok=True)
 
-        green_print(f"Running component '{self.name}'")
+        green_print(f"Running component '{self.name}'", add_return=True)
 
     def run(self, data_state: DataState) -> DataState:
-        return self(data_state)
+        start_time = time.time()
+        data_state = self(data_state)
+        green_print(f"Finished in {time.time() - start_time:.1f} seconds")
+        return data_state
 
     @abstractmethod
     def __call__(self, data_state: DataState) -> DataState:

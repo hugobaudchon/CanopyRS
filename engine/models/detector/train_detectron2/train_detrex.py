@@ -24,7 +24,7 @@ import torch
 import wandb
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
-from detectron2.config import LazyConfig, instantiate
+from detectron2.config import LazyConfig, instantiate, CfgNode
 from detectron2.data import DatasetCatalog
 from detectron2.engine import (
     SimpleTrainer,
@@ -43,13 +43,12 @@ from detectron2.utils.events import (
     TensorboardXWriter
 )
 from detectron2.checkpoint import DetectionCheckpointer
-# from detrex.checkpoint import DetectionCheckpointer
 
-# from detrex.utils import WandbWriter
 from detrex.modeling import ema
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
 from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
 from engine.models.detector.train_detectron2.hook import WandbWriterHook
+from engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
 from engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -263,11 +262,22 @@ def do_train(args, cfg):
             TensorboardXWriter(output_dir),
         ]
 
+    scheduler = build_lr_scheduler(
+        lr_scheduler_name=cfg.lr_multiplier.scheduler.name,
+        lr_steps=cfg.lr_multiplier.scheduler.steps,
+        lr_gamma=cfg.lr_multiplier.scheduler.gamma,
+        max_iter=cfg.train.max_iter,
+        warmup_factor=cfg.lr_multiplier.warmup_factor,
+        warmup_iters=cfg.lr_multiplier.warmup_steps,
+        warmup_method=cfg.lr_multiplier.warmup_method,
+        optimizer=optim
+    )
+
     trainer.register_hooks(
         [
             hooks.IterationTimer(),
             ema.EMAHook(cfg, model) if cfg.train.model_ema.enabled else None,
-            hooks.LRScheduler(scheduler=instantiate(cfg.lr_multiplier)),
+            hooks.LRScheduler(scheduler=scheduler),
             hooks.PeriodicCheckpointer(checkpointer, **cfg.train.checkpointer)
             if comm.is_main_process()
             else None,
@@ -363,25 +373,19 @@ def _train_detrex_process(config, model_name):
     cfg.train.eval_period = config.eval_epoch_interval * dataset_length // config.batch_size
     cfg.train.checkpointer.period = config.eval_epoch_interval * dataset_length // config.batch_size
 
+    cfg.lr_multiplier = CfgNode()
+    cfg.lr_multiplier.warmup_steps = config.scheduler_warmup_steps
+    cfg.lr_multiplier.warmup_factor = 0.001
+    cfg.lr_multiplier.warmup_method = "linear"
+
+    cfg.lr_multiplier.scheduler = CfgNode()
+    cfg.lr_multiplier.scheduler.name = config.scheduler_name
+    cfg.lr_multiplier.scheduler.steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
+    cfg.lr_multiplier.scheduler.gamma = config.scheduler_gamma
+
     if config.lr:
         print(f"Changing base learning rate from {cfg.optimizer.params.lr} to {config.lr}.")
         cfg.optimizer.params.lr = config.lr
-    if config.scheduler_epochs_steps:
-        steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
-        print(f"Changing scheduler steps from {cfg.lr_multiplier.scheduler.milestones} to {steps}.")
-        cfg.lr_multiplier.scheduler.milestones = steps
-    if config.scheduler_gamma:
-        values = [config.scheduler_gamma ** i for i in range(len(cfg.lr_multiplier.scheduler.milestones))]
-        print(f"Changing scheduler values steps from {cfg.lr_multiplier.scheduler.values} to {values}.")
-        cfg.lr_multiplier.scheduler.values = values
-    else:
-        if len(cfg.lr_multiplier.scheduler.milestones) != len(cfg.lr_multiplier.scheduler.values):
-            raise ValueError("Number of steps and values in the scheduler must be equal."
-                             " If you changed scheduler_epochs_steps, you should probably also input scheduler_gamma.")
-    if config.scheduler_warmup_steps:
-        warmup_length = config.scheduler_warmup_steps / cfg.train.max_iter
-        print(f"Changing scheduler warmup length from {cfg.lr_multiplier.warmup_length} to {warmup_length}.")
-        cfg.lr_multiplier.warmup_length = warmup_length
 
     # Enable checkpointing in the transformer encoder, lowering memory consumption.
     cfg.model.transformer.encoder.use_checkpoint = config.use_gradient_checkpointing

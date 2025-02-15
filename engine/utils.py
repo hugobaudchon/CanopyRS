@@ -185,8 +185,9 @@ def parse_tilerizer_aoi_config(aoi_config: str or None,
     return aois_config
 
 
-def green_print(text: str):
-    print(f'\n\033[32m ------ {text} ------ \033[0m')
+def green_print(text: str, add_return: bool = False):
+    add_return_str = '\n' if add_return else ''
+    print(f'{add_return_str}\033[32m ------ {text} ------ \033[0m')
 
 def init_spawn_method():
     """

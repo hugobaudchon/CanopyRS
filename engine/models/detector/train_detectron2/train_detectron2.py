@@ -14,6 +14,7 @@ from engine.config_parsers import DetectorConfig
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
 from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
 from engine.models.detector.train_detectron2.hook import WandbWriterHook
+from engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
 
 
 class TrainerWithValidation(DefaultTrainer):
@@ -50,6 +51,24 @@ class TrainerWithValidation(DefaultTrainer):
                 is_train=False
             )
         )
+
+    @classmethod
+    def build_lr_scheduler(cls, cfg, optimizer):
+        """
+        Build a learning rate scheduler for the optimizer.
+        """
+        lr_scheduler = build_lr_scheduler(
+            lr_scheduler_name=cfg.SOLVER.LR_SCHEDULER_NAME,
+            lr_steps=cfg.SOLVER.STEPS,
+            lr_gamma=cfg.SOLVER.GAMMA,
+            max_iter=cfg.SOLVER.MAX_ITER,
+            warmup_factor=cfg.SOLVER.WARMUP_FACTOR,
+            warmup_iters=cfg.SOLVER.WARMUP_ITERS,
+            warmup_method=cfg.SOLVER.WARMUP_METHOD,
+            optimizer=optimizer
+        )
+
+        return lr_scheduler
 
     @classmethod
     def test(cls, cfg, model, evaluators=None):
@@ -154,6 +173,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     cfg.SOLVER.MAX_ITER = config.max_epochs * dataset_length // config.batch_size
     cfg.SOLVER.LOG_PERIOD = config.train_log_interval
 
+    cfg.SOLVER.LR_SCHEDULER_NAME = config.scheduler_type
     if config.scheduler_epochs_steps is not None:
         steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
         print(f"Changing scheduler steps from {cfg.SOLVER.STEPS} to {steps}.")
