@@ -20,6 +20,7 @@ import time
 from datetime import datetime
 from pprint import pprint
 
+from engine.config_parsers.detector import DetectorConfig
 import torch
 import wandb
 from torch.nn.parallel import DataParallel, DistributedDataParallel
@@ -199,7 +200,7 @@ def do_test(cfg, model, eval_only=False):
         return ret
 
 
-def do_train(args, cfg):
+def do_train(args, cfg, config: DetectorConfig):
     """
     Args:
         cfg: an object with the following attributes:
@@ -289,6 +290,7 @@ def do_train(args, cfg):
             if comm.is_main_process()
             else None,
             WandbWriterHook(cfg=cfg,
+                            config=config,
                             train_log_interval=cfg.train.log_period,
                             wandb_project_name=cfg.train.wandb.params.project,
                             wandb_model_name=cfg.train.wandb.params.name)
@@ -400,7 +402,7 @@ def _train_detrex_process(config, model_name):
     pprint(lazyconfig_to_dict(cfg))
 
     args = default_argument_parser().parse_args([])
-    do_train(args, cfg)
+    do_train(args, cfg, config)
 
 
 def setup_mila_cluster_ddp():

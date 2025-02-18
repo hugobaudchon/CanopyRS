@@ -208,6 +208,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     trainer.resume_or_load(resume=False)
 
     trainer.register_hooks([WandbWriterHook(cfg=cfg,
+                                            config=config,
                                             train_log_interval=config.train_log_interval,
                                             wandb_project_name=config.wandb_project,
                                             wandb_model_name=model_name)])

@@ -1,4 +1,4 @@
-from random import random
+from random import random, randint
 
 import cv2
 import numpy as np
@@ -210,7 +210,7 @@ class RandomHueAugmentation(Augmentation):
 
     def get_transform(self, image):
         # Randomly select a hue delta within the provided range.
-        hue_delta = random.randint(self.hue_delta_range[0], self.hue_delta_range[1])
+        hue_delta = randint(self.hue_delta_range[0], self.hue_delta_range[1])
         return RandomHueTransform(hue_delta)
 
 
