@@ -30,6 +30,12 @@ class WandbWriterHook(HookBase):
                 config=self.config.dict()
             )
 
+            wandb.define_metric("total_loss", summary="min")
+            wandb.define_metric("bbox/AP", summary="max")
+            wandb.define_metric("bbox/AP50", summary="max")
+            wandb.define_metric("bbox/AP75", summary="max")
+            wandb.define_metric("bbox/APs", summary="max")
+
             # Convert your lazy config to YAML
             yaml_config = yaml.dump(lazyconfig_to_dict(self.cfg))
 
