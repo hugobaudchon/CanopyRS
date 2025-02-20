@@ -78,6 +78,11 @@ class TrainerWithValidation(DefaultTrainer):
         """
         results = super().test(cfg, model, evaluators)
 
+        train_dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in cfg.DATASETS.TRAIN])
+        current_step = cfg.SOLVER._iter
+        current_epoch = current_step * cfg.SOLVER.IMS_PER_BATCH // train_dataset_length
+        wandb.log({"epoch": current_epoch})
+
         # Log results of first dataset to wandb
         if len(results) > 0:
             dataset_name, metrics = results.popitem()

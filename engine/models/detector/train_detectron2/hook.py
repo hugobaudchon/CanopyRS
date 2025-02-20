@@ -8,6 +8,27 @@ from detectron2.utils import comm
 from engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
 
 
+def clean_config(cfg):
+    if isinstance(cfg, dict):
+        new_cfg = {}
+        for key, value in cfg.items():
+            # If the value is callable (e.g., a function), convert it to a string.
+            if callable(value):
+                try:
+                    new_cfg[key] = f"{value.__module__}.{value.__name__}"
+                except Exception:
+                    new_cfg[key] = str(value)
+            else:
+                new_cfg[key] = clean_config(value)
+        return new_cfg
+    elif isinstance(cfg, list):
+        return [clean_config(item) for item in cfg]
+    elif isinstance(cfg, tuple):
+        return tuple(clean_config(item) for item in cfg)
+    else:
+        return cfg
+
+
 class WandbWriterHook(HookBase):
     """
     A simple Detectron2 hook to log training losses (and other metrics)
@@ -37,7 +58,7 @@ class WandbWriterHook(HookBase):
             wandb.define_metric("bbox/APs", summary="max")
 
             # Convert your lazy config to YAML
-            yaml_config = yaml.dump(lazyconfig_to_dict(self.cfg))
+            yaml_config = yaml.dump(clean_config(lazyconfig_to_dict(self.cfg)), Dumper=yaml.SafeDumper)
 
             # Write YAML to a temporary file
             with tempfile.NamedTemporaryFile(mode="w+", suffix=".yaml", delete=False) as tmp:

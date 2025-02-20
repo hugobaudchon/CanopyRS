@@ -197,6 +197,11 @@ def do_test(cfg, model, eval_only=False):
             wandb.log({"bbox/APm": ret_bbox["APm"]})
             wandb.log({"bbox/APl": ret_bbox["APl"]})
 
+            train_dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in cfg.dataloader.train.dataset.names])
+            current_step = ret_bbox["AP"]["step"]
+            current_epoch = current_step * cfg.train.total_batch_size // train_dataset_length
+            wandb.log({"epoch": current_epoch})
+
         return ret
 
 
@@ -382,7 +387,10 @@ def _train_detrex_process(config, model_name):
 
     cfg.lr_multiplier.scheduler = CfgNode()
     cfg.lr_multiplier.scheduler.name = config.scheduler_type
-    cfg.lr_multiplier.scheduler.steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
+    if config.scheduler_epochs_steps is not None:
+        cfg.lr_multiplier.scheduler.steps = [step * dataset_length // config.batch_size for step in config.scheduler_epochs_steps]
+    else:
+        cfg.lr_multiplier.scheduler.steps = None
     cfg.lr_multiplier.scheduler.gamma = config.scheduler_gamma
 
     if config.lr:
