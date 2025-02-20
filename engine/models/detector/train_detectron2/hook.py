@@ -9,24 +9,31 @@ from engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
 
 
 def clean_config(cfg):
+    # Process dictionaries
     if isinstance(cfg, dict):
         new_cfg = {}
         for key, value in cfg.items():
-            # If the value is callable (e.g., a function), convert it to a string.
-            if callable(value):
-                try:
-                    new_cfg[key] = f"{value.__module__}.{value.__name__}"
-                except Exception:
-                    new_cfg[key] = str(value)
-            else:
-                new_cfg[key] = clean_config(value)
+            new_cfg[key] = clean_config(value)
         return new_cfg
+    # Process lists
     elif isinstance(cfg, list):
         return [clean_config(item) for item in cfg]
+    # Process tuples
     elif isinstance(cfg, tuple):
         return tuple(clean_config(item) for item in cfg)
-    else:
+    # For callables, return a module-qualified name
+    elif callable(cfg):
+        try:
+            return f"{cfg.__module__}.{cfg.__name__}"
+        except Exception:
+            return str(cfg)
+    # For simple types, just return them
+    elif isinstance(cfg, (str, int, float, bool)) or cfg is None:
         return cfg
+    # For everything else (e.g. custom objects), fallback to a string representation
+    else:
+        return str(cfg)
+
 
 
 class WandbWriterHook(HookBase):
