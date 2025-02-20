@@ -74,7 +74,7 @@ class WandbWriterHook(HookBase):
                 temp_filename = tmp.name  # path to the temporary file
 
             # Log the temporary file as an artifact
-            artifact = wandb.Artifact("second_config", type="config")
+            artifact = wandb.Artifact(f"config_{self.wandb_model_name}", type="config")
             artifact.add_file(temp_filename)
             run.log_artifact(artifact)
             artifact.wait()  # blocks until upload is complete
