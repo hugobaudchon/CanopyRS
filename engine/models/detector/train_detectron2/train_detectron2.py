@@ -10,6 +10,7 @@ from detectron2.config import get_cfg
 from detectron2.model_zoo import model_zoo
 import os
 
+from detectron2.utils.events import get_event_storage
 from engine.config_parsers import DetectorConfig
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
 from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
@@ -77,10 +78,11 @@ class TrainerWithValidation(DefaultTrainer):
         The COCOEvaluator typically returns a dict with keys like "bbox/AP".
         """
         results = super().test(cfg, model, evaluators)
+        print(results)
 
         train_dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in cfg.DATASETS.TRAIN])
-        current_step = cfg.SOLVER._iter
-        current_epoch = current_step * cfg.SOLVER.IMS_PER_BATCH // train_dataset_length
+        current_step = get_event_storage().iter
+        current_epoch = round(current_step * cfg.SOLVER.IMS_PER_BATCH / train_dataset_length)
         wandb.log({"epoch": current_epoch})
 
         # Log results of first dataset to wandb
@@ -96,14 +98,6 @@ class TrainerWithValidation(DefaultTrainer):
             else:
                 # If you have a different key, adjust here.
                 print(f"Warning: mAP metric not found in evaluation results for dataset {dataset_name}")
-
-        # # Loop over datasets (if more than one was evaluated)
-        # for dataset_name, metrics in results.items():
-        #     if "bbox/AP" in metrics:
-        #         wandb.log({f"eval/{dataset_name}_mAP": metrics["bbox/AP"]})
-        #     else:
-        #         # If you have a different key, adjust here.
-        #         print(f"Warning: mAP metric not found in evaluation results for dataset {dataset_name}")
 
         return results
 
@@ -122,6 +116,8 @@ def get_base_detectron2_model_cfg(config):
         cfg.MODEL.WEIGHTS = config.checkpoint_path
 
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = config.num_classes
+    if config.anchor_sizes is not None:
+        cfg.MODEL.ANCHOR_GENERATOR.SIZES = [list(s) for s in config.anchor_sizes]
     cfg.SOLVER.AMP.ENABLED = config.use_amp
 
     if config.box_score_thresh is not None:

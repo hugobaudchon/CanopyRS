@@ -10,8 +10,8 @@ class DetectorConfig(BaseConfig):
     checkpoint_path: Optional[str] = None
     batch_size: int = 8
     num_classes: int = 1
-    box_predictions_per_image: Optional[int] = 250
-    anchor_sizes: Optional[tuple] = ((32,), (64,), (128,), (256,), (512,))
+    box_predictions_per_image: Optional[int] = 500
+    anchor_sizes: Optional[list] = [[32], [64], [128], [256], [512]]
     aspect_ratios: Optional[tuple] = ((0.5, 1.0, 2.0),) * 5
     box_score_thresh: Optional[float] = 0.05
     box_nms_thresh: Optional[float] = 0.5

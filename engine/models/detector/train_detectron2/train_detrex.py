@@ -41,7 +41,7 @@ from detectron2.utils.file_io import PathManager
 from detectron2.utils.events import (
     CommonMetricPrinter,
     JSONWriter,
-    TensorboardXWriter
+    TensorboardXWriter, get_event_storage
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
@@ -197,9 +197,13 @@ def do_test(cfg, model, eval_only=False):
             wandb.log({"bbox/APm": ret_bbox["APm"]})
             wandb.log({"bbox/APl": ret_bbox["APl"]})
 
-            train_dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in cfg.dataloader.train.dataset.names])
-            current_step = ret_bbox["AP"]["step"]
-            current_epoch = current_step * cfg.train.total_batch_size // train_dataset_length
+            # Logging epoch number
+            if isinstance(cfg.dataloader.train.dataset.names, str):
+                train_dataset_length = len(DatasetCatalog.get(cfg.dataloader.train.dataset.names))
+            else:
+                train_dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in cfg.dataloader.train.dataset.names])
+            current_step = get_event_storage().iter
+            current_epoch = round(current_step * cfg.dataloader.train.total_batch_size / train_dataset_length)
             wandb.log({"epoch": current_epoch})
 
         return ret
