@@ -1,5 +1,7 @@
 from datetime import datetime
 from typing import List
+import uuid
+import os
 
 import wandb
 
@@ -8,7 +10,6 @@ from detectron2.evaluation import COCOEvaluator
 from detectron2.engine import DefaultTrainer
 from detectron2.config import get_cfg
 from detectron2.model_zoo import model_zoo
-import os
 
 from detectron2.utils.events import get_event_storage
 from engine.config_parsers import DetectorConfig
@@ -243,8 +244,13 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
     )
 
     print(f"Setting up trainer for dataset(s): {d2_train_datasets_names}")
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = f"{config.model}_{now}"
+    u = uuid.uuid4()
+    now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    slurm_job_id = os.environ.get('SLURM_JOB_ID')
+    if slurm_job_id:
+        f"{config.model}_{now}_{slurm_job_id}"
+    else:
+        model_name = f"{config.model}_{now}_{u.hex[:4]}"
     trainer = setup_trainer(d2_train_datasets_names, d2_valid_datasets_names, config, model_name)
 
     print("Starting training...")

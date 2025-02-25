@@ -28,6 +28,7 @@ class DetectorConfig(BaseConfig):
     wandb_project: Optional[str] = None
 
     augmentation_image_size: int = 1024     # Final image size for both training and evaluation
+    augmentation_early_conditional_image_size: Optional[int] = None
     augmentation_train_crop_size_range: List[int] = [784, 2048]
     augmentation_crop_min_intersection_ratio: float = 0.5
     augmentation_flip_horizontal: bool = True

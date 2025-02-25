@@ -232,6 +232,7 @@ class AugmentationAdder:
             cfg.AUGMENTATION = CN()
 
         cfg.AUGMENTATION.IMAGE_SIZE = config.augmentation_image_size
+        cfg.AUGMENTATION.EARLY_CONDITIONAL_IMAGE_SIZE = config.augmentation_early_conditional_image_size
         cfg.AUGMENTATION.FLIP_HORIZONTAL = config.augmentation_flip_horizontal
         cfg.AUGMENTATION.FLIP_VERTICAL = config.augmentation_flip_vertical
         cfg.AUGMENTATION.ROTATION = config.augmentation_rotation
@@ -250,7 +251,8 @@ class AugmentationAdder:
         based on the parameters in cfg.AUGMENTATION.
         """
         augs = AugmentationAdder._get_augmentation_list_train(
-            image_size=cfg.AUGMENTATION.IMAGE_SIZE,
+            final_image_size=cfg.AUGMENTATION.IMAGE_SIZE,
+            early_conditional_image_size=cfg.AUGMENTATION.EARLY_CONDITIONAL_IMAGE_SIZE,
             flip_vertical=cfg.AUGMENTATION.FLIP_VERTICAL,
             flip_horizontal=cfg.AUGMENTATION.FLIP_HORIZONTAL,
             rotation=cfg.AUGMENTATION.ROTATION,
@@ -279,7 +281,8 @@ class AugmentationAdder:
     @staticmethod
     def get_augmentation_detrex_train(config: DetectorConfig):
         augs = AugmentationAdder._get_augmentation_list_train(
-            image_size=config.augmentation_image_size,
+            final_image_size=config.augmentation_image_size,
+            conditional_image_size=config.augmentation_early_conditional_image_size,
             flip_vertical=config.augmentation_flip_vertical,
             flip_horizontal=config.augmentation_flip_horizontal,
             rotation=config.augmentation_rotation,
@@ -305,7 +308,8 @@ class AugmentationAdder:
 
     @staticmethod
     def _get_augmentation_list_train(
-            image_size: int,
+            final_image_size: int,
+            early_conditional_image_size: int,
             flip_vertical: bool,
             flip_horizontal: bool,
             rotation: float,
@@ -321,7 +325,8 @@ class AugmentationAdder:
         Build a list of Detectron2 augmentations based on the given parameters.
 
         Args:
-            image_size (int): minimum size used for ConditionalResize and final ResizeShortestEdge.
+            final_image_size (int): for final ResizeShortestEdge.
+            early_conditional_image_size (int): for ConditionalResize at beggining in case image is too small. Can be None or False to deactivate.
             flip_vertical (bool): if True, applies RandomFlip( vertical=True ).
             flip_horizontal (bool): if True, applies RandomFlip( horizontal=True ).
             rotation (float): if non-zero, range of angles (e.g., [-rotation, rotation]) for random rotation.
@@ -339,9 +344,10 @@ class AugmentationAdder:
         augs = []
 
         # 1) Conditional resize
-        augs.append(
-            ConditionalResize(min_size=image_size)
-        )
+        if early_conditional_image_size:
+            augs.append(
+                ConditionalResize(min_size=early_conditional_image_size)
+            )
 
         # 2) Horizontal flip
         if flip_horizontal:
@@ -393,8 +399,8 @@ class AugmentationAdder:
         # 10) Resize to final, fixed size
         augs.append(
             ResizeShortestEdge(
-                short_edge_length=[image_size],
-                max_size=image_size,
+                short_edge_length=[final_image_size],
+                max_size=final_image_size,
                 sample_style="choice"
             )
         )

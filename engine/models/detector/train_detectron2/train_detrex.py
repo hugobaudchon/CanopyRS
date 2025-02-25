@@ -19,6 +19,7 @@ import sys
 import time
 from datetime import datetime
 from pprint import pprint
+import uuid
 
 from engine.config_parsers.detector import DetectorConfig
 import torch
@@ -318,8 +319,13 @@ def do_train(args, cfg, config: DetectorConfig):
 
 
 def train_detrex(config):
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = f"{config.model}_{now}"
+    u = uuid.uuid4()
+    now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    slurm_job_id = os.environ.get('SLURM_JOB_ID')
+    if slurm_job_id:
+        f"{config.model}_{now}_{slurm_job_id}"
+    else:
+        model_name = f"{config.model}_{now}_{u.hex[:4]}"
 
     launch(
         _train_detrex_process,
@@ -398,8 +404,9 @@ def _train_detrex_process(config, model_name):
     cfg.lr_multiplier.scheduler.gamma = config.scheduler_gamma
 
     if config.lr:
-        print(f"Changing base learning rate from {cfg.optimizer.params.lr} to {config.lr}.")
-        cfg.optimizer.params.lr = config.lr
+        print(f"Changing base learning rate from {cfg.optimizer.lr} to {config.lr}.")
+        cfg.optimizer.lr = config.lr
+        cfg.optimizer.params.base_lr = config.lr
 
     # Enable checkpointing in the transformer encoder, lowering memory consumption.
     cfg.model.transformer.encoder.use_checkpoint = config.use_gradient_checkpointing
