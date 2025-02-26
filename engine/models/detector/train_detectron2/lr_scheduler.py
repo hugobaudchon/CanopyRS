@@ -2,10 +2,9 @@ import logging
 
 import torch
 from detectron2.config import instantiate
-from detectron2.engine import LRScheduler
 from detectron2.solver import WarmupParamScheduler, LRMultiplier
 from detrex.config.configs.common.common_schedule import exponential_lr_scheduler
-from fvcore.common.param_scheduler import MultiStepParamScheduler
+from fvcore.common.param_scheduler import MultiStepParamScheduler, CosineParamScheduler
 
 
 def build_lr_scheduler(
@@ -17,7 +16,7 @@ def build_lr_scheduler(
         warmup_iters: int,
         warmup_method: str,
         optimizer: torch.optim.Optimizer,
-) -> LRScheduler:
+) -> LRMultiplier:
     """
     Build a LR scheduler from config.
     """
@@ -32,21 +31,26 @@ def build_lr_scheduler(
                 "These values will be ignored."
             )
         sched = MultiStepParamScheduler(
-            values=[lr_gamma**k for k in range(len(steps) + 1)],
+            values=[lr_gamma ** k for k in range(len(steps) + 1)],
             milestones=steps,
             num_updates=max_iter,
         )
     elif name == "WarmupExponentialLR":
         # already has a warmup so return it directly
-        return instantiate(exponential_lr_scheduler(
+        sched = instantiate(exponential_lr_scheduler(
             start_value=1.0,
             decay=lr_gamma,
             warmup_steps=warmup_iters,
             num_updates=max_iter,
-            warmup_method="linear",
+            warmup_method=warmup_method,
             warmup_factor=warmup_factor,
         ))
-
+        return LRMultiplier(optimizer, multiplier=sched, max_iter=max_iter)
+    elif name == "WarmupCosineLR":
+        sched = CosineParamScheduler(
+            start_value=1.0,
+            end_value=lr_gamma,
+        )
     else:
         raise ValueError("Unknown LR scheduler: {}".format(name))
 
