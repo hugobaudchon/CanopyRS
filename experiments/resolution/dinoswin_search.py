@@ -15,9 +15,9 @@ max_epochs_list = [200, 1000, 5000]
 lrs = [1e-4, 5e-5]
 
 # Path to the base YAML config file
-base_config_path = "experiences/resolution/detector_dinoswin.yaml"
+base_config_path = "experiments/resolution/detector_dinoswin.yaml"
 # Directory to store the generated config files
-config_dir = "experiences/resolution/grid_configs_dinoswin"
+config_dir = "experiments/resolution/grid_configs_dinoswin"
 os.makedirs(config_dir, exist_ok=True)
 
 # SLURM job script to call

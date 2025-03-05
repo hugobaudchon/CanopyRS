@@ -323,7 +323,7 @@ def train_detrex(config):
     now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     slurm_job_id = os.environ.get('SLURM_JOB_ID')
     if slurm_job_id:
-        f"{config.model}_{now}_{slurm_job_id}"
+        model_name = f"{config.model}_{now}_{slurm_job_id}"
     else:
         model_name = f"{config.model}_{now}_{u.hex[:4]}"
 

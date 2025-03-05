@@ -5,19 +5,27 @@ import yaml
 import subprocess
 from itertools import product
 
+seeds_list = [
+    1,
+    # 2,
+    # 3
+]
+
 # Grid search parameters
 batch_sizes = [
     4,
-    # 8,
+    8,
     # 16
 ]
-max_epochs_list = [200, 1000, 5000]
+max_epochs_list = [200, 500]
+
+scheduler_type = "WarmupCosineLR" # "WarmupMultiStepLR"
 lrs = [1e-4, 5e-5]
 
 # Path to the base YAML config file
-base_config_path = "experiences/resolution/detector_dinoresnet.yaml"
+base_config_path = "experiments/resolution/detector_dinoresnet.yaml"
 # Directory to store the generated config files
-config_dir = "experiences/resolution/grid_configs_dinoresnet"
+config_dir = "experiments/resolution/grid_configs_dinoresnet"
 os.makedirs(config_dir, exist_ok=True)
 
 # SLURM job script to call
@@ -40,21 +48,21 @@ dataset_configs = [
         "augmentation_image_size": 1777,
         "augmentation_train_crop_size_range": [1600, 1955]
     },
-    {
-        "compressed": "ours_gr0p06_1333px.tar.gz",
-        "train_dataset_names": [
-            'tilerized_2666_0p5_0p06_None/panama_aguasalud',
-            'tilerized_2666_0p5_0p06_None/ecuador_tiputini',
-            'tilerized_2666_0p5_0p06_None/brazil_zf2'
-        ],
-        "valid_dataset_names": [
-            'tilerized_1333_0p5_0p06_None/panama_aguasalud',
-            'tilerized_1333_0p5_0p06_None/ecuador_tiputini',
-            'tilerized_1333_0p5_0p06_None/brazil_zf2'
-        ],
-        "augmentation_image_size": 1333,
-        "augmentation_train_crop_size_range": [1200, 1466]
-    },
+    # {
+    #     "compressed": "ours_gr0p06_1333px.tar.gz",
+    #     "train_dataset_names": [
+    #         'tilerized_2666_0p5_0p06_None/panama_aguasalud',
+    #         'tilerized_2666_0p5_0p06_None/ecuador_tiputini',
+    #         'tilerized_2666_0p5_0p06_None/brazil_zf2'
+    #     ],
+    #     "valid_dataset_names": [
+    #         'tilerized_1333_0p5_0p06_None/panama_aguasalud',
+    #         'tilerized_1333_0p5_0p06_None/ecuador_tiputini',
+    #         'tilerized_1333_0p5_0p06_None/brazil_zf2'
+    #     ],
+    #     "augmentation_image_size": 1333,
+    #     "augmentation_train_crop_size_range": [1200, 1466]
+    # },
     {
         "compressed": "ours_gr0p1_800px.tar.gz",
         "train_dataset_names": [
@@ -126,14 +134,17 @@ with open(base_config_path, "r") as f:
 
 # Iterate over each dataset configuration and grid search combinations
 for dataset_config in dataset_configs:
-    for batch_size, max_epochs, lr in product(batch_sizes, max_epochs_list, lrs):
+    for batch_size, max_epochs, lr, seed in product(batch_sizes, max_epochs_list, lrs, seeds_list):
         # Create a copy of the base configuration
         config = base_config.copy()
 
         # Update grid search parameters
         config["batch_size"] = batch_size
         config["max_epochs"] = max_epochs
+        config["scheduler_type"] = scheduler_type
         config["lr"] = lr
+        config["scheduler_epochs_steps"] = [int(max_epochs*0.8), int(max_epochs*0.9)]
+        config["seed"] = seed
 
         # Update dataset-specific parameters
         config["train_dataset_names"] = dataset_config["train_dataset_names"]
@@ -145,16 +156,38 @@ for dataset_config in dataset_configs:
         timestamp = int(time.time())
         # Using the compressed file name (without extension) to indicate the dataset variant
         variant_name = dataset_config["compressed"].split('.')[0]
-        config_filename = f"config_{variant_name}_{dataset_config["augmentation_image_size"]}_bs{batch_size}_epochs{max_epochs}_lr{lr}_{timestamp}.yaml"
+        config_filename = f'config_{variant_name}_{dataset_config["augmentation_image_size"]}_bs{batch_size}_epochs{max_epochs}_lr{lr}_{timestamp}.yaml'
         config_path = os.path.join(config_dir, config_filename)
 
         # Save the modified configuration to file
         with open(config_path, "w") as outfile:
             yaml.dump(config, outfile, default_flow_style=False)
 
-        # Build the sbatch command, passing the dataset compressed file name and config file path as arguments.
-        cmd = ["sbatch", sbatch_script, dataset_config["compressed"], config_path]
-        print("Submitting job with command:", " ".join(cmd))
+        if batch_size >= 8 or dataset_config["augmentation_image_size"] >= 1777:
+            gres_arg = "--gres=gpu:rtx8000:2"
+        else:
+            gres_arg = "--gres=gpu:rtx8000:1"
+
+        # Time request logic using SLURM --time flag
+        time_arg = "--time=2-00:00:00"  # 2 days
+        cpus_arg = "--cpus-per-task=8" # Number of CPU cores per task
+        mem_arg = "--mem=40G"
+
+        # Build the sbatch command, passing the dataset compressed file name and config file path as arguments
+        cmd = [
+            "sbatch",
+            gres_arg,
+            time_arg,
+            cpus_arg,
+            mem_arg,
+            sbatch_script,
+            dataset_config["compressed"],
+            config_path
+        ]
+        print(f"Submitting job with command:")
+        print(" ".join(cmd))
+        print(f"  Parameters: batch_size={batch_size}, max_epochs={max_epochs}, lr={lr:.6f}, "
+              f"gres_arg={gres_arg}, time_arg={time_arg}")
         
         # Submit the job
         subprocess.run(cmd)

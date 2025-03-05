@@ -52,98 +52,38 @@ sbatch_script = "sbatch_train_fasterrcnn_gridsearch.sh"
 # Dataset configurations for three dataset variants
 dataset_configs = [
     # {
-    #     "compressed": "ours_gr0p045_1777px.tar.gz",
+    #     "compressed": "quebectrees_gr0p06_1333px.tar.gz",
     #     "train_dataset_names": [
-    #         'tilerized_3555_0p5_0p045_None/panama_aguasalud',
-    #         'tilerized_3555_0p5_0p045_None/ecuador_tiputini',
-    #         'tilerized_3555_0p5_0p045_None/brazil_zf2'
+    #         'tilerized_2666_0p5_0p06_None/quebec_trees',
     #     ],
     #     "valid_dataset_names": [
-    #         'tilerized_1777_0p5_0p045_None/panama_aguasalud',
-    #         'tilerized_1777_0p5_0p045_None/ecuador_tiputini',
-    #         'tilerized_1777_0p5_0p045_None/brazil_zf2'
-    #     ],
-    #     "augmentation_image_size": 1777,
-    #     "augmentation_train_crop_size_range": [1600, 1955]
-    # },
-    # {
-    #     "compressed": "ours_gr0p06_1333px.tar.gz",
-    #     "train_dataset_names": [
-    #         'tilerized_2666_0p5_0p06_None/panama_aguasalud',
-    #         'tilerized_2666_0p5_0p06_None/ecuador_tiputini',
-    #         'tilerized_2666_0p5_0p06_None/brazil_zf2'
-    #     ],
-    #     "valid_dataset_names": [
-    #         'tilerized_1333_0p5_0p06_None/panama_aguasalud',
-    #         'tilerized_1333_0p5_0p06_None/ecuador_tiputini',
-    #         'tilerized_1333_0p5_0p06_None/brazil_zf2'
+    #         'tilerized_1333_0p5_0p06_None/quebec_trees',
     #     ],
     #     "augmentation_image_size": 1333,
     #     "augmentation_train_crop_size_range": [1200, 1466]
     # },
-    # {
-    #     "compressed": "ours_gr0p1_800px.tar.gz",
-    #     "train_dataset_names": [
-    #         'tilerized_1600_0p5_0p1_None/panama_aguasalud',
-    #         'tilerized_1600_0p5_0p1_None/ecuador_tiputini',
-    #         'tilerized_1600_0p5_0p1_None/brazil_zf2'
-    #     ],
-    #     "valid_dataset_names": [
-    #         'tilerized_800_0p5_0p1_None/panama_aguasalud',
-    #         'tilerized_800_0p5_0p1_None/ecuador_tiputini',
-    #         'tilerized_800_0p5_0p1_None/brazil_zf2'
-    #     ],
-    #     "augmentation_image_size": 800,
-    #     "augmentation_train_crop_size_range": [720, 880]
-    # },
-
-
-        # for showing that its lower resolution that drops performance, not smaller images
     {
-        "compressed": "ours_gr0p06_1333px.tar.gz",
+        "compressed": "quebectrees_gr0p06_1333px.tar.gz",
         "train_dataset_names": [
-            'tilerized_2666_0p5_0p06_None/panama_aguasalud',
-            'tilerized_2666_0p5_0p06_None/ecuador_tiputini',
-            'tilerized_2666_0p5_0p06_None/brazil_zf2'
+            'tilerized_2666_0p5_0p06_None/quebec_trees',
         ],
         "valid_dataset_names": [
-            'tilerized_1333_0p5_0p06_None/panama_aguasalud',
-            'tilerized_1333_0p5_0p06_None/ecuador_tiputini',
-            'tilerized_1333_0p5_0p06_None/brazil_zf2'
-        ],
-        "augmentation_image_size": 1777,
-        "augmentation_train_crop_size_range": [1200, 1466]
-    },
-    {
-        "compressed": "ours_gr0p1_800px.tar.gz",
-        "train_dataset_names": [
-            'tilerized_1600_0p5_0p1_None/panama_aguasalud',
-            'tilerized_1600_0p5_0p1_None/ecuador_tiputini',
-            'tilerized_1600_0p5_0p1_None/brazil_zf2'
-        ],
-        "valid_dataset_names": [
-            'tilerized_800_0p5_0p1_None/panama_aguasalud',
-            'tilerized_800_0p5_0p1_None/ecuador_tiputini',
-            'tilerized_800_0p5_0p1_None/brazil_zf2'
+            'tilerized_1333_0p5_0p06_None/quebec_trees',
         ],
         "augmentation_image_size": 1333,
-        "augmentation_train_crop_size_range": [720, 880]
+        "augmentation_train_crop_size_range": [550, 1466]
     },
-    {
-        "compressed": "ours_gr0p1_800px.tar.gz",
-        "train_dataset_names": [
-            'tilerized_1600_0p5_0p1_None/panama_aguasalud',
-            'tilerized_1600_0p5_0p1_None/ecuador_tiputini',
-            'tilerized_1600_0p5_0p1_None/brazil_zf2'
-        ],
-        "valid_dataset_names": [
-            'tilerized_800_0p5_0p1_None/panama_aguasalud',
-            'tilerized_800_0p5_0p1_None/ecuador_tiputini',
-            'tilerized_800_0p5_0p1_None/brazil_zf2'
-        ],
-        "augmentation_image_size": 1777,
-        "augmentation_train_crop_size_range": [720, 880]
-    },
+    # {
+    #     "compressed": "quebectrees_gr0p025_1333px.tar.gz",
+    #     "train_dataset_names": [
+    #         'tilerized_2666_0p5_0p025_None/quebec_trees',
+    #     ],
+    #     "valid_dataset_names": [
+    #         'tilerized_1333_0p5_0p025_None/quebec_trees',
+    #     ],
+    #     "augmentation_image_size": 1333,
+    #     "augmentation_train_crop_size_range": [1200, 1466]
+    # },
 ]
 
 # Load the base YAML configuration

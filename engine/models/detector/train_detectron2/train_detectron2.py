@@ -166,6 +166,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     cfg.DATASETS.TEST = tuple(valid_dataset_names)
 
     # Training config
+    cfg.SEED = config.seed
     cfg.DATALOADER.NUM_WORKERS = config.dataloader_num_workers
     print(f"Changing batch size from {cfg.SOLVER.IMS_PER_BATCH} to {config.batch_size}.")
     cfg.SOLVER.IMS_PER_BATCH = config.batch_size  # This is the real "batch size"
@@ -248,7 +249,7 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
     now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     slurm_job_id = os.environ.get('SLURM_JOB_ID')
     if slurm_job_id:
-        f"{config.model}_{now}_{slurm_job_id}"
+        model_name = f"{config.model}_{now}_{slurm_job_id}"
     else:
         model_name = f"{config.model}_{now}_{u.hex[:4]}"
     trainer = setup_trainer(d2_train_datasets_names, d2_valid_datasets_names, config, model_name)

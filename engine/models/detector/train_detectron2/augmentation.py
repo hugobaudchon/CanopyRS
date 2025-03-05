@@ -282,7 +282,7 @@ class AugmentationAdder:
     def get_augmentation_detrex_train(config: DetectorConfig):
         augs = AugmentationAdder._get_augmentation_list_train(
             final_image_size=config.augmentation_image_size,
-            conditional_image_size=config.augmentation_early_conditional_image_size,
+            early_conditional_image_size=config.augmentation_early_conditional_image_size,
             flip_vertical=config.augmentation_flip_vertical,
             flip_horizontal=config.augmentation_flip_horizontal,
             rotation=config.augmentation_rotation,
