@@ -54,10 +54,12 @@ class Pipeline:
             component = self._get_component(component_config, component_id)
             self.data_state = component.run(self.data_state)
 
-        import ipdb; ipdb.set_trace()
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
         self._clean_side_processes()
-        import ipdb; ipdb.set_trace()
+
+        # Register any files that might have been missed during async processing
+        self._register_known_component_files()
+
         if get_data_state == True:
             return self.data_state
 
@@ -140,6 +142,31 @@ class Pipeline:
         self.data_state.side_processes = []
         
         return self.data_state  # Return the updated data_state
+
+    def _register_known_component_files(self):
+        """Register any output files that might have been missed during async processing"""
+        for component_id, component_config in enumerate(self.config.components_configs):
+            component_type = list(component_config.keys())[0]
+            component_path = Path(self.io_config.output_folder) / f"{component_id}_{component_type}"
+            
+            # Register the component folder if it exists
+            if component_path.exists():
+                self.data_state.register_component_folder(component_type, component_id, component_path)
+                
+                # Register COCO files
+                for coco_file in component_path.glob("*.json"):
+                    # Skip non-COCO JSON files if needed
+                    if "_coco_" in coco_file.name:
+                        self.data_state.register_output_file(
+                            component_type, component_id, 'coco', coco_file
+                        )
+                
+                # Register GeoPackage files
+                for gpkg_file in component_path.glob("*.gpkg"):
+                    file_type = 'pre_aggregated_gpkg' if 'notaggregated' in gpkg_file.name else 'gpkg'
+                    self.data_state.register_output_file(
+                        component_type, component_id, file_type, gpkg_file
+                    )
 
     def _validate_components_order(self):
         pass    # TODO
