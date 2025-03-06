@@ -48,14 +48,18 @@ class Pipeline:
             aois={ground_truth_aoi_name: self.io_config.aoi}
         )
 
-    def run(self):
+    def run(self, get_data_state=False):
         # Run each component in the pipeline, sequentially
         for component_id, component_config in enumerate(self.config.components_configs):
             component = self._get_component(component_config, component_id)
             self.data_state = component.run(self.data_state)
 
+        import ipdb; ipdb.set_trace()
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
         self._clean_side_processes()
+        import ipdb; ipdb.set_trace()
+        if get_data_state == True:
+            return self.data_state
 
     def _get_component(self, component_config, component_id):
         component_type = list(component_config.keys())[0]
@@ -90,11 +94,52 @@ class Pipeline:
 
     def _clean_side_processes(self):
         for side_process in self.data_state.side_processes:
-            attribute_name = side_process[0]
-            result = side_process[1].result()
-            if attribute_name:
-                # Updating the correct attribute in the data state
-                setattr(self.data_state, attribute_name, result)
+            if isinstance(side_process, tuple):
+                attribute_name = side_process[0]
+                future_or_result = side_process[1]
+                
+                # Check if this is a Future object with a .result() method
+                if hasattr(future_or_result, 'result'):
+                    result = future_or_result.result()
+                else:
+                    result = future_or_result  # It's already a result
+                
+                # Update the data_state attribute
+                if attribute_name:
+                    setattr(self.data_state, attribute_name, result)
+                
+                # If there's registration info, register the output file
+                if len(side_process) > 2 and isinstance(side_process[2], dict):
+                    reg_info = side_process[2]
+                    
+                    # If an expected_path was provided, use it
+                    if 'expected_path' in reg_info:
+                        file_path = Path(reg_info['expected_path'])
+                    # Otherwise try to get a path from the result
+                    elif isinstance(result, (str, Path)):
+                        file_path = Path(result)
+                    else:
+                        file_path = None
+                        
+                    if file_path:
+                        # Register the component folder first
+                        self.data_state.register_component_folder(
+                            reg_info['component_name'], 
+                            reg_info['component_id'],
+                            file_path.parent
+                        )
+                        # Then register the file
+                        self.data_state.register_output_file(
+                            reg_info['component_name'],
+                            reg_info['component_id'],
+                            reg_info['file_type'],
+                            file_path
+                        )
+        
+        # Clear processed side processes
+        self.data_state.side_processes = []
+        
+        return self.data_state  # Return the updated data_state
 
     def _validate_components_order(self):
         pass    # TODO

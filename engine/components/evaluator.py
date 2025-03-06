@@ -108,6 +108,18 @@ class EvaluatorComponent(BaseComponent):
         return self.update_data_state(data_state)
 
     def update_data_state(self, data_state: DataState) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
+
+        # Register metrics files
+        metrics_tiles_path = self.output_path / "coco_metrics_tiles.txt"
+        metrics_raster_path = self.output_path / "coco_metrics_raster.txt"
+
+        if metrics_tiles_path.exists():
+            data_state.register_output_file(self.name, self.component_id, 'metrics_tiles', metrics_tiles_path)
+        if metrics_raster_path.exists():
+            data_state.register_output_file(self.name, self.component_id, 'metrics_raster', metrics_raster_path)
+   
         return data_state
 
 def gdf_to_coco_single_image(gdf, raster, is_ground_truth=False):

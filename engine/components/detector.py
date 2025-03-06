@@ -77,6 +77,7 @@ class DetectorComponent(BaseComponent):
             scale_factor=scale_factor,
             ground_resolution=ground_resolution
         )
+        coco_output_path = self.output_path / coco_output_name
 
         with ProcessPoolExecutor(max_workers=2) as executor:
             future_coco = executor.submit(
@@ -88,9 +89,16 @@ class DetectorComponent(BaseComponent):
                 scores=boxes_scores,
                 categories=classes,
                 other_attributes={},
-                output_path=self.output_path / coco_output_name,
+                output_path=coco_output_path,
                 use_rle_for_labels=True,
                 n_workers=2,
                 coco_categories_list=None
             )
-        return tuple(['infer_coco_path', future_coco])
+            
+        # Return a tuple with info needed for future handling
+        return ('infer_coco_path', future_coco, {
+            'component_name': self.name,
+            'component_id': self.component_id,
+            'file_type': 'coco',
+            'expected_path': str(coco_output_path)
+        })

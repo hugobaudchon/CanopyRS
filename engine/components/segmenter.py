@@ -78,9 +78,16 @@ class SegmenterComponent(BaseComponent):
                           data_state: DataState,
                           results_gdf: gpd.GeoDataFrame,
                           future_coco: tuple) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
         data_state.infer_gdf = results_gdf
         data_state.infer_gdf_columns_to_pass.update(['segmenter_score'])
-        data_state.side_processes.append(future_coco)
+        # Register future COCO file
+        data_state.side_processes.append(
+            # Modified tuple to include registration info
+            ('infer_coco_path', future_coco, 
+             {'component_name': self.name, 'component_id': self.component_id, 'file_type': 'coco'})
+        )
         return data_state
 
     def generate_coco(self, tiles_paths, tile_names_order_reference, masks_polygons, masks_polygons_scores):
@@ -97,6 +104,8 @@ class SegmenterComponent(BaseComponent):
             scale_factor=scale_factor,
             ground_resolution=ground_resolution
         )
+        coco_output_path = self.output_path / coco_output_name
+
         with ProcessPoolExecutor(max_workers=1) as executor:
             future_coco = executor.submit(
                 generate_coco,
@@ -107,13 +116,19 @@ class SegmenterComponent(BaseComponent):
                 scores=masks_polygons_scores,
                 categories=None,
                 other_attributes={},
-                output_path=self.output_path / coco_output_name,
+                output_path=coco_output_path,
                 use_rle_for_labels=True,
                 n_workers=2,
                 coco_categories_list=None
             )
-        return tuple(['infer_coco_path', future_coco])
 
+        # Return tuple with info needed for both future completion and registration
+        return ('infer_coco_path', future_coco, {
+            'component_name': self.name,
+            'component_id': self.component_id,
+            'file_type': 'coco',
+            'expected_path': str(coco_output_path)  # Include the expected path directly
+        })
 
 def get_attribute_from_dataset(dataset, attribute_name, tiles_paths, tiles_masks_polygons):
     if attribute_name in dataset.tiles[dataset.tiles_path_to_id_mapping[tiles_paths[0].name]]['labels'][0]['other_attributes']:

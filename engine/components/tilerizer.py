@@ -1,4 +1,5 @@
 import geopandas as gpd
+from pathlib import Path
 
 from geodataset.aoi import AOIConfig
 from geodataset.tilerize import RasterPolygonTilerizer, RasterTilerizer, LabeledRasterTilerizer
@@ -122,6 +123,15 @@ class TilerizerComponent(BaseComponent):
                          infer_coco_path: str,
                          ground_truth_coco_path: str,
                          tiles_names: list[str]) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
+
+        # Register important output files (not all tiles)
+        if infer_coco_path:
+            data_state.register_output_file(self.name, self.component_id, 'infer_coco', Path(infer_coco_path))
+        if ground_truth_coco_path:
+            data_state.register_output_file(self.name, self.component_id, 'ground_truth_coco', Path(ground_truth_coco_path))
+
         data_state.tiles_path = tiles_path
         data_state.infer_coco_path = infer_coco_path
         data_state.ground_truth_coco_path = ground_truth_coco_path
