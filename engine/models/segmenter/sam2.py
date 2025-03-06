@@ -32,7 +32,11 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
 
         # Load SAM model and processor
         print(f"Loading model {self.model_name}")
-        self.predictor = SAM2ImagePredictor.from_pretrained(self.model_name)
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+        self.predictor = SAM2ImagePredictor.from_pretrained(self.model_name, device=device)
         print(f"Model {self.model_name} loaded")
 
     def infer_image(self,

@@ -232,7 +232,7 @@ class DetectorWrapperBase(ABC):
 
 def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):
     # Structure the OrderedDict keys to match requirements
-    checkpoint = torch.load(checkpoint_state_dict_path, weights_only=True)
+    checkpoint = torch.load(checkpoint_state_dict_path, weights_only=True, map_location=torch.device('cpu'))
     # Create a new OrderedDict with the keys prefixed with "model."
     new_state_dict = OrderedDict()
     if all(s.startswith("model.") for s in checkpoint.keys()):
