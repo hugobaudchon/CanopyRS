@@ -2,6 +2,8 @@
 wandb/
 pretrained_models/
 jobs/
+experiments/dataset_statistics/*.png
+experiments/resolution/*/*.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -6,12 +6,21 @@ import subprocess
 from itertools import product
 
 # Grid search parameters
+seeds_list = [
+    1,
+    # 2,
+    # 3
+]
 batch_sizes = [
     4,
     8,
-    16
+    # 16
 ]
-max_epochs_list = [200, 1000, 5000]
+max_epochs_list = [
+    200,
+    # 500, 
+]
+scheduler_type = "WarmupCosineLR" # "WarmupMultiStepLR"
 lrs = [1e-4, 5e-5]
 
 # Path to the base YAML config file
@@ -126,14 +135,17 @@ with open(base_config_path, "r") as f:
 
 # Iterate over each dataset configuration and grid search combinations
 for dataset_config in dataset_configs:
-    for batch_size, max_epochs, lr in product(batch_sizes, max_epochs_list, lrs):
+    for batch_size, max_epochs, lr, seed in product(batch_sizes, max_epochs_list, lrs, seeds_list):
         # Create a copy of the base configuration
         config = base_config.copy()
 
         # Update grid search parameters
         config["batch_size"] = batch_size
         config["max_epochs"] = max_epochs
+        config["scheduler_type"] = scheduler_type
         config["lr"] = lr
+        config["scheduler_epochs_steps"] = [int(max_epochs*0.8), int(max_epochs*0.9)]
+        config["seed"] = seed
 
         # Update dataset-specific parameters
         config["train_dataset_names"] = dataset_config["train_dataset_names"]
@@ -145,16 +157,38 @@ for dataset_config in dataset_configs:
         timestamp = int(time.time())
         # Using the compressed file name (without extension) to indicate the dataset variant
         variant_name = dataset_config["compressed"].split('.')[0]
-        config_filename = f"config_{variant_name}_{dataset_config["augmentation_image_size"]}_bs{batch_size}_epochs{max_epochs}_lr{lr}_{timestamp}.yaml"
+        config_filename = f'config_{variant_name}_{dataset_config["augmentation_image_size"]}_bs{batch_size}_epochs{max_epochs}_lr{lr}_{timestamp}.yaml'
         config_path = os.path.join(config_dir, config_filename)
 
         # Save the modified configuration to file
         with open(config_path, "w") as outfile:
             yaml.dump(config, outfile, default_flow_style=False)
 
-        # Build the sbatch command, passing the dataset compressed file name and config file path as arguments.
-        cmd = ["sbatch", sbatch_script, dataset_config["compressed"], config_path]
-        print("Submitting job with command:", " ".join(cmd))
+        if batch_size >= 8 or dataset_config["augmentation_image_size"] >= 1777:
+            gres_arg = "--gres=gpu:rtx8000:4"
+        else:
+            gres_arg = "--gres=gpu:rtx8000:2"
+
+        # Time request logic using SLURM --time flag
+        time_arg = "--time=2-00:00:00"  # 2 days
+        cpus_arg = "--cpus-per-task=8" # Number of CPU cores per task
+        mem_arg = "--mem=40G"
+
+        # Build the sbatch command, passing the dataset compressed file name and config file path as arguments
+        cmd = [
+            "sbatch",
+            gres_arg,
+            time_arg,
+            cpus_arg,
+            mem_arg,
+            sbatch_script,
+            dataset_config["compressed"],
+            config_path
+        ]
+        print(f"Submitting job with command:")
+        print(" ".join(cmd))
+        print(f"  Parameters: batch_size={batch_size}, max_epochs={max_epochs}, lr={lr:.6f}, "
+              f"gres_arg={gres_arg}, time_arg={time_arg}")
         
         # Submit the job
         subprocess.run(cmd)
