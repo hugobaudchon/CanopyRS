@@ -8,12 +8,10 @@ from engine.components.evaluator import EvaluatorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
 
-from engine.config_parsers import (PipelineConfig, InferIOConfig, TilerizerConfig,
-                                   DetectorConfig, AggregatorConfig, SegmenterConfig)
-from engine.config_parsers.base import get_config_path
-from engine.config_parsers.evaluator import EvaluatorConfig
+from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
-from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name
+from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name, green_print, \
+    clean_side_processes
 
 
 class Pipeline:
@@ -27,8 +25,6 @@ class Pipeline:
             imagery_path=self.io_config.input_imagery,
             parent_output_path=self.io_config.output_folder,
             tiles_path=self.io_config.tiles_path,
-            tiles_names=list([tile.name for  tile in Path(self.io_config.tiles_path).rglob('*.tif')])
-                        if self.io_config.tiles_path else None,
             infer_coco_path=self.io_config.input_coco,
             infer_gdf=gpd.read_file(self.io_config.input_gpkg)
                       if self.io_config.input_gpkg else None,
@@ -48,36 +44,33 @@ class Pipeline:
             aois={ground_truth_aoi_name: self.io_config.aoi}
         )
 
+        green_print("Pipeline initialized")
+
     def run(self):
         # Run each component in the pipeline, sequentially
-        for component_id, component_config in enumerate(self.config.components_configs):
-            component = self._get_component(component_config, component_id)
+        for component_id, component_config_tuple in enumerate(self.config.components_configs):
+            component = self._get_component(component_config_tuple, component_id)
             self.data_state = component.run(self.data_state)
 
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
-        self._clean_side_processes()
+        clean_side_processes(self.data_state)
 
-    def _get_component(self, component_config, component_id):
-        component_type = list(component_config.keys())[0]
-        config_name = list(component_config.values())[0]
-        config_path = get_config_path(config_name)
+        green_print("Pipeline finished")
+
+    def _get_component(self, component_config_tuple, component_id):
+        component_type, component_config = component_config_tuple
 
         if component_type == 'tilerizer':
-            component_config = TilerizerConfig.from_yaml(config_path)
             return TilerizerComponent(component_config, self.io_config.output_folder, component_id,
                                       self.infer_aois_config, self.ground_truth_aoi_config)
         elif component_type == 'detector':
-            component_config = DetectorConfig.from_yaml(config_path)
             return DetectorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'aggregator':
-            component_config = AggregatorConfig.from_yaml(config_path)
             return AggregatorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'segmenter':
-            component_config = SegmenterConfig.from_yaml(config_path)
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'evaluator':
-            component_config = EvaluatorConfig.from_yaml(config_path)
-            self._clean_side_processes()    # making sure COCO files are generated before starting evaluation
+            clean_side_processes(self.data_state)    # making sure COCO files are generated before starting evaluation
             return EvaluatorComponent(component_config, self.io_config.output_folder, component_id)
         # elif isinstance(component_config, EmbedderConfig):
         #     return build_embedder()
@@ -87,14 +80,6 @@ class Pipeline:
         #     return build_clusterer()
         else:
             raise ValueError(f'Invalid component {component_config}')
-
-    def _clean_side_processes(self):
-        for side_process in self.data_state.side_processes:
-            attribute_name = side_process[0]
-            result = side_process[1].result()
-            if attribute_name:
-                # Updating the correct attribute in the data state
-                setattr(self.data_state, attribute_name, result)
 
     def _validate_components_order(self):
         pass    # TODO

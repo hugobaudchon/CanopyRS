@@ -8,7 +8,7 @@ from geodataset.utils import GeoPackageNameConvention, TileNameConvention
 from engine.components.base import BaseComponent
 from engine.config_parsers import AggregatorConfig
 from engine.data_state import DataState
-from engine.utils import infer_aoi_name
+from engine.utils import infer_aoi_name, generate_future_coco
 
 
 class AggregatorComponent(BaseComponent):
@@ -17,17 +17,19 @@ class AggregatorComponent(BaseComponent):
     def __init__(self, config: AggregatorConfig, parent_output_path: str, component_id: int):
         super().__init__(config, parent_output_path, component_id)
 
-    def run(self, data_state: DataState) -> DataState:
+    def __call__(self, data_state: DataState) -> DataState:
+        # Create aggregation dictionary to collect all values into lists per tile
         agg_dict = {'geometry': lambda x: list(x)}
-
         for column in data_state.infer_gdf_columns_to_pass:
             if column in data_state.infer_gdf.columns:
                 agg_dict[column] = list
 
-        grouped_gdf = data_state.infer_gdf.groupby('tiles_path').agg(agg_dict)
+        # Group the initial inference GeoDataFrame by tile
+        grouped_gdf = data_state.infer_gdf.groupby('tile_path').agg(agg_dict)
         tiles_path = grouped_gdf.index.tolist()
         grouped_gdf = grouped_gdf.reset_index().to_dict(orient='list')
 
+        # Prepare scores and score weights
         scores = {}
         scores_weights = {}
         if 'detector_score' in grouped_gdf:
@@ -37,22 +39,22 @@ class AggregatorComponent(BaseComponent):
             scores['segmenter_score'] = grouped_gdf['segmenter_score']
             scores_weights['segmenter_score'] = self.config.segmenter_score_weight
 
+        # Collect other attributes (if any)
         other_attributes = {}
         for column_name in data_state.infer_gdf_columns_to_pass:
             if column_name not in ['detector_score', 'segmenter_score']:
                 other_attributes[column_name] = grouped_gdf[column_name]
 
+        # Determine naming for the aggregated output (using the first tile’s name)
         product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
             Path(tiles_path[0]).name
         )
-
         gpkg_name = GeoPackageNameConvention.create_name(
             product_name=product_name,
             fold=infer_aoi_name,
             scale_factor=scale_factor,
             ground_resolution=ground_resolution
         )
-
         pre_aggregated_gpkg_name = GeoPackageNameConvention.create_name(
             product_name=product_name,
             fold=f'{infer_aoi_name}notaggregated',
@@ -60,6 +62,7 @@ class AggregatorComponent(BaseComponent):
             ground_resolution=ground_resolution
         )
 
+        # Run the aggregator (which applies non-maximum suppression, etc.)
         aggregator = Aggregator.from_polygons(
             output_path=self.output_path / gpkg_name,
             tiles_paths=tiles_path,
@@ -74,15 +77,36 @@ class AggregatorComponent(BaseComponent):
             nms_algorithm=self.config.nms_algorithm,
             pre_aggregated_output_path=self.output_path / pre_aggregated_gpkg_name,
         )
-
         results_gdf = aggregator.polygons_gdf
 
-        return self.update_data_state(data_state, results_gdf)
+        columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'aggregator_score'})
+
+        future_coco = generate_future_coco(
+            future_key='infer_coco_path',
+            description="Aggregator inference",
+            gdf=results_gdf,
+            tiles_paths_column='tile_path',
+            polygons_column='geometry',
+            scores_column='aggregator_score',
+            categories_column='segmenter_score' if 'segmenter_score' in grouped_gdf
+                              else 'detector_score' if 'detector_score' in grouped_gdf
+                              else None,
+            other_attributes_columns=columns_to_pass,
+            output_path=self.output_path,
+            use_rle_for_labels=False,
+            n_workers=4,
+            coco_categories_list=None
+        )
+
+        return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
 
     def update_data_state(self,
                          data_state: DataState,
-                         results_gdf: gpd.GeoDataFrame) -> DataState:
+                         results_gdf: gpd.GeoDataFrame,
+                         columns_to_pass: set,
+                         future_coco: tuple) -> DataState:
         data_state.infer_gdf = results_gdf
-        data_state.infer_gdf_columns_to_pass.update(['aggregator_score'])
+        data_state.infer_gdf_columns_to_pass = columns_to_pass
+        data_state.side_processes.append(future_coco)
 
         return data_state

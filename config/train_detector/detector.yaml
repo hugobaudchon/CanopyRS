@@ -1,0 +1,28 @@
+model: 'faster_rcnn_detectron2'
+architecture: 'COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml'
+checkpoint_path: null
+batch_size: 1
+num_classes: 1
+box_predictions_per_image: 500
+box_score_thresh: 0.05
+box_nms_thresh: 0.5
+
+# Training Data and Output path
+data_root_path: '/mnt/disk2/Data/tilerized'
+train_dataset_names: ['panama_bci50ha', 'ecuador_reforestree']
+train_output_path: '/mnt/disk2/trainings'
+
+# Training Params
+#main_metric: 'mAP'
+lr: 1e-4
+wandb_project: 'neurips_d&b_detector'
+max_epochs: 100
+freeze_layers: 2
+train_log_interval: 10
+eval_epoch_interval: 1
+#grad_accumulation_steps: 1
+backbone_model_pretrained: True
+scheduler_epochs_steps: [20, 40, 60]
+scheduler_warmup_steps: 1000
+scheduler_gamma: 0.1
+dataloader_num_workers: 4

@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from multiprocessing import Queue
 
 import geopandas as gpd
 
@@ -10,7 +9,6 @@ class DataState:
     parent_output_path: str = None
 
     tiles_path: str = None
-    tiles_names: list = None
 
     infer_coco_path: str = None
     infer_gdf: gpd.GeoDataFrame = None
