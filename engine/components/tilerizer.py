@@ -34,6 +34,9 @@ class TilerizerComponent(BaseComponent):
                 " Please input a valid ground truth GeoPackage."
             )
 
+        if self.config.other_labels_attributes_column_names is not None:
+            data_state.infer_gdf_columns_to_pass.update(self.config.other_labels_attributes_column_names)
+
         if self.config.tile_type == 'tile':
             if data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None:
                 # First, generating the ground truth COCO and tiles
@@ -53,8 +56,9 @@ class TilerizerComponent(BaseComponent):
                     aoi_name_mapping={ground_truth_aoi_name: infer_aoi_name},
                     geopackage_layer_name=None,
                     main_label_category_column_name=self.config.main_label_category_column_name,
-                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names)
                 )
+                  
                 infer_coco_path = second_result[infer_aoi_name]
 
             elif data_state.infer_gdf is not None:

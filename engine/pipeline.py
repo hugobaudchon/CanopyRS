@@ -46,7 +46,7 @@ class Pipeline:
 
         green_print("Pipeline initialized")
 
-    def __call__(self):
+    def run(self):
         # Run each component in the pipeline, sequentially
         for component_id, component_config_tuple in enumerate(self.config.components_configs):
             component = self._get_component(component_config_tuple, component_id)
