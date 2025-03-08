@@ -4,6 +4,9 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import geopandas as gpd
 
+from engine.utils import get_component_folder_name
+
+
 @dataclass
 class DataState:
     imagery_path: str = None
@@ -29,14 +32,14 @@ class DataState:
         """
         Register the output folder for a component.
         """
-        key = f"{component_id}_{component_name}"
+        key = get_component_folder_name(component_id, component_name)
         self.component_output_folders[key] = folder_path
 
     def register_output_file(self, component_name: str, component_id: int, file_type: str, file_path: Path) -> None:
         """
         Register an output file created by a component.
         """
-        key = f"{component_id}_{component_name}"
+        key = get_component_folder_name(component_id, component_name)
 
         if key not in self.component_output_files:
             self.component_output_files[key] = {}
@@ -45,12 +48,12 @@ class DataState:
 
     def get_component_folder(self, component_name: str, component_id: int) -> Optional[Path]:
         """Get the output folder for a specific component."""
-        key = f"{component_id}_{component_name}"
+        key = get_component_folder_name(component_id, component_name)
         return self.component_output_folders.get(key)
 
     def get_output_file(self, component_name: str, component_id: int, file_type: str) -> Optional[Path]:
         """Get a specific output file from a component."""
-        key = f"{component_id}_{component_name}"
+        key = get_component_folder_name(component_id, component_name)
         if key in self.component_output_files:
             return self.component_output_files[key].get(file_type)
         return None
@@ -72,3 +75,52 @@ class DataState:
     def get_all_outputs(self) -> Dict:
         """Get all registered output files organized by component."""
         return self.component_output_files
+
+    def clean_side_processes(self):
+        for side_process in self.side_processes:
+            if isinstance(side_process, tuple):
+                attribute_name = side_process[0]
+                future_or_result = side_process[1]
+
+                # Check if this is a Future object with a .result() method
+                if hasattr(future_or_result, 'result'):
+                    result = future_or_result.result()
+                else:
+                    result = future_or_result  # It's already a result
+
+                # Update the data_state attribute
+                if attribute_name:
+                    setattr(self, attribute_name, result)
+
+                # If there's registration info, register the output file
+                if len(side_process) > 2 and isinstance(side_process[2], dict):
+                    reg_info = side_process[2]
+
+                    # If an expected_path was provided, use it
+                    if 'expected_path' in reg_info:
+                        file_path = Path(reg_info['expected_path'])
+                    # Otherwise try to get a path from the result
+                    elif isinstance(result, (str, Path)):
+                        file_path = Path(result)
+                    else:
+                        file_path = None
+
+                    if file_path:
+                        # Register the component folder first
+                        self.register_component_folder(
+                            reg_info['component_name'],
+                            reg_info['component_id'],
+                            file_path.parent
+                        )
+                        # Then register the file
+                        self.register_output_file(
+                            reg_info['component_name'],
+                            reg_info['component_id'],
+                            reg_info['file_type'],
+                            file_path
+                        )
+
+        # Clear processed side processes
+        self.side_processes = []
+
+        return self

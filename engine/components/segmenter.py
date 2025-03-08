@@ -8,7 +8,7 @@ from engine.components.base import BaseComponent
 from engine.config_parsers import SegmenterConfig
 from engine.data_state import DataState
 from engine.models.registry import SEGMENTER_REGISTRY
-from engine.utils import infer_aoi_name, generate_future_coco, clean_side_processes
+from engine.utils import infer_aoi_name, generate_future_coco
 
 
 class SegmenterComponent(BaseComponent):
@@ -26,7 +26,7 @@ class SegmenterComponent(BaseComponent):
         if self.segmenter.REQUIRES_BOX_PROMPT:
             if not data_state.infer_coco_path:
                 # Maybe there is a COCO still being generated in a side process
-                clean_side_processes(data_state)
+                data_state.clean_side_processes()
             assert data_state.infer_coco_path is not None, \
                 ("The selected Segmenter model requires a COCO file with boxes to prompt. Either input it,"
                  " add a tilerizer before the segmenter, add a detector before the"

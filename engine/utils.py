@@ -6,10 +6,14 @@ import geopandas as gpd
 from geodataset.aoi import AOIGeneratorConfig, AOIFromPackageConfig
 from geodataset.utils import COCOGenerator, TileNameConvention, CocoNameConvention
 
-from engine.data_state import DataState
-
 infer_aoi_name = 'infer'
 ground_truth_aoi_name = 'groundtruth'
+
+
+def get_component_folder_name(component_id: int, component_name: str) -> str:
+    component_folder = f"{component_id}_{component_name}"
+    return component_folder
+
 
 executor = ProcessPoolExecutor(max_workers=1)
 
@@ -214,52 +218,3 @@ def init_spawn_method():
         # The start method was already set
         pass
 
-
-def clean_side_processes(data_state: DataState):
-    for side_process in data_state.side_processes:
-        if isinstance(side_process, tuple):
-            attribute_name = side_process[0]
-            future_or_result = side_process[1]
-
-            # Check if this is a Future object with a .result() method
-            if hasattr(future_or_result, 'result'):
-                result = future_or_result.result()
-            else:
-                result = future_or_result  # It's already a result
-
-            # Update the data_state attribute
-            if attribute_name:
-                setattr(data_state, attribute_name, result)
-
-            # If there's registration info, register the output file
-            if len(side_process) > 2 and isinstance(side_process[2], dict):
-                reg_info = side_process[2]
-
-                # If an expected_path was provided, use it
-                if 'expected_path' in reg_info:
-                    file_path = Path(reg_info['expected_path'])
-                # Otherwise try to get a path from the result
-                elif isinstance(result, (str, Path)):
-                    file_path = Path(result)
-                else:
-                    file_path = None
-
-                if file_path:
-                    # Register the component folder first
-                    data_state.register_component_folder(
-                        reg_info['component_name'],
-                        reg_info['component_id'],
-                        file_path.parent
-                    )
-                    # Then register the file
-                    data_state.register_output_file(
-                        reg_info['component_name'],
-                        reg_info['component_id'],
-                        reg_info['file_type'],
-                        file_path
-                    )
-
-    # Clear processed side processes
-    data_state.side_processes = []
-
-    return data_state

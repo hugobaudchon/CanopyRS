@@ -10,8 +10,7 @@ from engine.components.tilerizer import TilerizerComponent
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
-from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name, green_print, \
-    clean_side_processes
+from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, ground_truth_aoi_name, green_print, get_component_folder_name
 
 
 class Pipeline:
@@ -51,7 +50,7 @@ class Pipeline:
             self.data_state = component.run(self.data_state)
 
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
-        clean_side_processes(self.data_state)
+        self.data_state.clean_side_processes()
 
         # Register any files that might have been missed during async processing
         self._register_known_component_files()
@@ -84,7 +83,7 @@ class Pipeline:
     def _register_known_component_files(self):
         """Register any output files that might have been missed during async processing"""
         for component_id, (component_type, component_config) in enumerate(self.config.components_configs):
-            component_path = Path(self.io_config.output_folder) / f"{component_id}_{component_type}"
+            component_path = Path(self.io_config.output_folder) / get_component_folder_name(component_id, component_type)
 
             # Register the component folder if it exists
             if component_path.exists():
