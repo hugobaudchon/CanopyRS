@@ -46,7 +46,8 @@ def pipeline_main(args):
     else:
         raise ValueError("Provide either an io config file or imagery path and output path.")
 
-    Pipeline(io_config, config)()
+    pipeline = Pipeline(io_config, config)
+    pipeline()
 
 
 def train_detector_main(args):
@@ -61,7 +62,6 @@ def train_detector_main(args):
         train_detrex(config)
     else:
         raise ValueError("Invalid model type/name.")
-
 
 
 if __name__ == '__main__':
