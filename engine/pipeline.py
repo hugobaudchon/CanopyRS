@@ -44,7 +44,7 @@ class Pipeline:
 
         green_print("Pipeline initialized")
 
-    def __call__(self, get_data_state=False):
+    def __call__(self):
         # Run each component in the pipeline, sequentially
         for component_id, (component_type, component_config) in enumerate(self.config.components_configs):
             component = self._get_component(component_id, component_type, component_config)
@@ -58,8 +58,7 @@ class Pipeline:
 
         green_print("Pipeline finished")
 
-        if get_data_state == True:
-            return self.data_state
+        return self.data_state
 
     def _get_component(self, component_id, component_type, component_config):
         if component_type == 'tilerizer':
