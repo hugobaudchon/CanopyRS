@@ -75,6 +75,8 @@ class SegmenterComponent(BaseComponent):
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
+            component_name=self.name,
+            component_id=self.component_id,
             description="Segmenter inference",
             gdf=results_gdf,
             tiles_paths_column='tile_path',
@@ -95,6 +97,8 @@ class SegmenterComponent(BaseComponent):
                           results_gdf: gpd.GeoDataFrame,
                           columns_to_pass: set,
                           future_coco: tuple) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
         data_state.infer_gdf = results_gdf
         data_state.infer_gdf_columns_to_pass = columns_to_pass
         data_state.side_processes.append(future_coco)
