@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import geopandas as gpd
 
 from geodataset.aoi import AOIConfig
@@ -56,8 +58,7 @@ class TilerizerComponent(BaseComponent):
                     aoi_name_mapping={ground_truth_aoi_name: infer_aoi_name},
                     geopackage_layer_name=None,
                     main_label_category_column_name=self.config.main_label_category_column_name,
-                    other_labels_attributes_column_names=list(
-                        data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
 
                 infer_coco_path = second_result[infer_aoi_name]
@@ -68,8 +69,7 @@ class TilerizerComponent(BaseComponent):
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
                     aois_config=self.infer_aois_config,
-                    other_labels_attributes_column_names=list(
-                        data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
 
                 ground_truth_coco_path = None
@@ -120,11 +120,20 @@ class TilerizerComponent(BaseComponent):
         return self.update_data_state(data_state, tiles_path, infer_coco_path, ground_truth_coco_path, tiles_names)
 
     def update_data_state(self,
-                          data_state: DataState,
-                          tiles_path: str,
-                          infer_coco_path: str,
-                          ground_truth_coco_path: str,
-                          tiles_names: list[str]) -> DataState:
+                         data_state: DataState,
+                         tiles_path: str,
+                         infer_coco_path: str,
+                         ground_truth_coco_path: str,
+                         tiles_names: list[str]) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
+
+        # Register important output files (not all tiles)
+        if infer_coco_path:
+            data_state.register_output_file(self.name, self.component_id, 'infer_coco', Path(infer_coco_path))
+        if ground_truth_coco_path:
+            data_state.register_output_file(self.name, self.component_id, 'ground_truth_coco', Path(ground_truth_coco_path))
+
         data_state.tiles_path = tiles_path
         data_state.infer_coco_path = infer_coco_path
         data_state.ground_truth_coco_path = ground_truth_coco_path
@@ -182,8 +191,7 @@ class TilerizerComponent(BaseComponent):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=list(
-                set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names).unique()))
+            other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names).unique()))
         )
 
         return tilerizer

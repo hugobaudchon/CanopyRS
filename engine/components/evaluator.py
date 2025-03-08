@@ -19,6 +19,7 @@ from engine.components.base import BaseComponent
 from engine.config_parsers import TilerizerConfig
 from engine.config_parsers.evaluator import EvaluatorConfig
 from engine.data_state import DataState
+from engine.utils import clean_side_processes
 
 
 class EvaluatorComponent(BaseComponent):
@@ -28,6 +29,9 @@ class EvaluatorComponent(BaseComponent):
         super().__init__(config, parent_output_path, component_id)
 
     def __call__(self, data_state: DataState) -> DataState:
+        # making sure COCO files are generated before starting evaluation
+        clean_side_processes(data_state)
+
         if self.config.type == 'instance_detection':
             iou_type = 'bbox'
         elif self.config.type == 'instance_segmentation':
@@ -122,6 +126,18 @@ class EvaluatorComponent(BaseComponent):
         return self.update_data_state(data_state)
 
     def update_data_state(self, data_state: DataState) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
+
+        # Register metrics files
+        metrics_tiles_path = self.output_path / "coco_metrics_tiles.txt"
+        metrics_raster_path = self.output_path / "coco_metrics_raster.txt"
+
+        if metrics_tiles_path.exists():
+            data_state.register_output_file(self.name, self.component_id, 'metrics_tiles', metrics_tiles_path)
+        if metrics_raster_path.exists():
+            data_state.register_output_file(self.name, self.component_id, 'metrics_raster', metrics_raster_path)
+   
         return data_state
 
 

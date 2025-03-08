@@ -83,6 +83,8 @@ class AggregatorComponent(BaseComponent):
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
+            component_name=self.name,
+            component_id=self.component_id,
             description="Aggregator inference",
             gdf=results_gdf,
             tiles_paths_column='tile_path',
@@ -105,6 +107,16 @@ class AggregatorComponent(BaseComponent):
                          results_gdf: gpd.GeoDataFrame,
                          columns_to_pass: set,
                          future_coco: tuple) -> DataState:
+        # Register the component folder
+        data_state = self.register_outputs_base(data_state)
+
+        # Register the GeoPackage files by finding them in the output directory
+        # This approach avoids needing access to gpkg_name variables
+        for file_path in self.output_path.glob("*.gpkg"):
+            if "notaggregated" in file_path.name:
+                data_state.register_output_file(self.name, self.component_id, 'pre_aggregated_gpkg', file_path)
+            else:
+                data_state.register_output_file(self.name, self.component_id, 'gpkg', file_path)
         data_state.infer_gdf = results_gdf
         data_state.infer_gdf_columns_to_pass = columns_to_pass
         data_state.side_processes.append(future_coco)
