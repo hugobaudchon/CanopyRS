@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, List
 import multiprocessing
 import cv2
 import numpy as np
@@ -99,11 +99,11 @@ class SegmenterWrapperBase(ABC):
             "Classes built from SegmenterWrapperBase must have REQUIRES_BOX_PROMPT set to True or False"
 
     @abstractmethod
-    def infer_image(self,
-                     image: np.array,
-                     boxes: np.array,
-                     tile_idx: int,
-                     queue: multiprocessing.JoinableQueue):
+    def forward(self,
+                images: List[np.array],
+                boxes: List[np.array],
+                tiles_idx: List[int],
+                queue: multiprocessing.JoinableQueue):
         pass
 
     @abstractmethod
@@ -144,7 +144,7 @@ class SegmenterWrapperBase(ABC):
         return n_masks_processed
 
     def _infer_on_dataset(self, dataset: BaseDataset, collate_fn: object):
-        infer_dl = DataLoader(dataset, batch_size=1, shuffle=False,
+        infer_dl = DataLoader(dataset, batch_size=self.config.image_batch_size, shuffle=False,
                               collate_fn=collate_fn,
                               num_workers=3, persistent_workers=True)
 
@@ -180,25 +180,24 @@ class SegmenterWrapperBase(ABC):
                                      desc="Inferring the segmenter...",
                                      leave=True)                            # TODO check why its so slow here, like 30 seconds
 
-        for tile_idx, sample in enumerate(dataset_with_progress):
+        for i, sample in enumerate(dataset_with_progress):
+            tiles_idx = list(range(i * self.config.image_batch_size, (i + 1) * self.config.image_batch_size))[:len(sample)]
             if isinstance(dataset, DetectionLabeledRasterCocoDataset):
-                image, boxes_data = sample
-                boxes_data = np.array(boxes_data['boxes'])
-                tile_path = dataset.tiles[tile_idx]['path']
+                images, boxes = sample
+                tiles_paths.extend([dataset.tiles[tile_idx]['path'] for tile_idx in tiles_idx])     # TODO tiles idx should be returned by the dataset __getitem__ method
             elif isinstance(dataset, UnlabeledRasterDataset):
-                image = sample
-                boxes_data = None
-                tile_path = dataset.tile_paths[tile_idx]
+                images = list(sample)
+                boxes = [None] * len(images)
+                tiles_paths.extend([dataset.tile_paths[tile_idx] for tile_idx in tiles_idx])        # TODO tiles idx should be returned by the dataset __getitem__ method
             else:
                 raise ValueError("Dataset type not supported.")
 
-            self.infer_image(
-                image=image,
-                boxes=boxes_data,
-                tile_idx=tile_idx,
+            self.forward(
+                images=images,
+                boxes=boxes,
+                tiles_idx=tiles_idx,
                 queue=queue
             )
-            tiles_paths.append(tile_path)
 
         print("Waiting for all postprocessing workers to be finished...")
 
@@ -228,6 +227,6 @@ class SegmenterWrapperBase(ABC):
             tiles_masks_polygons.append(masks_polygons)
             tiles_masks_scores.append(scores)
 
-        print(f"Finished inferring the segmenter {self.config.model}-{self.config.backbone}.")
+        print(f"Finished inferring the segmenter {self.config.model}-{self.config.architecture}.")
 
         return tiles_paths, tiles_masks_polygons, tiles_masks_scores

@@ -1,27 +1,56 @@
+from typing import List, Optional
+
 from engine.config_parsers.base import BaseConfig
 
 
 class DetectorConfig(BaseConfig):
     # General model definition
-    model: str = 'faster_rcnn'
-    backbone: str = 'resnet50'
-    checkpoint_path: str = None
+    model: str = 'faster_rcnn_detectron2'
+    architecture: str = 'COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml'
+    checkpoint_path: Optional[str] = None
     batch_size: int = 8
-    num_classes: int = 2
-    box_predictions_per_image: int = 250
-    anchor_sizes: tuple = ((32,), (64,), (128,), (256,), (512,))
-    aspect_ratios: tuple = ((0.5, 1.0, 2.0),) * 5
-    box_score_thresh: float = 0.05
-    box_nms_thresh: float = 0.5
+    num_classes: int = 1
+    box_predictions_per_image: Optional[int] = 500
+    anchor_sizes: Optional[list] = [[32], [64], [128], [256], [512]]
+    aspect_ratios: Optional[tuple] = ((0.5, 1.0, 2.0),) * 5
+    box_score_thresh: Optional[float] = 0.05
+    box_nms_thresh: Optional[float] = 0.5
 
-    # Training
+    # Training Data and Output path
+    data_root_path: str = None   # Parent folder of datasets
+    train_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
+    valid_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
+    train_output_path: str = None
+
+    # Training Params
     main_metric: str = 'mAP'            # TODO add support for this
-    lr: float = 1e-4
+    seed: int = 42
+    wandb_project: Optional[str] = None
+
+    augmentation_image_size: int = 1024     # Final image size for both training and evaluation
+    augmentation_early_conditional_image_size: Optional[int] = None
+    augmentation_train_crop_size_range: List[int] = [784, 2048]
+    augmentation_crop_min_intersection_ratio: float = 0.5
+    augmentation_flip_horizontal: bool = True
+    augmentation_flip_vertical: bool = True
+    augmentation_rotation: float = 30
+    augmentation_rotation_prob: float = 0.5
+    augmentation_contrast: float = 0.2
+    augmentation_brightness: float = 0.2
+    augmentation_saturation: float = 0.2
+    augmentation_hue: int = 10  # in the [0-180] range
+
+    lr: Optional[float] = 1e-4
     max_epochs: int = 100
-    trainable_layers: int = -1
+    freeze_layers: Optional[int] = -1
     train_log_interval: int = 10
+    eval_epoch_interval: int = 1
     grad_accumulation_steps: int = 1
-    backbone_model_pretrained: bool = True
-    scheduler_step_size: int = 10
-    scheduler_warmup_steps: int = 100
-    scheduler_gamma: float = 0.1
+    backbone_model_pretrained: Optional[bool] = True
+    scheduler_type: str = 'WarmupMultiStepLR' # 'WarmupExponentialLR'
+    scheduler_epochs_steps: Optional[List[int]] = [10, 20, 30]  # for WarmupMultiStepLR
+    scheduler_gamma: Optional[float] = 0.1  # for WarmupExponentialLR (corresponds to end value, or 'decay') and WarmupMultiStepLR
+    scheduler_warmup_steps: Optional[int] = 1000
+    dataloader_num_workers: int = 4
+    use_gradient_checkpointing: Optional[bool] = False  # Used for detrex training
+    use_amp: bool = True        # Automatic Mixed Precision

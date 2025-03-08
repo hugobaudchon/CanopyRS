@@ -1,8 +1,10 @@
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 from engine.config_parsers import BaseConfig
 from engine.data_state import DataState
+from engine.utils import green_print
 
 
 class BaseComponent(ABC):
@@ -15,6 +17,8 @@ class BaseComponent(ABC):
         self.output_path = Path(parent_output_path) / f'{component_id}_{self.name}'
         self.output_path.mkdir(parents=True, exist_ok=True)
 
+        green_print(f"Running component '{self.name}'", add_return=True)
+
     def register_outputs_base(self, data_state: DataState) -> DataState:
         """Register this component's outputs with the data_state."""
         data_state.register_component_folder(self.name, self.component_id, self.output_path)
@@ -22,6 +26,13 @@ class BaseComponent(ABC):
 
     @abstractmethod
     def run(self, data_state: DataState) -> DataState:
+        start_time = time.time()
+        data_state = self(data_state)
+        green_print(f"Finished in {time.time() - start_time:.1f} seconds")
+        return data_state
+
+    @abstractmethod
+    def __call__(self, data_state: DataState) -> DataState:
         pass
 
     @abstractmethod

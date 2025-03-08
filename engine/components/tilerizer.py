@@ -1,5 +1,4 @@
 import geopandas as gpd
-from pathlib import Path
 
 from geodataset.aoi import AOIConfig
 from geodataset.tilerize import RasterPolygonTilerizer, RasterTilerizer, LabeledRasterTilerizer
@@ -23,7 +22,7 @@ class TilerizerComponent(BaseComponent):
         self.infer_aois_config = infer_aois_config
         self.ground_truth_aois_config = ground_truth_aois_config
 
-    def run(self, data_state: DataState) -> DataState:
+    def __call__(self, data_state: DataState) -> DataState:
         if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
             raise ValueError(
                 "infer_gdf must have a CRS."
@@ -57,8 +56,9 @@ class TilerizerComponent(BaseComponent):
                     aoi_name_mapping={ground_truth_aoi_name: infer_aoi_name},
                     geopackage_layer_name=None,
                     main_label_category_column_name=self.config.main_label_category_column_name,
-                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
+
                 infer_coco_path = second_result[infer_aoi_name]
 
             elif data_state.infer_gdf is not None:
@@ -67,7 +67,7 @@ class TilerizerComponent(BaseComponent):
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
                     aois_config=self.infer_aois_config,
-                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
 
                 ground_truth_coco_path = None
@@ -109,7 +109,7 @@ class TilerizerComponent(BaseComponent):
             ground_truth_coco_path = None
             infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
             tiles_path = tilerizer.tiles_folder_path
-            tiles_names = None                          # TODO: Implement this
+            tiles_names = None  # TODO: Implement this
         else:
             raise ValueError(f"Invalid tile type: {self.config.tile_type}. Expected 'tile' or 'polygon'.")
 

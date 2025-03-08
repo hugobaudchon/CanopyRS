@@ -4,7 +4,7 @@ from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 
 def build_detection_backbone(backbone_model_pretrained: bool,
                              backbone: str,
-                             trainable_layers: int):
+                             freeze_layers: int):
     if backbone.startswith('resnet'):
         if backbone_model_pretrained:
             if backbone == 'resnet50':
@@ -22,7 +22,7 @@ def build_detection_backbone(backbone_model_pretrained: bool,
         resnet = resnet_fpn_backbone(
             backbone_name=backbone,
             weights=weights,
-            trainable_layers=trainable_layers if trainable_layers >= 0 else 5
+            trainable_layers=5 if freeze_layers == -1 or not freeze_layers else 5 - freeze_layers
         )
 
         return resnet
