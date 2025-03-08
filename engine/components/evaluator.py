@@ -19,6 +19,7 @@ from engine.components.base import BaseComponent
 from engine.config_parsers import TilerizerConfig
 from engine.config_parsers.evaluator import EvaluatorConfig
 from engine.data_state import DataState
+from engine.utils import clean_side_processes
 
 
 class EvaluatorComponent(BaseComponent):
@@ -28,6 +29,9 @@ class EvaluatorComponent(BaseComponent):
         super().__init__(config, parent_output_path, component_id)
 
     def __call__(self, data_state: DataState) -> DataState:
+        # making sure COCO files are generated before starting evaluation
+        clean_side_processes(data_state)
+
         if self.config.type == 'instance_detection':
             iou_type = 'bbox'
         elif self.config.type == 'instance_segmentation':

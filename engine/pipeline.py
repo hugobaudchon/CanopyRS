@@ -26,10 +26,8 @@ class Pipeline:
             parent_output_path=self.io_config.output_folder,
             tiles_path=self.io_config.tiles_path,
             infer_coco_path=self.io_config.input_coco,
-            infer_gdf=gpd.read_file(self.io_config.input_gpkg)
-                      if self.io_config.input_gpkg else None,
-            ground_truth_gdf=gpd.read_file(self.io_config.ground_truth_gpkg)
-                             if self.io_config.ground_truth_gpkg else None,
+            infer_gdf=gpd.read_file(self.io_config.input_gpkg) if self.io_config.input_gpkg else None,
+            ground_truth_gdf=gpd.read_file(self.io_config.ground_truth_gpkg) if self.io_config.ground_truth_gpkg else None,
         )
 
         # Initialize AOI configuration (Area of Interest, used by the Tilerizer)
@@ -48,8 +46,8 @@ class Pipeline:
 
     def __call__(self, get_data_state=False):
         # Run each component in the pipeline, sequentially
-        for component_id, component_config_tuple in enumerate(self.config.components_configs):
-            component = self._get_component(component_config_tuple, component_id)
+        for component_id, (component_type, component_config) in enumerate(self.config.components_configs):
+            component = self._get_component(component_id, component_type, component_config)
             self.data_state = component.run(self.data_state)
 
         # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
@@ -63,9 +61,7 @@ class Pipeline:
         if get_data_state == True:
             return self.data_state
 
-    def _get_component(self, component_config_tuple, component_id):
-        component_type, component_config = component_config_tuple
-
+    def _get_component(self, component_id, component_type, component_config):
         if component_type == 'tilerizer':
             return TilerizerComponent(component_config, self.io_config.output_folder, component_id,
                                       self.infer_aois_config, self.ground_truth_aoi_config)
@@ -76,7 +72,6 @@ class Pipeline:
         elif component_type == 'segmenter':
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'evaluator':
-            clean_side_processes(self.data_state)    # making sure COCO files are generated before starting evaluation
             return EvaluatorComponent(component_config, self.io_config.output_folder, component_id)
         # elif isinstance(component_config, EmbedderConfig):
         #     return build_embedder()
@@ -89,8 +84,7 @@ class Pipeline:
 
     def _register_known_component_files(self):
         """Register any output files that might have been missed during async processing"""
-        for component_id, component_config in enumerate(self.config.components_configs):
-            component_type = list(component_config.keys())[0]
+        for component_id, (component_type, component_config) in enumerate(self.config.components_configs):
             component_path = Path(self.io_config.output_folder) / f"{component_id}_{component_type}"
 
             # Register the component folder if it exists
@@ -113,4 +107,4 @@ class Pipeline:
                     )
 
     def _validate_components_order(self):
-        pass    # TODO
+        pass  # TODO

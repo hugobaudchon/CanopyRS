@@ -75,6 +75,8 @@ class SegmenterComponent(BaseComponent):
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
+            component_name=self.name,
+            component_id=self.component_id,
             description="Segmenter inference",
             gdf=results_gdf,
             tiles_paths_column='tile_path',

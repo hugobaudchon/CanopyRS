@@ -24,7 +24,6 @@ class BaseComponent(ABC):
         data_state.register_component_folder(self.name, self.component_id, self.output_path)
         return data_state
 
-    @abstractmethod
     def run(self, data_state: DataState) -> DataState:
         start_time = time.time()
         data_state = self(data_state)
