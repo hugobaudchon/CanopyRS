@@ -8,6 +8,24 @@ from detectron2.data.transforms import Augmentation, Transform, RandomRotation, 
 from engine.config_parsers import DetectorConfig
 
 
+class RandomChoiceAugmentation(Augmentation):
+    """
+    Randomly selects one of two augmentations based on a given probability.
+    With probability `prob`, applies aug1; otherwise, applies aug2.
+    """
+    def __init__(self, aug1: Augmentation, aug2: Augmentation, prob: float):
+        super().__init__()
+        self.aug1 = aug1
+        self.aug2 = aug2
+        self.prob = prob
+
+    def get_transform(self, image, boxes=None):
+        if random() < self.prob:
+            return self.aug1.get_transform(image, boxes)
+        else:
+            return self.aug2.get_transform(image, boxes)
+
+
 class RandomHueTransform(Transform):
     def __init__(self, hue_delta: int):
         """
@@ -231,6 +249,7 @@ class AugmentationAdder:
         cfg.AUGMENTATION.CROP_SIZE_RANGE = config.augmentation_train_crop_size_range
         cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO = config.augmentation_crop_min_intersection_ratio
         cfg.AUGMENTATION.CROP_PROB = config.augmentation_crop_prob
+        cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE = config.augmentation_crop_fallback_to_augmentation_image_size
 
     @staticmethod
     def get_augmentation_detectron2_train(cfg):
@@ -255,7 +274,8 @@ class AugmentationAdder:
             hue_prob=cfg.AUGMENTATION.HUE_PROB,
             crop_size_range=cfg.AUGMENTATION.CROP_SIZE_RANGE,
             crop_min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO,
-            crop_prob=cfg.AUGMENTATION.CROP_PROB
+            crop_prob=cfg.AUGMENTATION.CROP_PROB,
+            crop_fallback_to_augmentation_image_size=cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE
         )
 
         return augs
@@ -290,7 +310,8 @@ class AugmentationAdder:
             hue_prob=config.augmentation_hue_prob,
             crop_size_range=config.augmentation_train_crop_size_range,
             crop_min_intersection_ratio=config.augmentation_crop_min_intersection_ratio,
-            crop_prob=config.augmentation_crop_prob
+            crop_prob=config.augmentation_crop_prob,
+            crop_fallback_to_augmentation_image_size=config.augmentation_crop_fallback_to_augmentation_image_size
         )
 
         return augs
@@ -322,7 +343,8 @@ class AugmentationAdder:
             hue_prob: float,
             crop_size_range: tuple or list,
             crop_min_intersection_ratio: float,
-            crop_prob: float
+            crop_prob: float,
+            crop_fallback_to_augmentation_image_size: bool
     ):
         """
         Build a list of Detectron2 augmentations based on the given parameters.
@@ -345,6 +367,7 @@ class AugmentationAdder:
             crop_size_range (tuple or list): (min_side, max_side) range for SquareRandomCropWithBoxDiscard.
             crop_min_intersection_ratio (float): ratio threshold to keep boxes that partially fall outside the crop.
             crop_prob (float): probability of applying the random crop.
+            crop_fallback_to_augmentation_image_size (bool): if True, fallback to a centered crop of final_image_size.
 
         Returns:
             list[Augmentation]: a list of Detectron2-compatible augmentation objects.
@@ -404,7 +427,20 @@ class AugmentationAdder:
             crop_range=crop_size_range,
             min_intersection_ratio=crop_min_intersection_ratio
         )
-        augs.append(RandomApply(crop_aug, prob=crop_prob))
+        if crop_fallback_to_augmentation_image_size:
+            # Use our custom conditional random apply that falls back to a crop of final_image_size.
+            # This is useful if for exemple we have 2048x2048 images for training,
+            # but we only want to train on 1024x1024 and don't want to always apply cropping, which can distort
+            # the image with Bilinear transformations etc.
+            fallback_crop_aug = SquareRandomCropWithBoxDiscard(
+                crop_range=(final_image_size, final_image_size),
+                min_intersection_ratio=crop_min_intersection_ratio
+            )
+        else:
+            # Otherwise, use identity transform as fallback (no crop with prob 1-crop_prob).
+            fallback_crop_aug = NoOpTransform()
+
+        augs.append(RandomChoiceAugmentation(crop_aug, fallback_crop_aug, prob=crop_prob))
 
         # 10) Resize to final, fixed size
         augs.append(
