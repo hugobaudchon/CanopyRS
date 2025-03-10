@@ -4,26 +4,65 @@ import cv2
 import numpy as np
 
 from detectron2.data.transforms import Augmentation, Transform, RandomRotation, NoOpTransform, CropTransform, ResizeTransform, \
-    ResizeShortestEdge, RandomContrast, RandomBrightness, RandomFlip, RandomSaturation
+    ResizeShortestEdge, RandomContrast, RandomBrightness, RandomFlip, RandomSaturation, RandomApply
 from engine.config_parsers import DetectorConfig
 
 
-class RandomRotationWithProb(Augmentation):
-    def __init__(self, angle, prob=0.5):
-        """
-        angle: the angle range for rotation (e.g., [-30, 30])
-        p: probability of applying the rotation
-        """
+class RandomChoiceAugmentation(Augmentation):
+    """
+    Randomly selects one of two augmentations based on a given probability.
+    With probability `prob`, applies aug1; otherwise, applies aug2.
+    """
+    def __init__(self, aug1: Augmentation, aug2: Augmentation, prob: float):
         super().__init__()
-        self.angle = angle
+        self.aug1 = aug1
+        self.aug2 = aug2
         self.prob = prob
 
-    def get_transform(self, image):
-        # With probability p, apply the rotation; otherwise, return an identity transform.
+    def get_transform(self, image, boxes=None):
         if random() < self.prob:
-            return RandomRotation(angle=self.angle).get_transform(image)
+            return self.aug1.get_transform(image, boxes)
         else:
-            return NoOpTransform()
+            return self.aug2.get_transform(image, boxes)
+
+
+class RandomHueTransform(Transform):
+    def __init__(self, hue_delta: int):
+        """
+        Args:
+            hue_delta (int): Amount to shift the hue channel. This value will be added
+                             to the hue channel (in OpenCV's 0-179 scale) and wrapped around.
+        """
+        self.hue_delta = hue_delta
+
+    def apply_image(self, img):
+        # Convert BGR to HSV
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.int32)
+        # Modify the hue channel and wrap-around using modulo 180
+        hsv[..., 0] = (hsv[..., 0] + self.hue_delta) % 180
+        # Convert back to uint8 and then to BGR
+        hsv = hsv.astype(np.uint8)
+        img_aug = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+        return img_aug
+
+    def apply_coords(self, coords):
+        # Hue changes do not affect coordinates.
+        return coords
+
+
+class RandomHueAugmentation(Augmentation):
+    def __init__(self, hue_delta_range: tuple = (-10, 10)):
+        """
+        Args:
+            hue_delta_range (tuple): A tuple specifying the minimum and maximum delta to apply
+                                     to the hue channel.
+        """
+        self.hue_delta_range = hue_delta_range
+
+    def get_transform(self, image):
+        # Randomly select a hue delta within the provided range.
+        hue_delta = randint(self.hue_delta_range[0], self.hue_delta_range[1])
+        return RandomHueTransform(hue_delta)
 
 
 class SquareRandomCrop(Augmentation):
@@ -73,7 +112,7 @@ class SquareRandomCropWithBoxDiscard(Augmentation):
 
     Args:
         crop_range (tuple): (min_side, max_side) specifying the range (in pixels) of the square side.
-        min_intersection_ratio (float): Minimum fraction of a box’s area that must lie within the crop.
+        min_intersection_ratio (float): Minimum fraction of a box's area that must lie within the crop.
     """
     def __init__(self, crop_range, min_intersection_ratio: float):
         super().__init__()
@@ -87,7 +126,7 @@ class SquareRandomCropWithBoxDiscard(Augmentation):
             boxes (np.ndarray): an array of bounding boxes in [x1, y1, x2, y2] format.
                                 If None, only the image will be cropped.
         Returns:
-            A CropTransform object. If boxes are provided, the transform’s attribute
+            A CropTransform object. If boxes are provided, the transform's attribute
             `new_boxes` will contain the adjusted boxes (boxes that did not meet the threshold are dropped).
         """
         H, W = image.shape[:2]
@@ -151,7 +190,7 @@ class SquareRandomCropWithBoxDiscard(Augmentation):
 class ConditionalResize(Augmentation):
     """
     Upscales an image if its smallest side is below a given minimum.
-    If the image’s smallest side is already >= min_size, it does nothing.
+    If the image's smallest side is already >= min_size, it does nothing.
     """
 
     def __init__(self, min_size):
@@ -173,45 +212,7 @@ class ConditionalResize(Augmentation):
             new_h = int(orig_h * scale)
             new_w = int(orig_w * scale)
             # The ResizeTransform constructor takes the original and new dimensions.
-            return ResizeTransform(0, 0, new_w, new_h)
-
-
-class RandomHueTransform(Transform):
-    def __init__(self, hue_delta: int):
-        """
-        Args:
-            hue_delta (int): Amount to shift the hue channel. This value will be added
-                             to the hue channel (in OpenCV’s 0-179 scale) and wrapped around.
-        """
-        self.hue_delta = hue_delta
-
-    def apply_image(self, img):
-        # Convert BGR to HSV
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.int32)
-        # Modify the hue channel and wrap-around using modulo 180
-        hsv[..., 0] = (hsv[..., 0] + self.hue_delta) % 180
-        # Convert back to uint8 and then to BGR
-        hsv = hsv.astype(np.uint8)
-        img_aug = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-        return img_aug
-
-    def apply_coords(self, coords):
-        # Hue changes do not affect coordinates.
-        return coords
-
-class RandomHueAugmentation(Augmentation):
-    def __init__(self, hue_delta_range: tuple = (-10, 10)):
-        """
-        Args:
-            hue_delta_range (tuple): A tuple specifying the minimum and maximum delta to apply
-                                     to the hue channel.
-        """
-        self.hue_delta_range = hue_delta_range
-
-    def get_transform(self, image):
-        # Randomly select a hue delta within the provided range.
-        hue_delta = randint(self.hue_delta_range[0], self.hue_delta_range[1])
-        return RandomHueTransform(hue_delta)
+            return ResizeTransform(orig_h, orig_w, new_h, new_w)
 
 
 class AugmentationAdder:
@@ -238,11 +239,17 @@ class AugmentationAdder:
         cfg.AUGMENTATION.ROTATION = config.augmentation_rotation
         cfg.AUGMENTATION.ROTATION_PROB = config.augmentation_rotation_prob
         cfg.AUGMENTATION.BRIGHTNESS = config.augmentation_brightness
+        cfg.AUGMENTATION.BRIGHTNESS_PROB = config.augmentation_brightness_prob
         cfg.AUGMENTATION.CONTRAST = config.augmentation_contrast
+        cfg.AUGMENTATION.CONTRAST_PROB = config.augmentation_contrast_prob
         cfg.AUGMENTATION.SATURATION = config.augmentation_saturation
+        cfg.AUGMENTATION.SATURATION_PROB = config.augmentation_saturation_prob
         cfg.AUGMENTATION.HUE = config.augmentation_hue
+        cfg.AUGMENTATION.HUE_PROB = config.augmentation_hue_prob
         cfg.AUGMENTATION.CROP_SIZE_RANGE = config.augmentation_train_crop_size_range
         cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO = config.augmentation_crop_min_intersection_ratio
+        cfg.AUGMENTATION.CROP_PROB = config.augmentation_crop_prob
+        cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE = config.augmentation_crop_fallback_to_augmentation_image_size
 
     @staticmethod
     def get_augmentation_detectron2_train(cfg):
@@ -258,11 +265,17 @@ class AugmentationAdder:
             rotation=cfg.AUGMENTATION.ROTATION,
             rotation_prob=cfg.AUGMENTATION.ROTATION_PROB,
             brightness=cfg.AUGMENTATION.BRIGHTNESS,
+            brightness_prob=cfg.AUGMENTATION.BRIGHTNESS_PROB,
             contrast=cfg.AUGMENTATION.CONTRAST,
+            contrast_prob=cfg.AUGMENTATION.CONTRAST_PROB,
             saturation=cfg.AUGMENTATION.SATURATION,
+            saturation_prob=cfg.AUGMENTATION.SATURATION_PROB,
             hue=cfg.AUGMENTATION.HUE,
+            hue_prob=cfg.AUGMENTATION.HUE_PROB,
             crop_size_range=cfg.AUGMENTATION.CROP_SIZE_RANGE,
-            crop_min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO
+            crop_min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO,
+            crop_prob=cfg.AUGMENTATION.CROP_PROB,
+            crop_fallback_to_augmentation_image_size=cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE
         )
 
         return augs
@@ -288,11 +301,17 @@ class AugmentationAdder:
             rotation=config.augmentation_rotation,
             rotation_prob=config.augmentation_rotation_prob,
             brightness=config.augmentation_brightness,
+            brightness_prob=config.augmentation_brightness_prob,
             contrast=config.augmentation_contrast,
+            contrast_prob=config.augmentation_contrast_prob,
             saturation=config.augmentation_saturation,
+            saturation_prob=config.augmentation_saturation_prob,
             hue=config.augmentation_hue,
+            hue_prob=config.augmentation_hue_prob,
             crop_size_range=config.augmentation_train_crop_size_range,
-            crop_min_intersection_ratio=config.augmentation_crop_min_intersection_ratio
+            crop_min_intersection_ratio=config.augmentation_crop_min_intersection_ratio,
+            crop_prob=config.augmentation_crop_prob,
+            crop_fallback_to_augmentation_image_size=config.augmentation_crop_fallback_to_augmentation_image_size
         )
 
         return augs
@@ -315,28 +334,40 @@ class AugmentationAdder:
             rotation: float,
             rotation_prob: float,
             brightness: float,
+            brightness_prob: float,
             contrast: float,
+            contrast_prob: float,
             saturation: float,
+            saturation_prob: float,
             hue: float,
+            hue_prob: float,
             crop_size_range: tuple or list,
             crop_min_intersection_ratio: float,
+            crop_prob: float,
+            crop_fallback_to_augmentation_image_size: bool
     ):
         """
         Build a list of Detectron2 augmentations based on the given parameters.
 
         Args:
             final_image_size (int): for final ResizeShortestEdge.
-            early_conditional_image_size (int): for ConditionalResize at beggining in case image is too small. Can be None or False to deactivate.
+            early_conditional_image_size (int): for ConditionalResize at beginning in case image is too small. Can be None or False to deactivate.
             flip_vertical (bool): if True, applies RandomFlip( vertical=True ).
             flip_horizontal (bool): if True, applies RandomFlip( horizontal=True ).
             rotation (float): if non-zero, range of angles (e.g., [-rotation, rotation]) for random rotation.
             rotation_prob (float): probability of applying the random rotation.
             brightness (float): amount for RandomBrightness (e.g., 0.2 means ±20%).
+            brightness_prob (float): probability of applying brightness augmentation.
             contrast (float): amount for RandomContrast (e.g., 0.2 means ±20%).
+            contrast_prob (float): probability of applying contrast augmentation.
             saturation (float): amount for RandomSaturation (e.g., 0.2 means ±20%).
+            saturation_prob (float): probability of applying saturation augmentation.
             hue (int): amount for RandomHue (e.g., ±hue, in [0, 255]).
+            hue_prob (float): probability of applying hue augmentation.
             crop_size_range (tuple or list): (min_side, max_side) range for SquareRandomCropWithBoxDiscard.
             crop_min_intersection_ratio (float): ratio threshold to keep boxes that partially fall outside the crop.
+            crop_prob (float): probability of applying the random crop.
+            crop_fallback_to_augmentation_image_size (bool): if True, fallback to a centered crop of final_image_size.
 
         Returns:
             list[Augmentation]: a list of Detectron2-compatible augmentation objects.
@@ -361,40 +392,55 @@ class AugmentationAdder:
         #    If rotation is non-zero, we apply a random rotation from [-rotation, rotation].
         if rotation:
             # e.g., angle = [-rotation, rotation]
-            angle_range = (-rotation, rotation)
-            augs.append(
-                RandomRotationWithProb(angle=angle_range, prob=rotation_prob)
-            )
+            angle_range = [-rotation, rotation]
+            rotation_aug = RandomRotation(angle=angle_range, sample_style="range")
+            augs.append(RandomApply(rotation_aug, prob=rotation_prob))
 
         # 5) Random brightness
         if brightness:
             brightness_min = 1.0 - brightness
             brightness_max = 1.0 + brightness
-            augs.append(RandomBrightness(intensity_min=brightness_min, intensity_max=brightness_max))
+            brightness_aug = RandomBrightness(intensity_min=brightness_min, intensity_max=brightness_max)
+            augs.append(RandomApply(brightness_aug, prob=brightness_prob))
 
         # 6) Random contrast
         if contrast:
             contrast_min = 1.0 - contrast
             contrast_max = 1.0 + contrast
-            augs.append(RandomContrast(intensity_min=contrast_min, intensity_max=contrast_max))
+            contrast_aug = RandomContrast(intensity_min=contrast_min, intensity_max=contrast_max)
+            augs.append(RandomApply(contrast_aug, prob=contrast_prob))
 
         # 7) Random saturation
         if saturation:
             saturation_min = 1.0 - saturation
             saturation_max = 1.0 + saturation
-            augs.append(RandomSaturation(intensity_min=saturation_min, intensity_max=saturation_max))
+            saturation_aug = RandomSaturation(intensity_min=saturation_min, intensity_max=saturation_max)
+            augs.append(RandomApply(saturation_aug, prob=saturation_prob))
 
         # 8) Random hue
         if hue:
-            augs.append(RandomHueAugmentation(hue_delta_range=(-hue, hue)))
+            hue_aug = RandomHueAugmentation(hue_delta_range=(-hue, hue))
+            augs.append(RandomApply(hue_aug, prob=hue_prob))
 
-        # 9) Random crop (custom) - SquareRandomCropWithBoxDiscard
-        augs.append(
-            SquareRandomCropWithBoxDiscard(
-                crop_range=crop_size_range,
+        # 9) Random crop (custom) with probability - SquareRandomCropWithBoxDiscard
+        crop_aug = SquareRandomCropWithBoxDiscard(
+            crop_range=crop_size_range,
+            min_intersection_ratio=crop_min_intersection_ratio
+        )
+        if crop_fallback_to_augmentation_image_size:
+            # Use our custom conditional random apply that falls back to a crop of final_image_size.
+            # This is useful if for exemple we have 2048x2048 images for training,
+            # but we only want to train on 1024x1024 and don't want to always apply cropping, which can distort
+            # the image with Bilinear transformations etc.
+            fallback_crop_aug = SquareRandomCropWithBoxDiscard(
+                crop_range=(final_image_size, final_image_size),
                 min_intersection_ratio=crop_min_intersection_ratio
             )
-        )
+        else:
+            # Otherwise, use identity transform as fallback (no crop with prob 1-crop_prob).
+            fallback_crop_aug = NoOpTransform()
+
+        augs.append(RandomChoiceAugmentation(crop_aug, fallback_crop_aug, prob=crop_prob))
 
         # 10) Resize to final, fixed size
         augs.append(

@@ -159,7 +159,8 @@ class TilerizerComponent(BaseComponent):
             ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
             ignore_tiles_without_labels=self.config.ignore_tiles_without_labels,
             main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=other_labels_attributes_column_names
+            other_labels_attributes_column_names=other_labels_attributes_column_names,
+            temp_dir=self.temp_path
         )
 
         return tilerizer
@@ -173,7 +174,8 @@ class TilerizerComponent(BaseComponent):
             aois_config=aois_config,
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
-            ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold
+            ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
+            temp_dir=self.temp_path
         )
 
         return tilerizer
@@ -191,7 +193,8 @@ class TilerizerComponent(BaseComponent):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names).unique()))
+            other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names).unique())),
+            temp_dir=self.temp_path
         )
 
         return tilerizer

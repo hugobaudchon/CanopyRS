@@ -17,6 +17,9 @@ class BaseComponent(ABC):
         self.output_path = Path(parent_output_path) / get_component_folder_name(self.component_id, self.name)
         self.output_path.mkdir(parents=True, exist_ok=True)
 
+        # same global temp path for all components
+        self.temp_path = Path(self.parent_output_path) / 'temp'
+
         green_print(f"Running component '{self.name}'", add_return=True)
 
     def register_outputs_base(self, data_state: DataState) -> DataState:
