@@ -1,0 +1,5 @@
+nms_algorithm: 'iou'
+score_threshold: 0.3
+nms_threshold: 0.7
+scores_weights: {'detector_score': 1.0}
+min_centroid_distance_weight: 0.8

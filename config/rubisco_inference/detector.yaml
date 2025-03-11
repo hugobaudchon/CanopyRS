@@ -1,0 +1,6 @@
+model: 'faster_rcnn'
+architecture: 'resnet101'
+checkpoint_path: 'https://huggingface.co/Jinkoe/canopy_detector/resolve/main/detector_FINAL_dataset_resnet101_5.pt'
+batch_size: 5
+num_classes: 2
+box_predictions_per_image: 500
