@@ -27,18 +27,26 @@ class DetectorConfig(BaseConfig):
     seed: int = 42
     wandb_project: Optional[str] = None
 
-    augmentation_image_size: int = 1024     # Final image size for both training and evaluation
+    augmentation_image_size: int = 1024     # Final image size for both training and evaluation  # TODO make it range [min_size, max_size], so that image is resized if under/over it
+
     augmentation_early_conditional_image_size: Optional[int] = None
-    augmentation_train_crop_size_range: List[int] = [784, 2048]
+    augmentation_train_crop_size_range: List[int] = [784, 2048]  # TODO implement: add support for floats too, ex: [0.6, 1.0] would crop between 60% and 100% of the image size
+    # augmentation_crop_min_size = 333    # TODO implement: Minimum size of the crop, useful if cropping with float range (ex: [0.6, 1.0]) and some datasets have very small images by default (NeonTree at 400x400px...)
+    augmentation_crop_prob: float = 0.5
+    augmentation_crop_fallback_to_augmentation_image_size: bool = True    # If True, if no crop is selected based on augmentation_crop_prob, the image is cropped to augmentation_image_size. If False, the original image is kept.
     augmentation_crop_min_intersection_ratio: float = 0.5
     augmentation_flip_horizontal: bool = True
     augmentation_flip_vertical: bool = True
     augmentation_rotation: float = 30
     augmentation_rotation_prob: float = 0.5
     augmentation_contrast: float = 0.2
+    augmentation_contrast_prob: float = 0.5
     augmentation_brightness: float = 0.2
+    augmentation_brightness_prob: float = 0.5
     augmentation_saturation: float = 0.2
+    augmentation_saturation_prob: float = 0.5
     augmentation_hue: int = 10  # in the [0-180] range
+    augmentation_hue_prob: float = 0.5
 
     lr: Optional[float] = 1e-4
     max_epochs: int = 100

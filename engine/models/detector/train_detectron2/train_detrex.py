@@ -346,13 +346,14 @@ def get_base_detrex_model_cfg(config):
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()
     cfg.dataloader.train.mapper.augmentation = augmentation_adder.get_augmentation_detrex_train(config)
-    cfg.dataloader.train.mapper.augmentation_with_crop = None   # cropping will always be performed, so just setting it once
+    cfg.dataloader.train.mapper.augmentation_with_crop = None   # we have our own set of augmentations, including cropping, in augmentation_adder
     cfg.dataloader.test.mapper.augmentation = augmentation_adder.get_augmentation_detrex_test(config)
 
     # Enable AMP (mixed-precision).
     cfg.train.amp.enabled = config.use_amp
 
     return cfg
+
 
 def _train_detrex_process(config, model_name):
     print("Setting up datasets...")
