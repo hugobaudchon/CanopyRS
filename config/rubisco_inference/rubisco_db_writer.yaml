@@ -1,4 +1,4 @@
-model_id_detector: 22
+model_id_detector: 33
 model_id_classifier: null
 config_folder_path: "rubisco_inference/"
 enabled: true
