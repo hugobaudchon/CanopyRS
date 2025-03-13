@@ -7,11 +7,14 @@ import wandb
 
 from detectron2.data import DatasetCatalog, build_detection_train_loader, DatasetMapper, build_detection_test_loader
 from detectron2.evaluation import COCOEvaluator
-from detectron2.engine import DefaultTrainer
+from detectron2.engine import DefaultTrainer, BestCheckpointer, hooks
 from detectron2.config import get_cfg
 from detectron2.model_zoo import model_zoo
+from detectron2.utils import comm
 
 from detectron2.utils.events import get_event_storage
+from fvcore.nn import get_bn_modules
+
 from engine.config_parsers import DetectorConfig
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
 from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
@@ -79,7 +82,6 @@ class TrainerWithValidation(DefaultTrainer):
         The COCOEvaluator typically returns a dict with keys like "bbox/AP".
         """
         results = super().test(cfg, model, evaluators)
-        print(results)
 
         train_dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in cfg.DATASETS.TRAIN])
         current_step = get_event_storage().iter
@@ -88,19 +90,62 @@ class TrainerWithValidation(DefaultTrainer):
 
         # Log results of first dataset to wandb
         if len(results) > 0:
-            dataset_name, metrics = results.popitem()
-            if "AP" in metrics:
-                wandb.log({"bbox/AP": metrics["AP"]})
-                wandb.log({"bbox/AP50": metrics["AP50"]})
-                wandb.log({"bbox/AP75": metrics["AP75"]})
-                wandb.log({"bbox/APs": metrics["APs"]})
-                wandb.log({"bbox/APm": metrics["APm"]})
-                wandb.log({"bbox/APl": metrics["APl"]})
+            ret_bbox = results["bbox"]
+            if "AP" in ret_bbox:
+                wandb.log({"bbox/AP": ret_bbox["AP"]})
+                wandb.log({"bbox/AP50": ret_bbox["AP50"]})
+                wandb.log({"bbox/AP75": ret_bbox["AP75"]})
+                wandb.log({"bbox/APs": ret_bbox["APs"]})
+                wandb.log({"bbox/APm": ret_bbox["APm"]})
+                wandb.log({"bbox/APl": ret_bbox["APl"]})
             else:
                 # If you have a different key, adjust here.
-                print(f"Warning: mAP metric not found in evaluation results for dataset {dataset_name}")
+                raise Exception(f"Warning: AP metric not found in evaluation results.")
 
         return results
+
+    def build_hooks(self):
+        """
+        Build a list of default hooks, including timing, evaluation,
+        checkpointing, lr scheduling, precise BN, writing events.
+
+        Returns:
+            list[HookBase]:
+        """
+        cfg = self.cfg.clone()
+        cfg.defrost()
+        cfg.DATALOADER.NUM_WORKERS = 0  # save some memory and time for PreciseBN
+
+        ret = [
+            hooks.IterationTimer(),
+            hooks.LRScheduler(),
+            (
+                hooks.PreciseBN(
+                    # Run at the same freq as (but before) evaluation.
+                    cfg.TEST.EVAL_PERIOD,
+                    self.model,
+                    # Build a new data loader to not affect training
+                    self.build_train_loader(cfg),
+                    cfg.TEST.PRECISE_BN.NUM_ITER,
+                )
+                if cfg.TEST.PRECISE_BN.ENABLED and get_bn_modules(self.model)
+                else None
+            ),
+        ]
+
+        def test_and_save_results():
+            self._last_eval_results = self.test(self.cfg, self.model)
+            return self._last_eval_results
+
+        # Do evaluation after checkpointer, because then if it fails,
+        # we can use the saved checkpoint to debug.
+        ret.append(hooks.EvalHook(cfg.TEST.EVAL_PERIOD, test_and_save_results))
+
+        if comm.is_main_process():
+            # Here the default print/log frequency of each writer is used.
+            # run writers in the end, so that evaluation metrics are written
+            ret.append(hooks.PeriodicWriter(self.build_writers(), period=20))
+        return ret
 
 
 def get_base_detectron2_model_cfg(config):
@@ -194,7 +239,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
 
     # Evaluation config
     cfg.TEST.EVAL_PERIOD = config.eval_epoch_interval * dataset_length // config.batch_size
-    cfg.SOLVER.CHECKPOINT_PERIOD = config.eval_epoch_interval * dataset_length // config.batch_size
+    cfg.SOLVER.CHECKPOINT_PERIOD = None
 
     # Output directory
     output_dir = os.path.join(config.train_output_path, model_name)
@@ -210,11 +255,23 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     trainer = TrainerWithValidation(cfg)
     trainer.resume_or_load(resume=False)
 
-    trainer.register_hooks([WandbWriterHook(cfg=cfg,
-                                            config=config,
-                                            train_log_interval=config.train_log_interval,
-                                            wandb_project_name=config.wandb_project,
-                                            wandb_model_name=model_name)])
+    if comm.is_main_process():
+        trainer.register_hooks([
+            WandbWriterHook(
+                cfg=cfg,
+                config=config,
+                train_log_interval=config.train_log_interval,
+                wandb_project_name=config.wandb_project,
+                wandb_model_name=model_name
+            ),
+            BestCheckpointer(
+                eval_period=cfg.TEST.EVAL_PERIOD,
+                checkpointer=trainer.checkpointer,
+                val_metric=config.main_metric,
+                mode="max",
+                file_prefix="model_best"
+            )
+        ])
 
     return trainer
 

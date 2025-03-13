@@ -289,10 +289,14 @@ def do_train(args, cfg, config: DetectorConfig):
             hooks.IterationTimer(),
             ema.EMAHook(cfg, model) if cfg.train.model_ema.enabled else None,
             hooks.LRScheduler(scheduler=scheduler),
-            hooks.PeriodicCheckpointer(checkpointer, **cfg.train.checkpointer)
-            if comm.is_main_process()
-            else None,
             hooks.EvalHook(cfg.train.eval_period, lambda: do_test(cfg, model)),
+            hooks.BestCheckpointer(
+                eval_period=cfg.train.eval_period,
+                checkpointer=checkpointer,
+                val_metric=config.main_metric,
+                mode="max",
+                file_prefix="model_best"
+            ) if comm.is_main_process() else None,
             hooks.PeriodicWriter(
                 writers,
                 period=cfg.train.log_period,
@@ -389,7 +393,7 @@ def _train_detrex_process(config, model_name):
     cfg.train.log_period = config.train_log_interval
     cfg.train.max_iter = config.max_epochs * dataset_length // config.batch_size
     cfg.train.eval_period = config.eval_epoch_interval * dataset_length // config.batch_size
-    cfg.train.checkpointer.period = config.eval_epoch_interval * dataset_length // config.batch_size
+    cfg.train.checkpointer.period = None   # only saving best checkpoint after eval
 
     cfg.lr_multiplier = CfgNode()
     cfg.lr_multiplier.warmup_steps = config.scheduler_warmup_steps
