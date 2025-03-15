@@ -425,6 +425,9 @@ def _train_detrex_process(config, model_name):
 
     pprint(lazyconfig_to_dict(cfg))
 
+    # Save config
+    config.to_yaml(os.path.join(output_path, "config.yaml"))
+
     args = default_argument_parser().parse_args([])
     do_train(args, cfg, config)
 
