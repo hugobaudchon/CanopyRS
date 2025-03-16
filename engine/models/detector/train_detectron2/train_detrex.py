@@ -379,6 +379,7 @@ def _train_detrex_process(config, model_name):
 
     dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in d2_train_datasets_names])
     output_path = os.path.join(config.train_output_path, model_name)
+    os.makedirs(output_path, exist_ok=True)
 
     cfg = get_base_detrex_model_cfg(config)
 
