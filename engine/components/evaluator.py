@@ -1,22 +1,15 @@
 import json
 import os
-from pathlib import Path
 from warnings import warn
 
 import cv2
-import geopandas as gpd
 import numpy as np
-import rasterio
 from geodataset.geodata import Raster
 from matplotlib import patches, pyplot as plt
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from rasterio.transform import rowcol
-from shapely import unary_union
-from yaml import warnings
 
 from engine.components.base import BaseComponent
-from engine.config_parsers import TilerizerConfig
 from engine.config_parsers.evaluator import EvaluatorConfig
 from engine.data_state import DataState
 
@@ -58,13 +51,13 @@ class EvaluatorComponent(BaseComponent):
                 coco_evaluator.params.maxDets = self.config.max_dets
                 coco_evaluator.evaluate()
                 coco_evaluator.accumulate()
-                stats_strings = coco_evaluator.summarize_custom()
-
-                # Save stats to disk
-                with open(self.output_path / "coco_metrics_tiles.txt", "w") as f:
-                    f.write(f"Aggregated results at the tile level.\n")
-                    for string in stats_strings:
-                        f.write(string + "\n")
+                # Get metrics as a dictionary and save as JSON
+                metrics = coco_evaluator.summarize_to_dict()
+                with open(self.output_path / "coco_metrics_tiles.json", "w") as f:
+                    json.dump({
+                        "message": "Aggregated results at the tile level.",
+                        "metrics": metrics
+                    }, f, indent=2)
             else:
                 raise Exception("Missing a COCO file.")
 
@@ -110,13 +103,13 @@ class EvaluatorComponent(BaseComponent):
                 coco_evaluator.params.maxDets = [1, 10, 100, len(infer_gdf)]
                 coco_evaluator.evaluate()
                 coco_evaluator.accumulate()
-                stats_strings = coco_evaluator.summarize_custom()
-
-                # Save stats to disk
-                with open(self.output_path / "coco_metrics_raster.txt", "w") as f:
-                    f.write(f"Aggregated results at the raster level with ground resolution {self.config.raster_eval_ground_resolution}.\n")
-                    for string in stats_strings:
-                        f.write(string + "\n")
+                # Get metrics as a dictionary and save as JSON
+                metrics = coco_evaluator.summarize_to_dict()
+                with open(self.output_path / "coco_metrics_raster.json", "w") as f:
+                    json.dump({
+                        "message": f"Aggregated results at the raster level with ground resolution {self.config.raster_eval_ground_resolution}.",
+                        "metrics": metrics
+                    }, f, indent=2)
             else:
                 raise Exception("Missing a GeoDataFrame.")
         else:
@@ -128,15 +121,15 @@ class EvaluatorComponent(BaseComponent):
         # Register the component folder
         data_state = self.register_outputs_base(data_state)
 
-        # Register metrics files
-        metrics_tiles_path = self.output_path / "coco_metrics_tiles.txt"
-        metrics_raster_path = self.output_path / "coco_metrics_raster.txt"
+        # Register metrics files (now JSON)
+        metrics_tiles_path = self.output_path / "coco_metrics_tiles.json"
+        metrics_raster_path = self.output_path / "coco_metrics_raster.json"
 
         if metrics_tiles_path.exists():
             data_state.register_output_file(self.name, self.component_id, 'metrics_tiles', metrics_tiles_path)
         if metrics_raster_path.exists():
             data_state.register_output_file(self.name, self.component_id, 'metrics_raster', metrics_raster_path)
-   
+
         return data_state
 
 
@@ -261,7 +254,7 @@ class Summarize2COCOEval(COCOeval):
 
         max_dets_index = len(self.params.maxDets) - 1
 
-        def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
+        def _summarize(ap=1, iouThr=None, areaRng='all', maxDets=100):
             p = self.params
             iStr = ' {:<18} {} @[ IoU={:<9} | area={:>6s} | maxDets={:>3d} ] = {:0.3f}'
             titleStr = 'Average Precision' if ap == 1 else 'Average Recall'
@@ -278,21 +271,22 @@ class Summarize2COCOEval(COCOeval):
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
-                s = s[:,:,:,aind,mind]
+                s = s[:, :, :, aind, mind]
             else:
                 # dimension of recall: [TxKxAxM]
                 s = self.eval['recall']
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
-                s = s[:,:,aind,mind]
-            if len(s[s>-1])==0:
+                s = s[:, :, aind, mind]
+            if len(s[s > -1]) == 0:
                 mean_s = -1
             else:
-                mean_s = np.mean(s[s>-1])
+                mean_s = np.mean(s[s > -1])
             stat_string = iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s)
             print(stat_string)
             return mean_s, stat_string
+
         def _summarizeDets():
             stats = np.zeros((13,))
             stats_strings = ['' for _ in range(13)]
@@ -310,6 +304,7 @@ class Summarize2COCOEval(COCOeval):
             stats[11], stats_strings[11] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
             stats[12], stats_strings[12] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
             return stats, stats_strings
+
         def _summarizeKps():
             stats = np.zeros((10,))
             stats_strings = ['' for _ in range(10)]
@@ -324,6 +319,7 @@ class Summarize2COCOEval(COCOeval):
             stats[8], stats_strings[8] = _summarize(0, maxDets=20, areaRng='medium')
             stats[9], stats_strings[9] = _summarize(0, maxDets=20, areaRng='large')
             return stats, stats_strings
+
         if not self.eval:
             raise Exception('Please run accumulate() first')
         iouType = self.params.iouType
@@ -335,6 +331,23 @@ class Summarize2COCOEval(COCOeval):
             raise Exception('Unknown iouType: {}'.format(iouType))
         self.stats, stats_strings = summarize()
         return stats_strings
+
+    def summarize_to_dict(self):
+        """
+        Compute and return evaluation metrics as a dictionary with key: value pairs,
+        where the keys are human-readable metric names.
+        """
+        # Run the custom summarization (which prints the metrics) and update self.stats.
+        self.summarize_custom()
+        stats = self.stats
+        # Define metric names (following the order of stats in _summarizeDets)
+        metric_names = [
+            "AP", "AP50", "AP75", "AP_small", "AP_medium", "AP_large",
+            "AR_1", "AR_10", "AR_100", "AR_max", "AR_small", "AR_medium", "AR_large"
+        ]
+        # Create a dictionary mapping each metric name to its computed value.
+        metrics_dict = {name: float(value) for name, value in zip(metric_names, stats)}
+        return metrics_dict
 
 
 def visualize_preds_and_truth(truth_coco, preds_coco, images_dir, num_images=12):
