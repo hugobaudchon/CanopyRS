@@ -26,7 +26,7 @@ class Detectron2DetectorWrapper(DetectorWrapperBase):
 
         if self.config.model.endswith('detectron2'):
             cfg = get_base_detectron2_model_cfg(self.config)
-            self.model = instantiate(cfg.MODEL)
+            self.model = build_model(cfg)
             self.model.eval()
             checkpointer = Detectron2DetectionCheckpointer(self.model)
             checkpointer.load(cfg.MODEL.WEIGHTS)
