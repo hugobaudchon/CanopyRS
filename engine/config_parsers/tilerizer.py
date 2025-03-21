@@ -16,3 +16,6 @@ class TilerizerConfig(BaseConfig):
 
     main_label_category_column_name: str = None
     other_labels_attributes_column_names: list = Field(default_factory=list)
+
+    use_variable_tile_size: bool = False
+    variable_tile_size_pixel_buffer: int or None = None
