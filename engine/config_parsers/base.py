@@ -23,6 +23,11 @@ class BaseConfig(BaseModel):
         validate_assignment = True
 
     @classmethod
+    def from_dict(cls, data_dict):
+        """Create a config from a dictionary."""
+        return cls(**data_dict)
+
+    @classmethod
     def from_yaml(cls, path: str or Path) -> 'BaseConfig':
         with open(path, 'r') as f:
             data = yaml.safe_load(f)

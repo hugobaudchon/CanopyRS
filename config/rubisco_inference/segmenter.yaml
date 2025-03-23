@@ -1,0 +1,10 @@
+model: 'sam2'
+architecture: 'l'
+image_batch_size: 1
+box_batch_size: 50
+box_padding_percentage: 0.00
+pp_n_workers: 16
+pp_down_scale_masks_px: 512
+pp_simplify_tolerance: 0.0
+pp_remove_rings: true
+pp_remove_small_geoms: 50

@@ -77,6 +77,9 @@ class Pipeline:
         #     return build_classifier()
         # elif isinstance(component_config, ClustererConfig):
         #     return build_clusterer()
+        elif component_type == 'rubisco_db_writer':
+            from engine.components.rubisco_db_writer import RubiscoDbWriterComponent
+            return RubiscoDbWriterComponent(component_config, self.io_config.output_folder, component_id)
         else:
             raise ValueError(f'Invalid component {component_config}')
 

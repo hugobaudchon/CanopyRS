@@ -2,6 +2,7 @@ import argparse
 import logging
 import warnings
 
+from engine.models.utils import set_all_seeds
 from engine.utils import init_spawn_method
 
 warnings.filterwarnings(
@@ -55,6 +56,9 @@ def train_detector_main(args):
 
     if args.dataset:
         config.data_root_path = args.dataset
+
+    if config.seed:
+        set_all_seeds(config.seed)
 
     if config.model == 'faster_rcnn_detectron2':
         train_detectron2_fasterrcnn(config)
