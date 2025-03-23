@@ -24,12 +24,12 @@ class AggregatorComponent(BaseComponent):
             if column in data_state.infer_gdf.columns:
                 agg_dict[column] = list
 
-        # Group the initial inference GeoDataFrame by tile
+        # Group the source inference GeoDataFrame by tile
         grouped_gdf = data_state.infer_gdf.groupby('tile_path').agg(agg_dict)
         tiles_path = grouped_gdf.index.tolist()
         grouped_gdf = grouped_gdf.reset_index().to_dict(orient='list')
 
-        # Prepare scores and score weights
+        # Prepare detector and/or segmenter scores and score weights
         scores = {}
         scores_weights = {}
         if 'detector_score' in grouped_gdf:
@@ -39,7 +39,7 @@ class AggregatorComponent(BaseComponent):
             scores['segmenter_score'] = grouped_gdf['segmenter_score']
             scores_weights['segmenter_score'] = self.config.segmenter_score_weight
 
-        # Collect other attributes (if any)
+        # Collect other attributes that we should keep in output (if any)
         other_attributes = {}
         for column_name in data_state.infer_gdf_columns_to_pass:
             if column_name not in ['detector_score', 'segmenter_score']:
@@ -79,6 +79,7 @@ class AggregatorComponent(BaseComponent):
         )
         results_gdf = aggregator.polygons_gdf
 
+        # Generate COCO output asynchronously and update the data state
         columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'aggregator_score'})
 
         future_coco = generate_future_coco(
@@ -90,8 +91,8 @@ class AggregatorComponent(BaseComponent):
             tiles_paths_column='tile_path',
             polygons_column='geometry',
             scores_column='aggregator_score',
-            categories_column='segmenter_score' if 'segmenter_score' in grouped_gdf
-                              else 'detector_score' if 'detector_score' in grouped_gdf
+            categories_column='segmenter_class' if 'segmenter_class' in grouped_gdf
+                              else 'detector_class' if 'detector_class' in grouped_gdf
                               else None,
             other_attributes_columns=columns_to_pass,
             output_path=self.output_path,
