@@ -21,31 +21,21 @@ class DetectorComponent(BaseComponent):
             raise ValueError(f'Invalid detector model {config.model}')
 
     def __call__(self, data_state: DataState) -> DataState:
+        # Find the tiles
         infer_ds = UnlabeledRasterDataset(
             root_path=data_state.tiles_path,
-            transform=None,
+            transform=None, # transform=None because the detector class will apply its own transform
             fold=None   # load all tiles (they could have either groundtruth or infer aois)
         )
 
+        # Run inference
         tiles_paths, boxes, boxes_scores, classes = self.detector.infer(infer_ds, collate_fn_images)
 
-        gdf_items = []
-        for i in range(len(tiles_paths)):
-            for j in range(len(boxes[i])):
-                gdf_items.append({
-                    'tile_path': tiles_paths[i],
-                    'geometry': boxes[i][j],
-                    'detector_score': boxes_scores[i][j],
-                    'detector_class': classes[i][j]
-                })
+        # Combine results into a GeoDataFrame
+        results_gdf, new_columns = self.combine_as_gdf(tiles_paths, boxes, boxes_scores, classes)
 
-        results_gdf = gpd.GeoDataFrame(
-            data=gdf_items,
-            geometry='geometry',
-            crs=None
-        )
-
-        columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'detector_score', 'detector_class'})
+        # Update the data state
+        columns_to_pass = data_state.infer_gdf_columns_to_pass.union(new_columns)
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
@@ -75,3 +65,25 @@ class DetectorComponent(BaseComponent):
         data_state.infer_gdf_columns_to_pass = columns_to_pass
         data_state.side_processes.append(future_coco)
         return data_state
+
+    @staticmethod
+    def combine_as_gdf(tiles_paths, boxes, boxes_scores, classes) -> (gpd.GeoDataFrame, set):
+        gdf_items = []
+        for i in range(len(tiles_paths)):
+            for j in range(len(boxes[i])):
+                gdf_items.append({
+                    'tile_path': tiles_paths[i],
+                    'geometry': boxes[i][j],
+                    'detector_score': boxes_scores[i][j],
+                    'detector_class': classes[i][j]
+                })
+
+        gdf = gpd.GeoDataFrame(
+            data=gdf_items,
+            geometry='geometry',
+            crs=None
+        )
+
+        new_columns = {'detector_score', 'detector_class'}
+
+        return gdf, new_columns
