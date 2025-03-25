@@ -7,6 +7,9 @@ from engine.models.segmenter.sam2 import Sam2PredictorWrapper
 from engine.models.segmenter.detectron2_infer import Detectron2SegmenterWrapper
 # from engine.models.segmenter.oam_tcd_torchscript import OamTcdTorchScriptWrapper
 
+from engine.models.classifier.resnet_classifier import ResNetClassifier
+from engine.models.classifier.swin_classifier import SwinClassifier
+
 
 DETECTOR_REGISTRY = {
     'faster_rcnn': FasterRCNNWrapper,
@@ -26,4 +29,7 @@ SEGMENTER_REGISTRY = {
 
 
 EMBEDDER_REGISTRY = {}
-CLASSIFIER_REGISTRY = {}
+CLASSIFIER_REGISTRY = {
+    'resnet': ResNetClassifier,
+    'swin': SwinClassifier
+}

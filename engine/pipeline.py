@@ -7,6 +7,7 @@ from engine.components.detector import DetectorComponent
 from engine.components.evaluator import EvaluatorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
+from engine.components.classifier import ClassifierComponent
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
@@ -77,6 +78,8 @@ class Pipeline:
         #     return build_classifier()
         # elif isinstance(component_config, ClustererConfig):
         #     return build_clusterer()
+        elif component_type == 'classifier':
+            return ClassifierComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'rubisco_db_writer':
             from engine.components.rubisco_db_writer import RubiscoDbWriterComponent
             return RubiscoDbWriterComponent(component_config, self.io_config.output_folder, component_id)

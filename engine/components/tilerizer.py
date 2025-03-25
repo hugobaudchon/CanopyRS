@@ -3,7 +3,7 @@ from pathlib import Path
 import geopandas as gpd
 
 from geodataset.aoi import AOIConfig
-from geodataset.tilerize import RasterPolygonTilerizer, RasterTilerizer, LabeledRasterTilerizer
+from geodataset.tilerize import RasterPolygonTilerizer, RasterTilerizer, LabeledRasterTilerizer, RasterPolygonTilerizer
 
 from engine.components.base import BaseComponent
 from engine.config_parsers.tilerizer import TilerizerConfig
@@ -106,12 +106,41 @@ class TilerizerComponent(BaseComponent):
 
         elif self.config.tile_type == 'polygon':
             if data_state.ground_truth_gdf is not None:
-                raise ValueError("Ground truth labels for Polygon Tilerizer is not implemented yet.")
-            tilerizer = self.get_polygon_tilerizer(data_state, self.infer_aois_config)
-            ground_truth_coco_path = None
-            infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
-            tiles_path = tilerizer.tiles_folder_path
-            tiles_names = None  # TODO: Implement this
+                # Only ground truth data available
+                tilerizer = self.get_polygon_tilerizer(data_state=data_state,
+                                                       labels_gdf=data_state.ground_truth_gdf,
+                                                       aois_config=self.ground_truth_aois_config,
+                                                       other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass))
+                ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
+                tiles_path = tilerizer.tiles_path
+                tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[ground_truth_aoi_name]]
+
+            elif (data_state.infer_gdf is not None) or (data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None):
+                # Only inference data available, if both available select inference mode
+                # Check if we need to set default category IDs
+                if self.config.main_label_category_column_name is not None and \
+                   self.config.main_label_category_column_name not in data_state.infer_gdf.columns:
+                    print(f"Warning: Missing category column '{self.config.main_label_category_column_name}' - adding default category 0")
+                    data_state.infer_gdf[self.config.main_label_category_column_name] = 0
+
+                # Format other labels attributes column names
+                if self.config.other_labels_attributes_column_names != []:
+                    for col_name in self.config.other_labels_attributes_column_names:
+                        data_state.infer_gdf_columns_to_pass.add(col_name)
+
+                tilerizer = self.get_polygon_tilerizer(
+                    data_state=data_state,
+                    labels_gdf=data_state.infer_gdf,
+                    aois_config=self.infer_aois_config,
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
+                )
+                ground_truth_coco_path = None
+                infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
+                tiles_path = tilerizer.tiles_folder_path
+                tiles_names = self._collect_polygon_tile_names(tilerizer, infer_aoi_name)
+            else:
+                raise ValueError("Polygon tilerization requires either inference or ground truth data")
+
         else:
             raise ValueError(f"Invalid tile type: {self.config.tile_type}. Expected 'tile' or 'polygon'.")
 
@@ -181,12 +210,16 @@ class TilerizerComponent(BaseComponent):
 
         return tilerizer
 
-    def get_polygon_tilerizer(self, data_state: DataState, aois_config: AOIConfig):
+    def get_polygon_tilerizer(self, data_state: DataState, labels_gdf: gpd.GeoDataFrame, aois_config: AOIConfig, other_labels_attributes_column_names: list[str]):
+        """Creates a polygon tilerizer"""
+        if data_state.imagery_path is None:
+            raise ValueError("No imagery path specified in data_state. Cannot create tilerizer.")
+
         tilerizer = RasterPolygonTilerizer(
             raster_path=data_state.imagery_path,
             output_path=self.output_path,
             labels_path=None,
-            labels_gdf=data_state.infer_gdf,
+            labels_gdf=labels_gdf,
             tile_size=self.config.tile_size,
             use_variable_tile_size=self.config.use_variable_tile_size,
             variable_tile_size_pixel_buffer=self.config.variable_tile_size_pixel_buffer,
@@ -194,8 +227,22 @@ class TilerizerComponent(BaseComponent):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names).unique())),
+            other_labels_attributes_column_names=other_labels_attributes_column_names,
+            coco_n_workers=self.config.coco_n_workers,
             temp_dir=self.temp_path
         )
 
         return tilerizer
+
+    def _collect_polygon_tile_names(self, tilerizer, aoi_name):
+        """Collects tile names from a polygon tilerizer for a specific AOI"""
+        tile_names = []
+
+        # Path to the tiles folder for the specified AOI
+        aoi_tiles_path = tilerizer.tiles_folder_path / aoi_name
+
+        # If the path exists, collect all tile filenames
+        if aoi_tiles_path.exists():
+            tile_names = [tile_path.name for tile_path in aoi_tiles_path.glob("*.tif")]
+    
+        return tile_names

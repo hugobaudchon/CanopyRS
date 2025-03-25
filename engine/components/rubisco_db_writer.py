@@ -4,7 +4,7 @@ from pathlib import Path
 from engine.components.base import BaseComponent
 from engine.config_parsers.rubisco_db_writer import RubiscoDbWriterConfig
 from engine.data_state import DataState
-from rubisco_db.db_writer import InferenceRunWriter, PredictionsWriter
+from rubisco_db.db_writer import InferRunWriter, PredictionsWriter
 from rubisco_db.utils.logging import get_db_engine
 
 
@@ -70,25 +70,25 @@ class RubiscoDbWriterComponent(BaseComponent):
                     print(f"ERROR: Cannot find configuration folder at {pipeline_folder}")
                     return data_state
             
-            inference_writer = InferenceRunWriter(engine)
+            inference_writer = InferRunWriter(engine)
             print(f"Writing config from {pipeline_folder} with model_id_detector={self.config.model_id_detector}")
             
-            inference_id = inference_writer.write_config(
+            infer_run_id = inference_writer.write_config(
                 pipeline_folder=pipeline_folder,
                 model_id_detector=self.config.model_id_detector,
                 model_id_classifier=self.config.model_id_classifier
             )
             
-            if inference_id is None:
-                print("ERROR: Failed to write configuration to database - inference_id is None")
+            if infer_run_id is None:
+                print("ERROR: Failed to write configuration to database - infer_run_id is None")
                 return data_state
                 
-            print(f"Configuration written to database with inference ID: {inference_id}")
+            print(f"Configuration written to database with inference ID: {infer_run_id}")
             
             # Write predictions
             predictions_writer = PredictionsWriter(engine)
             added_boxes, added_masks = predictions_writer.write_predictions(
-                inference_id=inference_id,
+                infer_run_id=infer_run_id,
                 boxes_path=str(detector_aggregator_gpkg),
                 masks_path=str(segmenter_aggregator_gpkg) if segmenter_aggregator_gpkg else None,
                 has_classifier=self.config.model_id_classifier is not None
@@ -97,7 +97,7 @@ class RubiscoDbWriterComponent(BaseComponent):
             print(f"Predictions written to database: {added_boxes} boxes, {added_masks} masks")
             
             # Register outputs in data_state
-            return self.update_data_state(data_state, inference_id)
+            return self.update_data_state(data_state, infer_run_id)
             
         except Exception as e:
             print(f"ERROR writing to database: {str(e)}")
@@ -105,15 +105,15 @@ class RubiscoDbWriterComponent(BaseComponent):
             traceback.print_exc()
             return data_state
     
-    def update_data_state(self, data_state: DataState, inference_id: int) -> DataState:
+    def update_data_state(self, data_state: DataState, infer_run_id: int) -> DataState:
         # Register the component folder
         data_state = self.register_outputs_base(data_state)
         
         # Record the inference ID in a text file for reference
-        inference_id_path = self.output_path / "inference_id.txt"
-        with open(inference_id_path, 'w') as f:
-            f.write(f"Inference ID: {inference_id}\n")
+        infer_run_id_path = self.output_path / "infer_run_id.txt"
+        with open(infer_run_id_path, 'w') as f:
+            f.write(f"Inference ID: {infer_run_id}\n")
             
-        data_state.register_output_file(self.name, self.component_id, 'inference_id', inference_id_path)
+        data_state.register_output_file(self.name, self.component_id, 'infer_run_id', infer_run_id_path)
         
         return data_state
