@@ -128,16 +128,16 @@ class TilerizerComponent(BaseComponent):
                     for col_name in self.config.other_labels_attributes_column_names:
                         data_state.infer_gdf_columns_to_pass.add(col_name)
 
-                infer_tilerizer = self.get_polygon_tilerizer(
+                tilerizer = self.get_polygon_tilerizer(
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
-                    aois_config=self.self.infer_aois_config,
+                    aois_config=self.infer_aois_config,
                     other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
                 )
-                infer_coco_path = infer_tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
                 ground_truth_coco_path = None
-                tiles_path = infer_tilerizer.tiles_folder_path
-                tiles_names = self._collect_polygon_tile_names(infer_tilerizer, infer_aoi_name)
+                infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
+                tiles_path = tilerizer.tiles_folder_path
+                tiles_names = self._collect_polygon_tile_names(tilerizer, infer_aoi_name)
             else:
                 raise ValueError("Polygon tilerization requires either inference or ground truth data")
 
@@ -211,7 +211,10 @@ class TilerizerComponent(BaseComponent):
         return tilerizer
 
     def get_polygon_tilerizer(self, data_state: DataState, labels_gdf: gpd.GeoDataFrame, aois_config: AOIConfig, other_labels_attributes_column_names: list[str]):
-        """Creates a polygon tilerizer for labeled data"""
+        """Creates a polygon tilerizer"""
+        if data_state.imagery_path is None:
+            raise ValueError("No imagery path specified in data_state. Cannot create tilerizer.")
+
         tilerizer = RasterPolygonTilerizer(
             raster_path=data_state.imagery_path,
             output_path=self.output_path,
@@ -225,6 +228,7 @@ class TilerizerComponent(BaseComponent):
             ground_resolution=self.config.ground_resolution,
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=other_labels_attributes_column_names,
+            coco_n_workers=self.config.coco_n_workers,
             temp_dir=self.temp_path
         )
 
