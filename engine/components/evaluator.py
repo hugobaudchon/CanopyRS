@@ -51,12 +51,19 @@ class EvaluatorComponent(BaseComponent):
                 coco_evaluator.params.maxDets = self.config.max_dets
                 coco_evaluator.evaluate()
                 coco_evaluator.accumulate()
+
                 # Get metrics as a dictionary and save as JSON
                 metrics = coco_evaluator.summarize_to_dict()
+                num_images = len(truth_coco.dataset.get('images', []))
+                num_truths = len(truth_coco.dataset.get('annotations', []))
+                num_preds = len(preds_coco.dataset.get('annotations', []))
                 with open(self.output_path / "coco_metrics_tiles.json", "w") as f:
                     json.dump({
                         "message": "Aggregated results at the tile level.",
-                        "metrics": metrics
+                        "metrics": metrics,
+                        "num_images": num_images,
+                        "num_truths": num_truths,
+                        "num_preds": num_preds
                     }, f, indent=2)
             else:
                 raise Exception("Missing a COCO file.")
@@ -100,15 +107,22 @@ class EvaluatorComponent(BaseComponent):
                     cocoDt=coco_dt_obj,
                     iouType=iou_type
                 )
-                coco_evaluator.params.maxDets = [1, 10, 100, len(infer_gdf)]
+                coco_evaluator.params.maxDets = [1, 10, 100, len(truth_gdf)]
                 coco_evaluator.evaluate()
                 coco_evaluator.accumulate()
+
                 # Get metrics as a dictionary and save as JSON
                 metrics = coco_evaluator.summarize_to_dict()
+                num_images = len(coco_gt['images'])
+                num_truths = len(coco_gt['annotations'])
+                num_preds = len(coco_dt['annotations'])
                 with open(self.output_path / "coco_metrics_raster.json", "w") as f:
                     json.dump({
                         "message": f"Aggregated results at the raster level with ground resolution {self.config.raster_eval_ground_resolution}.",
-                        "metrics": metrics
+                        "metrics": metrics,
+                        "num_images": num_images,
+                        "num_truths": num_truths,
+                        "num_preds": num_preds
                     }, f, indent=2)
             else:
                 raise Exception("Missing a GeoDataFrame.")

@@ -118,7 +118,7 @@ class SegmenterComponent(BaseComponent):
             gdf[object_id_column_name] = range(len(gdf))
             new_columns.add(object_id_column_name)
         else:
-            # Objects IDs are already assigned, need to match them with existing results_gdf objects
+            # Objects IDs are already assigned, need to match them with existing infer_gdf objects
             gdf.set_index(object_id_column_name, inplace=True)
             infer_gdf.set_index(object_id_column_name, inplace=True)
             # Joining the new columns to the existing infer_gdf, overwriting the existing columns
