@@ -115,8 +115,8 @@ class TilerizerComponent(BaseComponent):
                 tiles_path = tilerizer.tiles_path
                 tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[ground_truth_aoi_name]]
 
-            elif data_state.infer_gdf is not None:
-                # Only inference data available
+            elif (data_state.infer_gdf is not None) or (data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None):
+                # Only inference data available, if both available select inference mode
                 # Check if we need to set default category IDs
                 if self.config.main_label_category_column_name is not None and \
                    self.config.main_label_category_column_name not in data_state.infer_gdf.columns:
@@ -138,10 +138,6 @@ class TilerizerComponent(BaseComponent):
                 ground_truth_coco_path = None
                 tiles_path = infer_tilerizer.tiles_folder_path
                 tiles_names = self._collect_polygon_tile_names(infer_tilerizer, infer_aoi_name)
-
-            elif data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None:
-                raise ValueError("Both labels and inferences polygons have been found for Polygon Tilerizer, not implemented yet.")
-
             else:
                 raise ValueError("Polygon tilerization requires either inference or ground truth data")
 
