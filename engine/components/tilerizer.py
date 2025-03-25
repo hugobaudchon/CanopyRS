@@ -107,17 +107,33 @@ class TilerizerComponent(BaseComponent):
         elif self.config.tile_type == 'polygon':
             if data_state.ground_truth_gdf is not None:
                 # Only ground truth data available
-                tilerizer = self.get_labeled_polygon_tilerizer(data_state=data_state,
-                    labels_gdf=data_state.ground_truth_gdf,
-                    aois_config=self.ground_truth_aois_config,
-                    other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass))
+                tilerizer = self.get_polygon_tilerizer(data_state=data_state,
+                                                       labels_gdf=data_state.ground_truth_gdf,
+                                                       aois_config=self.ground_truth_aois_config,
+                                                       other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass))
                 ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
                 tiles_path = tilerizer.tiles_path
                 tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[ground_truth_aoi_name]]
 
             elif data_state.infer_gdf is not None:
                 # Only inference data available
-                infer_tilerizer = self.get_unlabeled_tilerizer(data_state, self.infer_aois_config)
+                # Check if we need to set default category IDs
+                if self.config.main_label_category_column_name is not None and \
+                   self.config.main_label_category_column_name not in data_state.infer_gdf.columns:
+                    print(f"Warning: Missing category column '{self.config.main_label_category_column_name}' - adding default category 0")
+                    data_state.infer_gdf[self.config.main_label_category_column_name] = 0
+
+                # Format other labels attributes column names
+                if self.config.other_labels_attributes_column_names != []:
+                    for col_name in self.config.other_labels_attributes_column_names:
+                        data_state.infer_gdf_columns_to_pass.add(col_name)
+
+                infer_tilerizer = self.get_polygon_tilerizer(
+                    data_state=data_state,
+                    labels_gdf=data_state.infer_gdf,
+                    aois_config=self.self.infer_aois_config,
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
+                )
                 infer_coco_path = infer_tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
                 ground_truth_coco_path = None
                 tiles_path = infer_tilerizer.tiles_folder_path
@@ -197,33 +213,7 @@ class TilerizerComponent(BaseComponent):
 
         return tilerizer
 
-    def get_unlabeled_polygon_tilerizer(self, data_state: DataState, aois_config: AOIConfig):
-        """Create a polygon tilerizer for unlabeled data """
-        # Check if we need to set default category IDs
-        if self.config.main_label_category_column_name is not None and \
-           self.config.main_label_category_column_name not in data_state.infer_gdf.columns:
-            print(f"Warning: Missing category column '{self.config.main_label_category_column_name}' - adding default category 0")
-            data_state.infer_gdf[self.config.main_label_category_column_name] = 0
-
-        tilerizer = RasterPolygonTilerizer(
-            raster_path=data_state.imagery_path,
-            output_path=self.output_path,
-            labels_path=None,
-            labels_gdf=data_state.infer_gdf,
-            tile_size=self.config.tile_size,
-            use_variable_tile_size=self.config.use_variable_tile_size,
-            variable_tile_size_pixel_buffer=self.config.variable_tile_size_pixel_buffer,
-            aois_config=aois_config,
-            scale_factor=self.config.scale_factor,
-            ground_resolution=self.config.ground_resolution,
-            main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=list(set((data_state.infer_gdf_columns_to_pass + self.config.other_labels_attributes_column_names).unique())),
-            temp_dir=self.temp_path
-        )
-
-        return tilerizer
-
-    def get_labeled_polygon_tilerizer(self, data_state: DataState, labels_gdf: gpd.GeoDataFrame, aois_config: AOIConfig, other_labels_attributes_column_names: list[str]):
+    def get_polygon_tilerizer(self, data_state: DataState, labels_gdf: gpd.GeoDataFrame, aois_config: AOIConfig, other_labels_attributes_column_names: list[str]):
         """Creates a polygon tilerizer for labeled data"""
         tilerizer = RasterPolygonTilerizer(
             raster_path=data_state.imagery_path,
