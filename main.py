@@ -37,8 +37,6 @@ def pipeline_main(args):
             'input_imagery': args.imagery_path,
             'output_folder': args.output_path
         }
-        if args.ground_truth_path:
-            config_args['ground_truth_gpkg'] = args.ground_truth_path
         if args.aoi_path:
             config_args['aoi_config'] = 'package'
             config_args['aoi'] = args.aoi_path

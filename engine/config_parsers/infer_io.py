@@ -14,8 +14,6 @@ class InferIOConfig(BaseConfig):
     input_gpkg: Optional[str] = None
     input_coco: Optional[str] = None
 
-    ground_truth_gpkg: Optional[str] = None
-
     aoi_config: str = 'generate'
     aoi_type: Optional[str] = 'band'
     aoi: Union[str, dict] = Field(default_factory=lambda: {
