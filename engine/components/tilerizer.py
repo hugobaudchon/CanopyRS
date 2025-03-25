@@ -157,6 +157,7 @@ class TilerizerComponent(BaseComponent):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
+            min_intersection_ratio=self.config.min_intersection_ratio,
             ignore_tiles_without_labels=self.config.ignore_tiles_without_labels,
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=other_labels_attributes_column_names,

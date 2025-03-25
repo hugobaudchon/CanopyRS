@@ -1,3 +1,4 @@
+import logging
 from typing import List
 
 import torch
@@ -15,6 +16,9 @@ from engine.models.detector.train_detectron2.train_detectron2 import get_base_de
 from engine.models.detector.train_detectron2.train_detrex import get_base_detrex_model_cfg
 from engine.models.segmenter.detectree2 import setup_detectree2_cfg
 
+detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
+detrex_logger.disabled = True
+
 
 class Detectron2DetectorWrapper(DetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
@@ -22,7 +26,7 @@ class Detectron2DetectorWrapper(DetectorWrapperBase):
 
         if self.config.model.endswith('detectron2'):
             cfg = get_base_detectron2_model_cfg(self.config)
-            self.model = instantiate(cfg.MODEL)
+            self.model = build_model(cfg)
             self.model.eval()
             checkpointer = Detectron2DetectionCheckpointer(self.model)
             checkpointer.load(cfg.MODEL.WEIGHTS)
