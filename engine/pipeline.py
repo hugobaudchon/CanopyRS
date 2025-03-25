@@ -4,7 +4,6 @@ import geopandas as gpd
 
 from engine.components.aggregator import AggregatorComponent
 from engine.components.detector import DetectorComponent
-from engine.components.evaluator import EvaluatorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
 from engine.components.classifier import ClassifierComponent
@@ -63,8 +62,6 @@ class Pipeline:
             return AggregatorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'segmenter':
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
-        elif component_type == 'evaluator':
-            return EvaluatorComponent(component_config, self.io_config.output_folder, component_id)
         # elif isinstance(component_config, EmbedderConfig):
         #     return build_embedder()
         # elif isinstance(component_config, ClassifierConfig):
