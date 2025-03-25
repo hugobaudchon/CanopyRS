@@ -1,6 +1,6 @@
 # CanopyRS
 
-This project is a pipeline for processing geospatial data, specifically for the purpose of detecting and segmenting trees in a forest. The pipeline includes several tasks such as tiling, detection, aggregation, and segmentation. Each task is configurable via YAML configuration files.
+Canopy Remote Sensing is a project and pipeline designed for processing geospatial data, specifically for the purpose of detecting and segmenting trees in a forest. The pipeline includes several tasks such as tiling, detection, aggregation, and segmentation. Each task is configurable via YAML configuration files.
 
 ## Installation
 
