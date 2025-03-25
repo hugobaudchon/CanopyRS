@@ -1,0 +1,54 @@
+model: null
+architecture: null
+checkpoint_path: null
+batch_size: null
+num_classes: 1
+box_predictions_per_image: 500
+box_score_thresh: 0.05
+box_nms_thresh: 0.5
+
+# Training Data and Output path
+data_root_path: ''  # will be input from console
+train_dataset_names: null
+valid_dataset_names: null
+train_output_path: '/network/scratch/h/hugo.baudchon/training/detector'
+
+# Training Params
+#main_metric: 'mAP'
+lr: null
+wandb_project: null
+
+augmentation_image_size: null     # Final image size for both training and evaluation
+augmentation_early_conditional_image_size: null
+augmentation_train_crop_size_range: null
+augmentation_crop_min_intersection_ratio: 0.5
+augmentation_crop_prob: 0.5
+augmentation_crop_fallback_to_augmentation_image_size: True
+augmentation_flip_horizontal: True
+augmentation_flip_vertical: True
+augmentation_rotation: 30
+augmentation_rotation_prob: 0.5
+augmentation_contrast: 0.2
+augmentation_contrast_prob: 0.5
+augmentation_brightness: 0.2
+augmentation_brightness_prob: 0.5
+augmentation_saturation: 0.2
+augmentation_saturation_prob: 0.5
+augmentation_hue: 10
+augmentation_hue_prob: 0.3
+
+max_epochs: null
+seed: null
+freeze_layers: 2
+train_log_interval: 10
+eval_epoch_interval: 2
+#grad_accumulation_steps: 1
+backbone_model_pretrained: True
+scheduler_type: 'WarmupCosineLR'
+scheduler_epochs_steps: null
+scheduler_warmup_steps: 1000
+scheduler_gamma: 0.1
+dataloader_num_workers: 4
+
+use_gradient_checkpointing: true
+use_amp: true

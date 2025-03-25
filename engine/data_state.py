@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import geopandas as gpd
 
-from engine.utils import get_component_folder_name
+from engine.utils import get_component_folder_name, object_id_column_name
 
 
 @dataclass
@@ -27,6 +27,11 @@ class DataState:
 
     component_output_folders: Dict = field(default_factory=dict)
     component_output_files: Dict = field(default_factory=dict)
+
+    def update_infer_gdf(self, infer_gdf: gpd.GeoDataFrame) -> None:
+        assert isinstance(infer_gdf, gpd.GeoDataFrame)
+        assert object_id_column_name in infer_gdf.columns, f"Columns of the infer_gdf must contain a '{object_id_column_name}'."
+        self.infer_gdf = infer_gdf
 
     def register_component_folder(self, component_name: str, component_id: int, folder_path: Path) -> None:
         """

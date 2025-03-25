@@ -9,12 +9,14 @@ from transformers import SamModel, SamProcessor
 
 from engine.config_parsers import SegmenterConfig
 from engine.models.segmenter.segmenter_base import SegmenterWrapperBase
+from engine.utils import object_id_column_name
 
 
 def collate_fn_image_box(data_batch):
     image_batch = [data[0] for data in data_batch]
     boxes_batch = [np.array(data[1]['boxes']) for data in data_batch]
-    return image_batch, boxes_batch
+    boxes_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
+    return image_batch, boxes_batch, boxes_object_ids
 
 class SamPredictorWrapper(SegmenterWrapperBase):
     MODEL_TYPE_MAPPING = {
@@ -39,11 +41,12 @@ class SamPredictorWrapper(SegmenterWrapperBase):
     def forward(self,
                 images: List[np.array],
                 boxes: List[np.array],
+                boxes_object_ids: List[int],
                 tiles_idx: List[int],
                 queue: multiprocessing.JoinableQueue):
 
         # Only 1 image per batch supported for now
-        for image, image_boxes, tile_idx in zip(images, boxes, tiles_idx):
+        for image, image_boxes, image_boxes_object_ids, tile_idx in zip(images, boxes, boxes_object_ids, tiles_idx):
             image = image[:3, :, :]
             image = image.transpose((1, 2, 0))
             image = (image * 255).astype(np.uint8)
@@ -54,6 +57,7 @@ class SamPredictorWrapper(SegmenterWrapperBase):
             n_masks_processed = 0
             for i in range(0, len(image_boxes), self.config.box_batch_size):
                 box_batch = image_boxes[i:i + self.config.box_batch_size]  # Select a batch of boxes
+                boxes_object_ids_batch = image_boxes_object_ids[i:i + self.config.box_batch_size]
                 inputs = self.processor(pil_image, input_boxes=[box_batch], return_tensors="pt").to(self.device)
 
                 with torch.no_grad():
@@ -61,9 +65,9 @@ class SamPredictorWrapper(SegmenterWrapperBase):
 
                 # Post-process masks
                 masks = self.processor.image_processor.post_process_masks(
-                    outputs.pred_masks.cpu(),
-                    inputs["original_sizes"].cpu(),
-                    inputs["reshaped_input_sizes"].cpu()
+                    outputs.pred_masks,
+                    inputs["original_sizes"],
+                    inputs["reshaped_input_sizes"]
                 )
 
                 # reshaping to (batch_size, h, w)
@@ -71,12 +75,14 @@ class SamPredictorWrapper(SegmenterWrapperBase):
                 if masks.ndim == 4:
                     masks = masks[:, 0, :, :]
 
+                masks = masks.cpu().numpy().astype(np.uint8)
+
                 scores = outputs.iou_scores.cpu()
                 scores = scores[0]
                 image_size = (image.shape[0], image.shape[1])
 
                 n_masks_processed = self.queue_masks(
-                    masks, image_size, scores, tile_idx, n_masks_processed, queue
+                    boxes_object_ids_batch, masks, image_size, scores, tile_idx, n_masks_processed, queue
                 )
 
     def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):

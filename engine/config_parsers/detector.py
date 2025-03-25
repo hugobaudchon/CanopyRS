@@ -23,7 +23,7 @@ class DetectorConfig(BaseConfig):
     train_output_path: str = None
 
     # Training Params
-    main_metric: str = 'mAP'            # TODO add support for this
+    main_metric: str = 'bbox/AP'
     seed: int = 42
     wandb_project: Optional[str] = None
 

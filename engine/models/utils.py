@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 import torch
 from torch.optim.lr_scheduler import StepLR
@@ -51,6 +53,30 @@ def collate_fn_images(batch):
         data = torch.tensor([item for item in batch], dtype=torch.float32)
 
     return data
+
+
+def set_all_seeds(seed: int):
+    """
+    Set random seeds for Python, NumPy, and PyTorch.
+    Avoids forcing deterministic behavior to maintain performance.
+
+    Args:
+        seed (int): The seed value to use.
+    """
+    # Python's built-in random module
+    random.seed(seed)
+
+    # NumPy
+    np.random.seed(seed)
+
+    # Torch: for CPU and GPU operations
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    print(f"Random seeds set to {seed}.")
+
 
 class WarmupStepLR:
     def __init__(self, optimizer, step_size, gamma=0.1, warmup_steps=10, base_lr=1e-6):
