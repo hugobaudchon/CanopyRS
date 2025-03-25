@@ -7,7 +7,7 @@ from engine.config_parsers import DetectorConfig
 from engine.data_state import DataState
 from engine.models.registry import DETECTOR_REGISTRY
 from engine.models.utils import collate_fn_images
-from engine.utils import generate_future_coco
+from engine.utils import generate_future_coco, object_id_column_name
 
 
 class DetectorComponent(BaseComponent):
@@ -34,7 +34,7 @@ class DetectorComponent(BaseComponent):
         # Combine results into a GeoDataFrame
         results_gdf, new_columns = self.combine_as_gdf(tiles_paths, boxes, boxes_scores, classes)
 
-        # Update the data state
+        # Generate COCO output asynchronously and update the data state
         columns_to_pass = data_state.infer_gdf_columns_to_pass.union(new_columns)
 
         future_coco = generate_future_coco(
@@ -61,7 +61,7 @@ class DetectorComponent(BaseComponent):
                           results_gdf: gpd.GeoDataFrame,
                           columns_to_pass: set,
                           future_coco: tuple) -> DataState:
-        data_state.infer_gdf = results_gdf
+        data_state.update_infer_gdf(results_gdf)
         data_state.infer_gdf_columns_to_pass = columns_to_pass
         data_state.side_processes.append(future_coco)
         return data_state
@@ -84,6 +84,9 @@ class DetectorComponent(BaseComponent):
             crs=None
         )
 
-        new_columns = {'detector_score', 'detector_class'}
+        # Assigning a unique ID to each object detected
+        gdf[object_id_column_name] = range(len(gdf))
+
+        new_columns = {object_id_column_name, 'detector_score', 'detector_class'}
 
         return gdf, new_columns

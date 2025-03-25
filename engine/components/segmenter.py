@@ -8,7 +8,7 @@ from engine.components.base import BaseComponent
 from engine.config_parsers import SegmenterConfig
 from engine.data_state import DataState
 from engine.models.registry import SEGMENTER_REGISTRY
-from engine.utils import infer_aoi_name, generate_future_coco
+from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name
 
 
 class SegmenterComponent(BaseComponent):
@@ -22,6 +22,7 @@ class SegmenterComponent(BaseComponent):
             raise ValueError(f'Invalid detector model {config.model}')
 
     def __call__(self, data_state: DataState) -> DataState:
+        # Find the tiles (and the COCO file for box prompts if required)
         data_paths = [data_state.tiles_path]
         if self.segmenter.REQUIRES_BOX_PROMPT:
             if not data_state.infer_coco_path:
@@ -36,7 +37,8 @@ class SegmenterComponent(BaseComponent):
                 fold=infer_aoi_name,
                 root_path=data_paths,
                 box_padding_percentage=self.config.box_padding_percentage,
-                transform=None
+                transform=None,
+                other_attributes_names_to_pass=[object_id_column_name]
             )
         else:
             dataset = UnlabeledRasterDataset(
@@ -45,33 +47,16 @@ class SegmenterComponent(BaseComponent):
                 transform=None
             )
 
-        tiles_paths, tiles_masks_polygons, tiles_masks_scores = self.segmenter.infer_on_dataset(dataset)
+        # Run inference
+        (tiles_paths, tiles_masks_objects_ids, tiles_masks_polygons, tiles_masks_scores) = self.segmenter.infer_on_dataset(dataset)
 
-        attributes_data = {}
-        for attribute_name in data_state.infer_gdf_columns_to_pass:
-            attributes_data[attribute_name] = get_attribute_from_dataset(dataset, attribute_name, tiles_paths, tiles_masks_polygons)
-
-        gdf_items = []
-        for i in range(len(tiles_paths)):
-            for j in range(len(tiles_masks_polygons[i])):
-                data = {
-                    'tile_path': tiles_paths[i],
-                    'geometry': tiles_masks_polygons[i][j],
-                    'segmenter_score': tiles_masks_scores[i][j]
-                }
-
-                for attribute_name, attribute in attributes_data.items():
-                    data[attribute_name] = attribute[i][j]
-
-                gdf_items.append(data)
-
-        results_gdf = gpd.GeoDataFrame(
-            data=gdf_items,
-            geometry='geometry',
-            crs=None
+        # Combine results into a GeoDataFrame
+        results_gdf, new_columns = self.combine_as_gdf(
+            data_state.infer_gdf, tiles_paths, tiles_masks_polygons, tiles_masks_scores, tiles_masks_objects_ids
         )
 
-        columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'segmenter_score'})
+        # Generate COCO output asynchronously and update the data state
+        columns_to_pass = data_state.infer_gdf_columns_to_pass.union(new_columns)
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
@@ -99,23 +84,47 @@ class SegmenterComponent(BaseComponent):
                           future_coco: tuple) -> DataState:
         # Register the component folder
         data_state = self.register_outputs_base(data_state)
-        data_state.infer_gdf = results_gdf
+        data_state.update_infer_gdf(results_gdf)
         data_state.infer_gdf_columns_to_pass = columns_to_pass
         data_state.side_processes.append(future_coco)
         return data_state
 
+    @staticmethod
+    def combine_as_gdf(infer_gdf, tiles_paths, masks, masks_scores, masks_object_ids) -> (gpd.GeoDataFrame, set):
+        gdf_items = []
+        for i in range(len(tiles_paths)):
+            for j in range(len(masks[i])):
+                pred_data = {
+                    'tile_path': tiles_paths[i],
+                    'geometry': masks[i][j],
+                    'segmenter_score': masks_scores[i][j],
+                    # 'segmenter_class': masks_classes[i][j]    # currently not supported but will be in future
+                }
 
-def get_attribute_from_dataset(dataset, attribute_name, tiles_paths, tiles_masks_polygons):
-    if attribute_name in dataset.tiles[dataset.tiles_path_to_id_mapping[tiles_paths[0].name]]['labels'][0]['other_attributes']:
-        attribute = []
-        for i, tile_path in enumerate(tiles_paths):
-            tile_boxes_attribute = []
-            if tile_path.name in dataset.tiles_path_to_id_mapping:
-                tile_id = dataset.tiles_path_to_id_mapping[tile_path.name]
-                for annotation in dataset.tiles[tile_id]['labels']:
-                    tile_boxes_attribute.append(annotation['other_attributes'][attribute_name])
+                if masks_object_ids is not None:
+                    pred_data[object_id_column_name] = masks_object_ids[i][j]
 
-            attribute.append(tile_boxes_attribute)
-    else:
-        attribute = [[None for _ in tile_masks] for tile_masks in tiles_masks_polygons]
-    return attribute
+                gdf_items.append(pred_data)
+
+        gdf = gpd.GeoDataFrame(
+            data=gdf_items,
+            geometry='geometry',
+            crs=None
+        )
+
+        new_columns = {'segmenter_score'}   # 'segmenter_class' currently not supported but will be in future
+        if masks_object_ids is None:
+            # New objects, assign a unique ID to each object detected
+            gdf[object_id_column_name] = range(len(gdf))
+            new_columns.add(object_id_column_name)
+        else:
+            # Objects IDs are already assigned, need to match them with existing results_gdf objects
+            gdf.set_index(object_id_column_name, inplace=True)
+            infer_gdf.set_index(object_id_column_name, inplace=True)
+            # Joining the new columns to the existing infer_gdf, overwriting the existing columns
+            other_columns = infer_gdf.columns.difference(gdf.columns)
+            gdf = gdf.join(infer_gdf[other_columns], how='left')
+            # Resetting the index to keep the object_id_column_name as a column
+            gdf.reset_index(inplace=True)
+
+        return gdf, new_columns

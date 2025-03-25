@@ -35,7 +35,7 @@ def process_masks(queue,
         item = queue.get()
         if item is None:
             break
-        tile_idx, mask_ids, masks, scores, image_size = item
+        tile_idx, mask_ids, box_object_ids, masks, scores, image_size = item
         masks_polygons = [mask_to_polygon(mask,
                                           simplify_tolerance=simplify_tolerance,
                                           remove_rings=remove_rings,
@@ -70,8 +70,8 @@ def process_masks(queue,
         # Store the tile/image results
         if tile_idx not in results:
             results[tile_idx] = []
-        [results[tile_idx].append((mask_id, mask_poly, score)) for mask_id, mask_poly, score in
-         zip(mask_ids, masks_polygons, scores)]
+        [results[tile_idx].append((mask_id, box_object_id, mask_poly, score)) for mask_id, box_object_id, mask_poly, score in
+         zip(mask_ids, box_object_ids, masks_polygons, scores)]
 
         queue.task_done()  # Indicate that the task is complete
         with processed_counter.get_lock():
@@ -102,6 +102,7 @@ class SegmenterWrapperBase(ABC):
     def forward(self,
                 images: List[np.array],
                 boxes: List[np.array],
+                boxes_object_ids: List[int or None],
                 tiles_idx: List[int],
                 queue: multiprocessing.JoinableQueue):
         pass
@@ -111,6 +112,7 @@ class SegmenterWrapperBase(ABC):
         pass
 
     def queue_masks(self,
+                    box_object_ids: List[int or None],
                     masks: np.array,
                     image_size: Tuple[int, int],
                     scores: np.array,
@@ -137,8 +139,9 @@ class SegmenterWrapperBase(ABC):
         for j in range(0, num_masks, chunk_size):
             chunk_masks = masks[j:j + chunk_size]
             chunk_scores = scores[j:j + chunk_size]
+            chunk_box_object_ids = box_object_ids[j:j + chunk_size]
             mask_ids = list(range(n_masks_processed, n_masks_processed + len(chunk_masks)))
-            queue.put((tile_idx, mask_ids, chunk_masks, chunk_scores, image_size))
+            queue.put((tile_idx, mask_ids, chunk_box_object_ids, chunk_masks, chunk_scores, image_size))
             n_masks_processed += len(chunk_masks)
 
         return n_masks_processed
@@ -149,6 +152,7 @@ class SegmenterWrapperBase(ABC):
                               num_workers=3, persistent_workers=True)
 
         tiles_paths = []
+        tiles_boxes_object_ids = []
         tiles_masks_polygons = []
         tiles_masks_scores = []
         queue = multiprocessing.JoinableQueue()  # Create a JoinableQueue
@@ -183,11 +187,12 @@ class SegmenterWrapperBase(ABC):
         for i, sample in enumerate(dataset_with_progress):
             tiles_idx = list(range(i * self.config.image_batch_size, (i + 1) * self.config.image_batch_size))[:len(sample)]
             if isinstance(dataset, DetectionLabeledRasterCocoDataset):
-                images, boxes = sample
+                images, boxes, boxes_object_ids = sample
                 tiles_paths.extend([dataset.tiles[tile_idx]['path'] for tile_idx in tiles_idx])     # TODO tiles idx should be returned by the dataset __getitem__ method
             elif isinstance(dataset, UnlabeledRasterDataset):
                 images = list(sample)
                 boxes = [None] * len(images)
+                boxes_object_ids = [None] * len(images)
                 tiles_paths.extend([dataset.tile_paths[tile_idx] for tile_idx in tiles_idx])        # TODO tiles idx should be returned by the dataset __getitem__ method
             else:
                 raise ValueError("Dataset type not supported.")
@@ -195,6 +200,7 @@ class SegmenterWrapperBase(ABC):
             self.forward(
                 images=images,
                 boxes=boxes,
+                boxes_object_ids=boxes_object_ids,
                 tiles_idx=tiles_idx,
                 queue=queue
             )
@@ -221,12 +227,19 @@ class SegmenterWrapperBase(ABC):
 
         # Assemble the results into tiles_masks_polygons
         for tile_idx in sorted(output_dict.keys()):
-            _, masks_polygons, scores = zip(*output_dict[tile_idx])
+            _, box_object_ids, masks_polygons, scores = zip(*output_dict[tile_idx])
+            box_object_ids = list(box_object_ids)
             masks_polygons = list(masks_polygons)
             scores = [score.item() for score in scores]
+
+            tiles_boxes_object_ids.append(box_object_ids)
             tiles_masks_polygons.append(masks_polygons)
             tiles_masks_scores.append(scores)
 
         print(f"Finished inferring the segmenter {self.config.model}-{self.config.architecture}.")
 
-        return tiles_paths, tiles_masks_polygons, tiles_masks_scores
+        if isinstance(dataset, UnlabeledRasterDataset):
+            # There were no box prompts, so we return None for the boxes_object_ids instead of lists of None values
+            tiles_boxes_object_ids = None
+
+        return tiles_paths, tiles_boxes_object_ids, tiles_masks_polygons, tiles_masks_scores

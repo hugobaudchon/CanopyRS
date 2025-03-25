@@ -8,6 +8,7 @@ from geodataset.utils import COCOGenerator, TileNameConvention, CocoNameConventi
 
 infer_aoi_name = 'infer'
 ground_truth_aoi_name = 'groundtruth'
+object_id_column_name = 'canopyrs_object_id'
 
 
 def get_component_folder_name(component_id: int, component_name: str) -> str:
