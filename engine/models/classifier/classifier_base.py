@@ -56,8 +56,8 @@ class ClassifierWrapperBase(ABC):
 
         with torch.no_grad():
             data_loader_with_progress = tqdm(data_loader,
-                                            desc="Inferring classifier...",
-                                            leave=True)
+                                             desc="Inferring classifier...",
+                                             leave=True)
             for batch in data_loader_with_progress:
                 # Handle different types of batch outputs from the dataloader
                 if isinstance(batch, tuple):
@@ -88,15 +88,21 @@ class ClassifierWrapperBase(ABC):
         infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
                               collate_fn=collate_fn_classification,
                               num_workers=3, persistent_workers=True)
-        tiles_paths, class_scores, class_predictions = self._infer(infer_dl)
 
-        # Include object IDs if available
-        if has_object_ids:
-            if hasattr(infer_ds, 'object_ids'):
-                object_ids = infer_ds.object_ids
-            else:
-                object_ids = infer_ds.get_object_ids()
-            return tiles_paths, class_scores, class_predictions, object_ids
+        predictions = self._infer(infer_dl)
+
+        # Process results
+        class_scores = [result['scores'].cpu().numpy().tolist() for result in predictions]
+        class_predictions = [result['labels'].cpu().item() for result in predictions]
+
+        # Extract tile paths - use the correct attribute based on dataset implementation
+        if hasattr(infer_ds, 'tile_paths'):
+            tiles_paths = infer_ds.tile_paths
+        elif hasattr(infer_ds, 'tiles'):
+            # Extract paths from the 'tiles' attribute (common in COCO datasets)
+            tiles_paths = [tile_info['path'] for _, tile_info in infer_ds.tiles.items()]
+        else:
+            raise AttributeError("Dataset does not have recognized tile paths attribute")
 
         return tiles_paths, class_scores, class_predictions
 
