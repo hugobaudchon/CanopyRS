@@ -44,6 +44,36 @@ def collate_fn_detection(batch):
 
     return data, labels
 
+def collate_fn_classification(batch):
+    """
+    Collate function for classification datasets that may include polygon IDs
+    """
+    # Check if batch items include polygon IDs
+    if len(batch[0]) == 3:  # (image, class, polygon_id)
+        images = [item[0] for item in batch]
+        labels = [item[1] for item in batch]
+        polygon_ids = [item[2] for item in batch]
+        
+        # Convert images to tensor
+        if isinstance(images[0], np.ndarray):
+            images = np.array(images)
+            images = torch.tensor(images, dtype=torch.float32)
+        else:
+            images = torch.stack(images)
+            
+        return images, labels, polygon_ids
+    else:  # (image, class)
+        images = [item[0] for item in batch]
+        labels = [item[1] for item in batch]
+        
+        # Convert images to tensor
+        if isinstance(images[0], np.ndarray):
+            images = np.array(images)
+            images = torch.tensor(images, dtype=torch.float32)
+        else:
+            images = torch.stack(images)
+            
+        return images, labels
 
 def collate_fn_images(batch):
     if type(batch[0]) is np.ndarray:
@@ -53,7 +83,6 @@ def collate_fn_images(batch):
         data = torch.tensor([item for item in batch], dtype=torch.float32)
 
     return data
-
 
 def set_all_seeds(seed: int):
     """
