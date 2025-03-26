@@ -53,6 +53,7 @@ class ClassifierWrapperBase(ABC):
         """
         self.model.eval()
         predictions = []
+        object_ids = []
 
         with torch.no_grad():
             data_loader_with_progress = tqdm(data_loader,
@@ -63,6 +64,7 @@ class ClassifierWrapperBase(ABC):
                 if isinstance(batch, tuple):
                     # If batch is a tuple, the first element contains the images
                     images = batch[0]
+                    polygon_ids = batch[-1]
                 else:
                     # If batch is not a tuple, it's just images
                     images = batch
@@ -75,21 +77,33 @@ class ClassifierWrapperBase(ABC):
 
                 outputs = self.forward(images)
                 predictions.extend(outputs)
+                object_ids.extend(polygon_ids)
 
-        return predictions
+        return predictions, object_ids
 
     def infer(self, infer_ds, collate_fn_classification):
         """
-        Override this method for datasets that might have object IDs
+        Run inference on a dataset and return predictions along with object IDs when available.
+
+        Args:
+            infer_ds: The dataset to run inference on
+            collate_fn_classification: Collate function for batching
+
+        Returns:
+            A tuple of (tiles_paths, class_scores, class_predictions) or
+            (tiles_paths, class_scores, class_predictions, object_ids) if object IDs are available
         """
         # Check if dataset has object_ids attribute or method
-        has_object_ids = hasattr(infer_ds, 'object_ids') or hasattr(infer_ds, 'get_object_ids')
+        has_object_ids = hasattr(infer_ds, 'include_polygon_id') or hasattr(infer_ds, 'include_polygon_id')
 
         infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
                               collate_fn=collate_fn_classification,
                               num_workers=3, persistent_workers=True)
 
-        predictions = self._infer(infer_dl)
+        if has_object_ids:
+            predictions, object_ids = self._infer(infer_dl)
+        else:
+            predictions = self._infer(infer_dl)
 
         # Process results
         class_scores = [result['scores'].cpu().numpy().tolist() for result in predictions]
@@ -103,6 +117,9 @@ class ClassifierWrapperBase(ABC):
             tiles_paths = [tile_info['path'] for _, tile_info in infer_ds.tiles.items()]
         else:
             raise AttributeError("Dataset does not have recognized tile paths attribute")
+
+        if has_object_ids:
+            return tiles_paths, class_scores, class_predictions, object_ids
 
         return tiles_paths, class_scores, class_predictions
 
