@@ -12,7 +12,13 @@ class TilerizerConfig(BaseConfig):
     use_variable_tile_size: bool = False
     variable_tile_size_pixel_buffer: int = 5
     ignore_black_white_alpha_tiles_threshold: float = 0.75
-    ignore_tiles_without_labels: bool = True
+    coco_n_workers: int = 5
+
+    ignore_tiles_without_labels: bool = True    # impacts inference and evaluation!
+    min_intersection_ratio: float = 0.4     # impacts evaluation
 
     main_label_category_column_name: str = None
     other_labels_attributes_column_names: list = Field(default_factory=list)
+
+    use_variable_tile_size: bool = False
+    variable_tile_size_pixel_buffer: int or None = None

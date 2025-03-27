@@ -8,6 +8,7 @@ from engine.config_parsers.detector import DetectorConfig
 from engine.config_parsers.aggregator import AggregatorConfig
 from engine.config_parsers.segmenter import SegmenterConfig
 from engine.config_parsers.evaluator import EvaluatorConfig
+from engine.config_parsers.classifier import ClassifierConfig
 from engine.config_parsers.rubisco_db_writer import RubiscoDbWriterConfig
 
 from engine.config_parsers.base import BaseConfig, get_config_path
@@ -37,6 +38,8 @@ class PipelineConfig(BaseConfig):
                 component_config = SegmenterConfig.from_yaml(config_path)
             elif component_type == 'evaluator':
                 component_config = EvaluatorConfig.from_yaml(config_path)
+            elif component_type == 'classifier':
+                component_config = ClassifierConfig.from_yaml(config_path)
             elif component_type == 'rubisco_db_writer':
                 component_config = RubiscoDbWriterConfig.from_yaml(config_path)
             else:

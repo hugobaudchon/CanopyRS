@@ -1,5 +1,8 @@
+import logging
+import warnings
 from typing import List
 
+import numpy as np
 import torch
 from detectron2.config import instantiate
 from detectron2.data.transforms import AugmentationList, AugInput, ResizeShortestEdge
@@ -15,6 +18,13 @@ from engine.models.detector.train_detectron2.train_detectron2 import get_base_de
 from engine.models.detector.train_detectron2.train_detrex import get_base_detrex_model_cfg
 from engine.models.segmenter.detectree2 import setup_detectree2_cfg
 
+warnings.filterwarnings(
+    "ignore",
+    message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument."
+)
+detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
+detrex_logger.disabled = True
+
 
 class Detectron2DetectorWrapper(DetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
@@ -22,7 +32,7 @@ class Detectron2DetectorWrapper(DetectorWrapperBase):
 
         if self.config.model.endswith('detectron2'):
             cfg = get_base_detectron2_model_cfg(self.config)
-            self.model = instantiate(cfg.MODEL)
+            self.model = build_model(cfg)
             self.model.eval()
             checkpointer = Detectron2DetectionCheckpointer(self.model)
             checkpointer.load(cfg.MODEL.WEIGHTS)
@@ -69,14 +79,13 @@ class Detectron2DetectorWrapper(DetectorWrapperBase):
                 # Convert from tensor (C, H, W) to numpy (H, W, C)
                 image = image.cpu().numpy().transpose(1, 2, 0)
                 # Your dataset normalizes images to [0, 1]; scale back to [0, 255]
-                image = image * 255.0
+                image = (image * 255.0).astype(np.uint8)
 
                 # Save original dimensions.
                 orig_h, orig_w = image.shape[:2]
 
                 # Convert channels if needed.
-                if self.input_format == "RGB":
-                    # Assuming the model expects BGR, reverse channels.
+                if self.input_format == "BGR":
                     image = image[:, :, ::-1]
 
                 # Apply augmentations.

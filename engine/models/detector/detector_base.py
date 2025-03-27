@@ -12,9 +12,14 @@ from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import albumentations as A
-import wandb
 
 from engine.models.utils import WarmupStepLR
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message="Importing from timm.models.layers is deprecated"
+)
 
 
 class DetectorWrapperBase(ABC):
@@ -238,12 +243,20 @@ class TorchTrainerDetectorWrapperBase(DetectorWrapperBase, ABC):
 def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):
     # Structure the OrderedDict keys to match requirements
     checkpoint = torch.load(checkpoint_state_dict_path, weights_only=True)
+    if "model" in checkpoint.keys():
+        # Case where other attributes are stored in the checkpoint
+        checkpoint = checkpoint["model"]
     # Create a new OrderedDict with the keys prefixed with "model."
     new_state_dict = OrderedDict()
     if all(s.startswith("model.") for s in checkpoint.keys()):
         # try removing the 'model.' prefix
         for key, value in checkpoint.items():
             new_key = key[6:]
+            new_state_dict[new_key] = value
+    elif all(s.startswith("module.") for s in checkpoint.keys()):
+        # try removing the 'model.' prefix
+        for key, value in checkpoint.items():
+            new_key = key[7:]
             new_state_dict[new_key] = value
     else:
         # try adding the 'model.' prefix

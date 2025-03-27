@@ -85,21 +85,21 @@ dataset_configs = {
             "augmentation_image_size": 888,
             "augmentation_train_crop_size_range": [800, 977]
         },
-        {
-            "compressed": "ours_gr0p06_666px.tar.gz",
-            "train_dataset_names": [
-                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_1333_0p5_0p06_None/brazil_zf2"
-            ],
-            "valid_dataset_names": [
-                "tilerized_666_0p5_0p06_None/panama_aguasalud",
-                "tilerized_666_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_666_0p5_0p06_None/brazil_zf2"
-            ],
-            "augmentation_image_size": 666,
-            "augmentation_train_crop_size_range": [600, 733]
-        },
+        # {
+        #     "compressed": "ours_gr0p06_666px.tar.gz",
+        #     "train_dataset_names": [
+        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "valid_dataset_names": [
+        #         "tilerized_666_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_666_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_666_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "augmentation_image_size": 666,
+        #     "augmentation_train_crop_size_range": [600, 733]
+        # },
         {
             "compressed": "ours_gr0p1_400px.tar.gz",
             "train_dataset_names": [
@@ -115,21 +115,21 @@ dataset_configs = {
             "augmentation_image_size": 400,
             "augmentation_train_crop_size_range": [360, 440]
         },
-        {
-            "compressed": "ours_gr0p06_666px.tar.gz",
-            "train_dataset_names": [
-                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_1333_0p5_0p06_None/brazil_zf2"
-            ],
-            "valid_dataset_names": [
-                "tilerized_666_0p5_0p06_None/panama_aguasalud",
-                "tilerized_666_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_666_0p5_0p06_None/brazil_zf2"
-            ],
-            "augmentation_image_size": 888,
-            "augmentation_train_crop_size_range": [600, 733]
-        },
+        # {
+        #     "compressed": "ours_gr0p06_666px.tar.gz",
+        #     "train_dataset_names": [
+        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "valid_dataset_names": [
+        #         "tilerized_666_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_666_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_666_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "augmentation_image_size": 888,
+        #     "augmentation_train_crop_size_range": [600, 733]
+        # },
         {
             "compressed": "ours_gr0p1_400px.tar.gz",
             "train_dataset_names": [
@@ -145,21 +145,21 @@ dataset_configs = {
             "augmentation_image_size": 888,
             "augmentation_train_crop_size_range": [360, 440]
         },
-        {
-            "compressed": "ours_gr0p1_400px.tar.gz",
-            "train_dataset_names": [
-                "tilerized_800_0p5_0p1_None/panama_aguasalud",
-                "tilerized_800_0p5_0p1_None/ecuador_tiputini",
-                "tilerized_800_0p5_0p1_None/brazil_zf2"
-            ],
-            "valid_dataset_names": [
-                "tilerized_400_0p5_0p1_None/panama_aguasalud",
-                "tilerized_400_0p5_0p1_None/ecuador_tiputini",
-                "tilerized_400_0p5_0p1_None/brazil_zf2"
-            ],
-            "augmentation_image_size": 666,
-            "augmentation_train_crop_size_range": [360, 440]
-        },
+        # {
+        #     "compressed": "ours_gr0p1_400px.tar.gz",
+        #     "train_dataset_names": [
+        #         "tilerized_800_0p5_0p1_None/panama_aguasalud",
+        #         "tilerized_800_0p5_0p1_None/ecuador_tiputini",
+        #         "tilerized_800_0p5_0p1_None/brazil_zf2"
+        #     ],
+        #     "valid_dataset_names": [
+        #         "tilerized_400_0p5_0p1_None/panama_aguasalud",
+        #         "tilerized_400_0p5_0p1_None/ecuador_tiputini",
+        #         "tilerized_400_0p5_0p1_None/brazil_zf2"
+        #     ],
+        #     "augmentation_image_size": 666,
+        #     "augmentation_train_crop_size_range": [360, 440]
+        # },
     ],
 
 
@@ -180,21 +180,21 @@ dataset_configs = {
             "augmentation_image_size": 1777,
             "augmentation_train_crop_size_range": [1600, 1955]
         },
-        {
-            "compressed": "ours_gr0p06_1333px.tar.gz",
-            "train_dataset_names": [
-                "tilerized_2666_0p5_0p06_None/panama_aguasalud",
-                "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_2666_0p5_0p06_None/brazil_zf2"
-            ],
-            "valid_dataset_names": [
-                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_1333_0p5_0p06_None/brazil_zf2"
-            ],
-            "augmentation_image_size": 1333,
-            "augmentation_train_crop_size_range": [1200, 1466]
-        },
+        # {
+        #     "compressed": "ours_gr0p06_1333px.tar.gz",
+        #     "train_dataset_names": [
+        #         "tilerized_2666_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_2666_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "valid_dataset_names": [
+        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "augmentation_image_size": 1333,
+        #     "augmentation_train_crop_size_range": [1200, 1466]
+        # },
         {
             "compressed": "ours_gr0p1_800px.tar.gz",
             "train_dataset_names": [
@@ -210,21 +210,21 @@ dataset_configs = {
             "augmentation_image_size": 800,
             "augmentation_train_crop_size_range": [720, 880]
         },
-        {
-            "compressed": "ours_gr0p06_1333px.tar.gz",
-            "train_dataset_names": [
-                "tilerized_2666_0p5_0p06_None/panama_aguasalud",
-                "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_2666_0p5_0p06_None/brazil_zf2"
-            ],
-            "valid_dataset_names": [
-                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-                "tilerized_1333_0p5_0p06_None/brazil_zf2"
-            ],
-            "augmentation_image_size": 1777,
-            "augmentation_train_crop_size_range": [1200, 1466]
-        },
+        # {
+        #     "compressed": "ours_gr0p06_1333px.tar.gz",
+        #     "train_dataset_names": [
+        #         "tilerized_2666_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_2666_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "valid_dataset_names": [
+        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
+        #     ],
+        #     "augmentation_image_size": 1777,
+        #     "augmentation_train_crop_size_range": [1200, 1466]
+        # },
         {
             "compressed": "ours_gr0p1_800px.tar.gz",
             "train_dataset_names": [
@@ -240,21 +240,21 @@ dataset_configs = {
             "augmentation_image_size": 1777,
             "augmentation_train_crop_size_range": [720, 880]
         },
-        {
-            "compressed": "ours_gr0p1_800px.tar.gz",
-            "train_dataset_names": [
-                "tilerized_1600_0p5_0p1_None/panama_aguasalud",
-                "tilerized_1600_0p5_0p1_None/ecuador_tiputini",
-                "tilerized_1600_0p5_0p1_None/brazil_zf2"
-            ],
-            "valid_dataset_names": [
-                "tilerized_800_0p5_0p1_None/panama_aguasalud",
-                "tilerized_800_0p5_0p1_None/ecuador_tiputini",
-                "tilerized_800_0p5_0p1_None/brazil_zf2"
-            ],
-            "augmentation_image_size": 1333,
-            "augmentation_train_crop_size_range": [720, 880]
-        }
+        # {
+        #     "compressed": "ours_gr0p1_800px.tar.gz",
+        #     "train_dataset_names": [
+        #         "tilerized_1600_0p5_0p1_None/panama_aguasalud",
+        #         "tilerized_1600_0p5_0p1_None/ecuador_tiputini",
+        #         "tilerized_1600_0p5_0p1_None/brazil_zf2"
+        #     ],
+        #     "valid_dataset_names": [
+        #         "tilerized_800_0p5_0p1_None/panama_aguasalud",
+        #         "tilerized_800_0p5_0p1_None/ecuador_tiputini",
+        #         "tilerized_800_0p5_0p1_None/brazil_zf2"
+        #     ],
+        #     "augmentation_image_size": 1333,
+        #     "augmentation_train_crop_size_range": [720, 880]
+        # }
     ]
 }
 
