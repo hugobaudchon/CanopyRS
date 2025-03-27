@@ -16,45 +16,11 @@ class CocoEvaluator:
         else:
             raise ValueError(f'Unknown evaluator type: {config.type}')
 
-        print("Truth COCO path:", truth_coco_path)
-        print("Predictions COCO path:", preds_coco_path)
-
         truth_coco = COCO(truth_coco_path)
         preds_coco = COCO(preds_coco_path)
 
-        # Debug prints before alignment
-        truth_images = truth_coco.dataset.get('images', [])
-        preds_images = preds_coco.dataset.get('images', [])
-        print("Before alignment:")
-        print(f"  Number of truth images: {len(truth_images)}")
-        print(f"  Number of prediction images: {len(preds_images)}")
-        truth_file_names = [img['file_name'] for img in truth_images]
-        preds_file_names = [img['file_name'] for img in preds_images]
-        print("  Truth file names (first 10):", truth_file_names[:10])
-        print("  Prediction file names (first 10):", preds_file_names[:10])
-
         # Align predictions to truth based on file name
         align_coco_datasets_by_name(truth_coco, preds_coco)
-
-        # Debug prints after alignment
-        aligned_preds_images = preds_coco.dataset.get('images', [])
-        aligned_preds_file_names = [img['file_name'] for img in aligned_preds_images]
-        print("After alignment:")
-        print(f"  Number of aligned prediction images: {len(aligned_preds_images)}")
-        print("  Aligned prediction file names (first 10):", aligned_preds_file_names[:10])
-
-        # Check that every truth image has a corresponding prediction image
-        missing = []
-        for truth_img in truth_coco.dataset.get('images', []):
-            file_name = truth_img['file_name']
-            if file_name not in aligned_preds_file_names:
-                missing.append(file_name)
-        if missing:
-            print("Warning: The following truth images are missing in predictions after alignment:")
-            for fname in missing:
-                print("  ", fname)
-        else:
-            print("All truth images have corresponding predictions after alignment.")
 
         # Set up and run COCO evaluation
         coco_evaluator = Summarize2COCOEval(
