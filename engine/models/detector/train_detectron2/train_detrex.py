@@ -362,14 +362,14 @@ def get_base_detrex_model_cfg(config):
 def _train_detrex_process(config, model_name):
     print("Setting up datasets...")
     d2_train_datasets_name = register_detection_dataset(
-        root_path=config.data_root_path,
+        root_path=[f"{config.data_root_path}/{path}" for path in config.train_dataset_names],
         dataset_name="train_" + "_".join([path.replace('/', '_').replace('.', '_') for path in config.train_dataset_names]),
         fold="train",
         force_binary_class=True if config.num_classes == 1 else False
     )
 
     d2_valid_datasets_name = register_detection_dataset(
-        root_path=config.data_root_path,
+        root_path=[f"{config.data_root_path}/{path}" for path in config.valid_dataset_names],
         dataset_name="valid_" + "_".join([path.replace('/', '_').replace('.', '_') for path in config.valid_dataset_names]),
         fold="valid",
         force_binary_class=True if config.num_classes == 1 else False
