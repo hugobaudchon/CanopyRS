@@ -6,7 +6,7 @@ from engine.config_parsers.base import BaseConfig
 
 
 class InferIOConfig(BaseConfig):
-    input_imagery: str
+    input_imagery: Optional[str]
     output_folder: str
 
     tiles_path: Optional[str] = None

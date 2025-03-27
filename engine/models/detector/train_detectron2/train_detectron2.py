@@ -17,7 +17,7 @@ from fvcore.nn import get_bn_modules
 
 from engine.config_parsers import DetectorConfig
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
-from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
+from engine.models.detector.train_detectron2.dataset import register_detection_dataset
 from engine.models.detector.train_detectron2.hook import WandbWriterHook
 from engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
 
@@ -287,21 +287,21 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
     """
 
     print("Setting up datasets...")
-    d2_train_datasets_names = register_multiple_detection_datasets(
+    d2_train_datasets_name = register_detection_dataset(
         root_path=config.data_root_path,
-        dataset_names=config.train_dataset_names,
+        dataset_name="train_" + "_".join([path.replace('/', '_').replace('.', '_') for path in config.train_dataset_names]),
         fold="train",
         force_binary_class=True if config.num_classes == 1 else False
     )
 
-    d2_valid_datasets_names = register_multiple_detection_datasets(
+    d2_valid_datasets_name = register_detection_dataset(
         root_path=config.data_root_path,
-        dataset_names=config.valid_dataset_names,
+        dataset_name="valid_" + "_".join([path.replace('/', '_').replace('.', '_') for path in config.valid_dataset_names]),
         fold="valid",
         force_binary_class=True if config.num_classes == 1 else False
     )
 
-    print(f"Setting up trainer for dataset(s): {d2_train_datasets_names}")
+    print(f"Setting up trainer for dataset(s): {d2_train_datasets_name}")
     u = uuid.uuid4()
     now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     slurm_job_id = os.environ.get('SLURM_JOB_ID')
@@ -309,7 +309,7 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
         model_name = f"{config.model}_{now}_{slurm_job_id}"
     else:
         model_name = f"{config.model}_{now}_{u.hex[:4]}"
-    trainer = setup_trainer(d2_train_datasets_names, d2_valid_datasets_names, config, model_name)
+    trainer = setup_trainer([d2_train_datasets_name], [d2_valid_datasets_name], config, model_name)
 
     print("Starting training...")
     trainer.train()

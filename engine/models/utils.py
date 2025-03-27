@@ -44,6 +44,7 @@ def collate_fn_detection(batch):
 
     return data, labels
 
+
 def collate_fn_classification(batch):
     """
     Collate function for classification datasets that may include polygon IDs
@@ -75,6 +76,7 @@ def collate_fn_classification(batch):
             
         return images, labels
 
+
 def collate_fn_images(batch):
     if type(batch[0]) is np.ndarray:
         data = np.array([item for item in batch])
@@ -83,6 +85,7 @@ def collate_fn_images(batch):
         data = torch.tensor([item for item in batch], dtype=torch.float32)
 
     return data
+
 
 def set_all_seeds(seed: int):
     """

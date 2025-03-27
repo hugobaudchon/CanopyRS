@@ -1,286 +1,136 @@
-import json
-import os
-import copy
-import random
-from warnings import warn
-
-import cv2
 import numpy as np
 from geodataset.geodata import Raster
-from matplotlib import patches, pyplot as plt
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+import geopandas as gpd
 
-from engine.components.base import BaseComponent
 from engine.config_parsers.evaluator import EvaluatorConfig
-from engine.data_state import DataState
 
 
-class EvaluatorComponent(BaseComponent):
-    name = 'evaluator'
-
-    def __init__(self, config: EvaluatorConfig, parent_output_path: str, component_id: int):
-        super().__init__(config, parent_output_path, component_id)
-
-    def __call__(self, data_state: DataState) -> DataState:
-        # making sure COCO files are generated before starting evaluation
-        data_state.clean_side_processes()
-
-        if self.config.type == 'instance_detection':
+class CocoEvaluator:
+    def tile_level(self, config: EvaluatorConfig, preds_coco_path: str, truth_coco_path: str) -> dict:
+        if config.type == 'instance_detection':
             iou_type = 'bbox'
-        elif self.config.type == 'instance_segmentation':
+        elif config.type == 'instance_segmentation':
             iou_type = 'segm'
         else:
-            raise ValueError(f'Unknown evaluator type: {self.config.type}')
+            raise ValueError(f'Unknown evaluator type: {config.type}')
 
-        print(f"Evaluating the predictions at the '{self.config.level}' level.")
+        print("Truth COCO path:", truth_coco_path)
+        print("Predictions COCO path:", preds_coco_path)
 
-        if self.config.level == 'tile':
-            if data_state.infer_coco_path is not None and data_state.ground_truth_coco_path is not None:
-                # Load ground truth and raw predictions
-                truth_coco = COCO(data_state.ground_truth_coco_path)
-                raw_preds_coco = COCO(data_state.infer_coco_path)
+        truth_coco = COCO(truth_coco_path)
+        preds_coco = COCO(preds_coco_path)
 
-                # Apply NMS on a deepcopy of the raw predictions.
-                nms_threshold = getattr(self.config, 'nms_threshold', 0.5)
-                nms_preds_coco = self.apply_nms_to_preds(copy.deepcopy(raw_preds_coco), nms_threshold=nms_threshold)
+        # Debug prints before alignment
+        truth_images = truth_coco.dataset.get('images', [])
+        preds_images = preds_coco.dataset.get('images', [])
+        print("Before alignment:")
+        print(f"  Number of truth images: {len(truth_images)}")
+        print(f"  Number of prediction images: {len(preds_images)}")
+        truth_file_names = [img['file_name'] for img in truth_images]
+        preds_file_names = [img['file_name'] for img in preds_images]
+        print("  Truth file names (first 10):", truth_file_names[:10])
+        print("  Prediction file names (first 10):", preds_file_names[:10])
 
-                # Align BOTH raw and NMS predictions to the ground truth images
-                align_coco_datasets_by_name(truth_coco, raw_preds_coco)
-                align_coco_datasets_by_name(truth_coco, nms_preds_coco)
+        # Align predictions to truth based on file name
+        align_coco_datasets_by_name(truth_coco, preds_coco)
 
-                # Use the aligned NMS predictions for evaluation
-                preds_coco = nms_preds_coco
+        # Debug prints after alignment
+        aligned_preds_images = preds_coco.dataset.get('images', [])
+        aligned_preds_file_names = [img['file_name'] for img in aligned_preds_images]
+        print("After alignment:")
+        print(f"  Number of aligned prediction images: {len(aligned_preds_images)}")
+        print("  Aligned prediction file names (first 10):", aligned_preds_file_names[:10])
 
-                # Align the predictions COCO images to the order of the ground truth COCO images
-                align_coco_datasets_by_name(truth_coco, preds_coco)
-
-                # (Optional) Visualization of predictions and ground truth before evaluation
-                # visualize_preds_and_truth(truth_coco, preds_coco, data_state.tiles_path / 'groundtruth', 12)
-
-                coco_evaluator = Summarize2COCOEval(
-                    cocoGt=truth_coco,
-                    cocoDt=preds_coco,
-                    iouType=iou_type
-                )
-                coco_evaluator.params.maxDets = self.config.max_dets
-                coco_evaluator.evaluate()
-                coco_evaluator.accumulate()
-
-                # Get metrics as a dictionary and save as JSON
-                metrics = coco_evaluator.summarize_to_dict()
-                num_images = len(truth_coco.dataset.get('images', []))
-                num_truths = len(truth_coco.dataset.get('annotations', []))
-                num_preds = len(preds_coco.dataset.get('annotations', []))
-                with open(self.output_path / "coco_metrics_tiles.json", "w") as f:
-                    json.dump({
-                        "message": "Aggregated results at the tile level.",
-                        "metrics": metrics,
-                        "num_images": num_images,
-                        "num_truths": num_truths,
-                        "num_preds": num_preds
-                    }, f, indent=2)
-
-                # Save visualizations for 9 random images (with seed 0 for reproducibility).
-                # We assume the images are stored in data_state.tiles_path / 'groundtruth'
-                images_dir = data_state.tiles_path / 'groundtruth'
-                self.save_random_visualizations(truth_coco, raw_preds_coco, nms_preds_coco, images_dir)
-            else:
-                raise Exception("Missing a COCO file.")
-
-        elif self.config.level == 'raster':
-            if data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None:
-                truth_gdf = data_state.ground_truth_gdf.copy()
-                infer_gdf = data_state.infer_gdf.copy()
-                if infer_gdf is None or truth_gdf.crs is None:
-                    warn("No CRS found in one of the GeoDataFrames. Skipping Evaluation for the aggregated results.")
-
-                raster = Raster(
-                    path=data_state.imagery_path,
-                    ground_resolution=self.config.raster_eval_ground_resolution,
-                )
-
-                # Convert GeoDataFrames to COCO format for a single image
-                coco_gt = gdf_to_coco_single_image(
-                    gdf=truth_gdf,
-                    raster=raster,
-                    is_ground_truth=True
-                )
-                coco_dt = gdf_to_coco_single_image(
-                    gdf=infer_gdf,
-                    raster=raster,
-                    is_ground_truth=False
-                )
-
-                # Perform COCO evaluation
-                coco_gt_obj = COCO()
-                coco_gt_obj.dataset = coco_gt
-                coco_gt_obj.createIndex()
-
-                coco_dt_obj = COCO()
-                coco_dt_obj.dataset = coco_dt
-                coco_dt_obj.createIndex()
-
-                # Initialize and run COCOeval
-                coco_evaluator = Summarize2COCOEval(
-                    cocoGt=coco_gt_obj,
-                    cocoDt=coco_dt_obj,
-                    iouType=iou_type
-                )
-                coco_evaluator.params.maxDets = [1, 10, 100, len(truth_gdf)]
-                coco_evaluator.evaluate()
-                coco_evaluator.accumulate()
-
-                # Get metrics as a dictionary and save as JSON
-                metrics = coco_evaluator.summarize_to_dict()
-                num_images = len(coco_gt['images'])
-                num_truths = len(coco_gt['annotations'])
-                num_preds = len(coco_dt['annotations'])
-                with open(self.output_path / "coco_metrics_raster.json", "w") as f:
-                    json.dump({
-                        "message": f"Aggregated results at the raster level with ground resolution {self.config.raster_eval_ground_resolution}.",
-                        "metrics": metrics,
-                        "num_images": num_images,
-                        "num_truths": num_truths,
-                        "num_preds": num_preds
-                    }, f, indent=2)
-            else:
-                raise Exception("Missing a GeoDataFrame.")
+        # Check that every truth image has a corresponding prediction image
+        missing = []
+        for truth_img in truth_coco.dataset.get('images', []):
+            file_name = truth_img['file_name']
+            if file_name not in aligned_preds_file_names:
+                missing.append(file_name)
+        if missing:
+            print("Warning: The following truth images are missing in predictions after alignment:")
+            for fname in missing:
+                print("  ", fname)
         else:
-            raise ValueError(f"Unsupported evaluation level: {self.config.level}")
+            print("All truth images have corresponding predictions after alignment.")
 
-        return self.update_data_state(data_state)
+        # Set up and run COCO evaluation
+        coco_evaluator = Summarize2COCOEval(
+            cocoGt=truth_coco,
+            cocoDt=preds_coco,
+            iouType=iou_type
+        )
+        coco_evaluator.params.maxDets = config.max_dets
+        coco_evaluator.evaluate()
+        coco_evaluator.accumulate()
 
-    def apply_nms_to_preds(self, preds_coco: COCO, nms_threshold: float = 0.5) -> COCO:
-        """
-        Apply Non-Maximum Suppression (NMS) to each image's detections
-        in the given COCO predictions instance.
-        """
-        import torch
-        from torchvision.ops import nms
+        # Get metrics as a dictionary and add some debug info
+        metrics = coco_evaluator.summarize_to_dict()
+        num_images = len(truth_coco.dataset.get('images', []))
+        num_truths = len(truth_coco.dataset.get('annotations', []))
+        num_preds = len(preds_coco.dataset.get('annotations', []))
 
-        new_annotations = []
-        # Organize annotations by image id
-        anns_by_image = {}
-        for ann in preds_coco.dataset.get('annotations', []):
-            anns_by_image.setdefault(ann['image_id'], []).append(ann)
+        metrics['num_images'] = num_images
+        metrics['num_truths'] = num_truths
+        metrics['num_preds'] = num_preds
 
-        for img in preds_coco.dataset.get('images', []):
-            image_id = img['id']
-            anns = anns_by_image.get(image_id, [])
-            if not anns:
-                continue
+        print("Final evaluation metrics:")
+        for k, v in metrics.items():
+            print(f"  {k}: {v}")
 
-            boxes = []
-            scores = []
-            for ann in anns:
-                # COCO bbox format: [x, y, width, height]
-                x, y, w, h = ann['bbox']
-                boxes.append([x, y, x + w, y + h])
-                scores.append(ann.get('score', 1.0))
+        return metrics
 
-            boxes_tensor = torch.tensor(boxes, dtype=torch.float32)
-            scores_tensor = torch.tensor(scores, dtype=torch.float32)
-            keep_indices = nms(boxes_tensor, scores_tensor, nms_threshold)
+    def raster_level(self, config: EvaluatorConfig, preds_gpkg_path: str, truth_gpkg_path: str, imagery_path: str) -> dict:
+        raster = Raster(
+            path=imagery_path,
+            ground_resolution=config.raster_eval_ground_resolution,
+        )
 
-            # Collect only the annotations kept by NMS
-            for idx in keep_indices:
-                new_annotations.append(anns[idx])
+        truth_gdf = gpd.read_file(truth_gpkg_path)
+        infer_gdf = gpd.read_file(preds_gpkg_path)
 
-        # Update the COCO dataset with filtered annotations and rebuild the index.
-        preds_coco.dataset['annotations'] = new_annotations
-        preds_coco.createIndex()
-        return preds_coco
+        truth_coco = gdf_to_coco_single_image(
+            gdf=truth_gdf,
+            raster=raster,
+            is_ground_truth=True
+        )
+        infer_coco = gdf_to_coco_single_image(
+            gdf=infer_gdf,
+            raster=raster,
+            is_ground_truth=False
+        )
 
-    def save_random_visualizations(self, truth_coco: COCO, raw_preds_coco: COCO, nms_preds_coco: COCO, images_dir) -> None:
-        """
-        Save 9 figures (PNG) for 9 random images (using seed 0) where each figure
-        displays three subplots:
-            1. Image with raw predictions overlaid (red boxes)
-            2. Image with NMS predictions overlaid (blue boxes)
-            3. Image with ground truth annotations overlaid (green boxes)
-        The figures are saved in the 'visualizations' folder under self.output_path.
-        """
-        # Helper: Build a mapping from image_id to annotations
-        def build_ann_dict(coco_obj):
-            ann_dict = {}
-            for ann in coco_obj.dataset.get('annotations', []):
-                ann_dict.setdefault(ann['image_id'], []).append(ann)
-            return ann_dict
+        coco_gt_obj = COCO()
+        coco_gt_obj.dataset = truth_coco
+        coco_gt_obj.createIndex()
 
-        truth_ann_dict = build_ann_dict(truth_coco)
-        raw_preds_ann_dict = build_ann_dict(raw_preds_coco)
-        nms_preds_ann_dict = build_ann_dict(nms_preds_coco)
+        coco_dt_obj = COCO()
+        coco_dt_obj.dataset = infer_coco
+        coco_dt_obj.createIndex()
 
-        images = truth_coco.dataset.get('images', [])
-        if len(images) < 9:
-            sample_images = images
-        else:
-            random.seed(0)
-            sample_images = random.sample(images, 9)
+        # Initialize and run COCOeval
+        coco_evaluator = Summarize2COCOEval(
+            cocoGt=coco_gt_obj,
+            cocoDt=coco_dt_obj,
+            iouType='bbox'
+        )
+        coco_evaluator.params.maxDets = [1, 10, 100, len(truth_gdf)]
+        coco_evaluator.evaluate()
+        coco_evaluator.accumulate()
 
-        # Create directory for visualizations
-        vis_dir = self.output_path / "visualizations"
-        vis_dir.mkdir(parents=True, exist_ok=True)
+        # Get metrics as a dictionary and save as JSON
+        metrics = coco_evaluator.summarize_to_dict()
+        num_images = len(coco_gt_obj.dataset.get('images', []))
+        num_truths = len(coco_gt_obj.dataset.get('annotations', []))
+        num_preds = len(coco_dt_obj.dataset.get('annotations', []))
 
-        for i, img_meta in enumerate(sample_images):
-            file_name = img_meta['file_name']
-            image_id = img_meta['id']
-            image_path = os.path.join(str(images_dir), file_name)
+        metrics['num_images'] = num_images
+        metrics['num_truths'] = num_truths
+        metrics['num_preds'] = num_preds
 
-            image = cv2.imread(image_path)
-            if image is None:
-                print(f"Warning: Could not load image {file_name}")
-                continue
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-            # Create a figure with 3 subplots (adjusted size for higher resolution)
-            fig, axs = plt.subplots(1, 3, figsize=(48, 12))
-            # --- Raw Predictions ---
-            axs[0].imshow(image)
-            axs[0].set_title("Raw Predictions", fontsize=20)
-            for ann in raw_preds_ann_dict.get(image_id, []):
-                x, y, w, h = ann['bbox']
-                rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='red', facecolor='none')
-                axs[0].add_patch(rect)
-            axs[0].axis('off')
-            # --- NMS Predictions ---
-            axs[1].imshow(image)
-            axs[1].set_title("NMS Predictions", fontsize=20)
-            for ann in nms_preds_ann_dict.get(image_id, []):
-                x, y, w, h = ann['bbox']
-                rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='blue', facecolor='none')
-                axs[1].add_patch(rect)
-            axs[1].axis('off')
-            # --- Ground Truth ---
-            axs[2].imshow(image)
-            axs[2].set_title("Ground Truth", fontsize=20)
-            for ann in truth_ann_dict.get(image_id, []):
-                x, y, w, h = ann['bbox']
-                rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='green', facecolor='none')
-                axs[2].add_patch(rect)
-            axs[2].axis('off')
-
-            plt.suptitle(f"Visualization for {file_name}", fontsize=24)
-            output_file = vis_dir / f"visualization_{i+1}.png"
-            plt.savefig(str(output_file), bbox_inches='tight')
-            plt.close(fig)
-            print(f"Saved visualization: {output_file}")
-
-    def update_data_state(self, data_state: DataState) -> DataState:
-        # Register the component folder
-        data_state = self.register_outputs_base(data_state)
-
-        # Register metrics files (now JSON)
-        metrics_tiles_path = self.output_path / "coco_metrics_tiles.json"
-        metrics_raster_path = self.output_path / "coco_metrics_raster.json"
-
-        if metrics_tiles_path.exists():
-            data_state.register_output_file(self.name, self.component_id, 'metrics_tiles', metrics_tiles_path)
-        if metrics_raster_path.exists():
-            data_state.register_output_file(self.name, self.component_id, 'metrics_raster', metrics_raster_path)
-
-        return data_state
+        return metrics
 
 
 def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:

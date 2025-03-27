@@ -82,4 +82,7 @@ def tilerize_with_overlap(raster_path: str or Path,
         coco_n_workers=10
     )
 
-    tilerizer.generate_coco_dataset()
+    coco_outputs = tilerizer.generate_coco_dataset()
+    tiles_path = tilerizer.tiles_path
+
+    return coco_outputs, tiles_path

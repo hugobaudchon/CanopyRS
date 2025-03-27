@@ -12,9 +12,14 @@ from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import albumentations as A
-import wandb
 
 from engine.models.utils import WarmupStepLR
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message="Importing from timm.models.layers is deprecated"
+)
 
 
 class DetectorWrapperBase(ABC):
