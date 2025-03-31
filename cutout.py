@@ -1,4 +1,6 @@
 # load image, cut out 1800x1800 square, start pipeline on it
+import os
+
 import geopandas as gpd
 import rasterio
 from rasterio.mask import mask
@@ -19,7 +21,6 @@ def warp_raster(source_path:str, target_path:str):
         dst_crs = target.crs
         dst_shape = (target.height, target.width)
         # dst_shape = target.shape
-
     # Prepare an empty array for the reprojected data
     dst_data = np.empty((num_bands,*dst_shape), dtype=src_data.dtype)
     # Reproject the source raster to match the target raster
@@ -67,13 +68,7 @@ def cut_test_image(input_path:str, output_path:str, aoi_gdf:gpd.GeoDataFrame, si
     # tilerizer = RasterTilerizer(input_path, output_path, size, 0.0, global_aoi=aoi_path, aois_config=aoi_config, ignore_black_white_alpha_tiles_threshold=0.95)
     # tilerizer.generate_tiles()
 
-
-if __name__=="__main__":
-    # input_paths = ['../montreal_forest_data/quebec_trees_dataset_2021-05-28/2021-05-28/zone1/2021-05-28-sbl-z1-rgb-cog.tif',
-    #                '../montreal_forest_data/quebec_trees_dataset_2021-06-17/2021-06-17/zone1/2021-06-17-sbl-z1-rgb-cog.tif',
-    #                '../montreal_forest_data/quebec_trees_dataset_2021-07-21/2021-07-21/zone1/2021-07-21-sbl-z1-rgb-cog.tif',
-    #                ]
-    from_large_and_warp = False
+def old_functionality(from_large_and_warp:bool=True):
     input_paths = []
     dates = ['05-28', '06-17', '07-21', '08-18', '09-02', '10-07']
     for date in dates:
@@ -87,8 +82,8 @@ if __name__=="__main__":
     else:
         aoi_path='../montreal_forest_data/nice_cut/AOI_nice_cut3_tiny.geojson'
         output_path = '../montreal_forest_data/nice_cut/tiny'
-    aoi_gdf = gpd.read_file(aoi_path)
 
+    aoi_gdf = gpd.read_file(aoi_path)
 
     # output_names = ['may', 'june', 'july']
     for input_path, output_name in zip(input_paths, dates):
@@ -100,6 +95,35 @@ if __name__=="__main__":
     if from_large_and_warp:
         print("cutting finished. now warping to match first raster")
         for output_name in dates[1:]:
-            out_im, out_meta = warp_raster(output_path + '/{}_0.tif'.format(output_name), output_path + '/{}_0.tif'.format(dates[0]))
+            out_im, out_meta = warp_raster(output_path + '/{}_0.tif'.format(output_name),
+                                           output_path + '/{}_0.tif'.format(dates[0]))
             with rasterio.open(output_path + '/{}_1.tif'.format(output_name), "w", **out_meta) as dest:
                 dest.write(out_im)
+
+
+if __name__=="__main__":
+    input_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1/'
+    output_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_cut/'
+    warped_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_warped/'
+    aoi_path = '../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson'
+    aoi_gdf = gpd.read_file(aoi_path)
+    input_paths = [f for f in os.listdir(input_dir) if f.endswith('.tif')]
+    input_paths.sort()
+    lookup = {}
+    for index, input_path in enumerate(input_paths):
+        out_im, out_meta = cut_test_image(input_dir + input_path, output_dir, aoi_gdf, 1800)
+        # Save clipped raster
+        lookup[f'{index:04d}'] = input_path
+        with rasterio.open(output_dir + f'{index:04d}.tif', "w", **out_meta) as dest:
+            dest.write(out_im)
+    with open(output_dir + 'lookup.csv', 'w') as f:
+        for key in lookup:
+            f.write("%s,%s\n"%(key, lookup[key]))
+
+    for output_name in os.listdir(output_dir):
+        if output_name.endswith('.tif'):
+            out_im, out_meta = warp_raster(output_dir + output_name,
+                                           output_dir + '0000.tif')
+            with rasterio.open(warped_dir + output_name, "w", **out_meta) as dest:
+                dest.write(out_im)
+

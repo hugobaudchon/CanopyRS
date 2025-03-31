@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -7,7 +9,8 @@ import geopandas as gp
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 import rasterio
 import psutil
-
+import supervision as sv
+import gc
 
 # from sam2.sam2.benchmark import out_frame_idx
 
@@ -48,6 +51,7 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
     if strategy not in ["feed_segments", "feed_boxes", "reverse", "default"]:
         raise ValueError(f"Invalid strategy: {strategy}")
     output_folder = output_folder + strategy
+    Path(output_folder).mkdir(exist_ok=True)
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -111,20 +115,31 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
     # )
 
     plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
-    plt.figure(figsize=(9, 6))
-    plt.title(f"frame {ann_frame_idx}")
-    plt.imshow(Image.open(os.path.join(input_folder, frame_names[ann_frame_idx])))
+    # plt.figure(figsize=(9, 6))
+    # plt.title(f"frame {ann_frame_idx}")
+    # plt.imshow(Image.open(os.path.join(input_folder, frame_names[ann_frame_idx])))
     # plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
     # plt.show()
     video_segments = {}
     if strategy == "default" or strategy == "reverse":
-        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state, reverse=(
-                strategy == "reverse")):
-            video_segments[out_frame_idx] = {
-                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-                for i, out_obj_id in enumerate(out_obj_ids)
-            }
-
+        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
+                                                                                        reverse=(strategy == "reverse")):
+            # video_segments[out_frame_idx] = {
+            #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            #     for i, out_obj_id in enumerate(out_obj_ids)
+            # }
+            video_segments = {out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+                              for i, out_obj_id in enumerate(out_obj_ids)
+                              }
+            plt.close("all")
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {out_frame_idx}")
+            plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
+            for out_obj_id, out_mask in video_segments.items():
+                show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+            plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
+                        dpi=300)
+            gc.collect()
     elif strategy == "feed_segments":
         for frame_nr in range(len(frame_names)):  # Iterate over each frame
             # Propagate only for the current frame
@@ -196,8 +211,8 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
 
                 break  # Process only one frame per iteration
 
-    plt.close("all")
     for out_frame_idx in range(0, len(frame_names), 1):
+        plt.close("all")
         plt.figure(figsize=(9, 6))
         plt.title(f"frame {out_frame_idx}")
         plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
@@ -215,15 +230,25 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
 if __name__ == "__main__":
     bbox_files = [
         '../montreal_forest_data/nice_cut/05_28_0_gr0p05_infer.gpkg',
-        '../montreal_forest_data/nice_cut/1007_0_gr0p05_infer.gpkg'
+        '../montreal_forest_data/nice_cut/1007_0_gr0p05_infer.gpkg',
+        '/run/media/beerend/LALIB_SSD_2/berend/0046_0_gr0p05_infer.gpkg'
     ]
     ann_frames = [0, 5]
     timeseries_sam2(
-        '../montreal_forest_data/nice_cut/tiny',
-        '../montreal_forest_data/nice_cut/output/tiny_warped_',
+        '../montreal_forest_data/nice_cut/morph/',
+        '../montreal_forest_data/nice_cut/output/tiny_warped_morphed/',
         bbox_files[0],
         ann_frames[0],
         max_bboxes=12,
-        strategy="feed_boxes"
+        strategy="default"
     )
+    # timeseries_sam2(
+    #     # '../montreal_forest_data/nice_cut/tiny',
+    #     '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_warped/2022/',
+    #     '/run/media/beerend/LALIB_SSD_2/berend/output/deadtrees1/',
+    #     bbox_files[2],
+    #     ann_frames[0],
+    #     max_bboxes=12,
+    #     strategy="default"
+    # )
     plt.close("all")
