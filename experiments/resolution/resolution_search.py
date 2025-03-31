@@ -27,8 +27,8 @@ batch_sizes = [
     # 16
 ]
 max_epochs_list = [
-    200,
-    # 500,
+    # 200,
+    500,
     # 1000
 ]
 scheduler_type = "WarmupCosineLR"  # or "WarmupMultiStepLR"
@@ -43,7 +43,7 @@ lrs = [
     5e-5
 ]
 
-experience_name = f'detector_experience_resolution_optimalHPs_{image_extent}'
+experience_name = f'detector_experience_resolution_optimalHPs_{image_extent}_FIXED'
 train_output_path = f'/network/scratch/h/hugo.baudchon/training/{experience_name}'
 wandb_project = experience_name
 
@@ -85,21 +85,21 @@ dataset_configs = {
             "augmentation_image_size": 888,
             "augmentation_train_crop_size_range": [800, 977]
         },
-        # {
-        #     "compressed": "ours_gr0p06_666px.tar.gz",
-        #     "train_dataset_names": [
-        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "valid_dataset_names": [
-        #         "tilerized_666_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_666_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_666_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "augmentation_image_size": 666,
-        #     "augmentation_train_crop_size_range": [600, 733]
-        # },
+        {
+            "compressed": "ours_gr0p06_666px.tar.gz",
+            "train_dataset_names": [
+                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_1333_0p5_0p06_None/brazil_zf2"
+            ],
+            "valid_dataset_names": [
+                "tilerized_666_0p5_0p06_None/panama_aguasalud",
+                "tilerized_666_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_666_0p5_0p06_None/brazil_zf2"
+            ],
+            "augmentation_image_size": 666,
+            "augmentation_train_crop_size_range": [600, 733]
+        },
         {
             "compressed": "ours_gr0p1_400px.tar.gz",
             "train_dataset_names": [
@@ -115,21 +115,21 @@ dataset_configs = {
             "augmentation_image_size": 400,
             "augmentation_train_crop_size_range": [360, 440]
         },
-        # {
-        #     "compressed": "ours_gr0p06_666px.tar.gz",
-        #     "train_dataset_names": [
-        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "valid_dataset_names": [
-        #         "tilerized_666_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_666_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_666_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "augmentation_image_size": 888,
-        #     "augmentation_train_crop_size_range": [600, 733]
-        # },
+        {
+            "compressed": "ours_gr0p06_666px.tar.gz",
+            "train_dataset_names": [
+                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_1333_0p5_0p06_None/brazil_zf2"
+            ],
+            "valid_dataset_names": [
+                "tilerized_666_0p5_0p06_None/panama_aguasalud",
+                "tilerized_666_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_666_0p5_0p06_None/brazil_zf2"
+            ],
+            "augmentation_image_size": 888,
+            "augmentation_train_crop_size_range": [600, 733]
+        },
         {
             "compressed": "ours_gr0p1_400px.tar.gz",
             "train_dataset_names": [
@@ -145,21 +145,21 @@ dataset_configs = {
             "augmentation_image_size": 888,
             "augmentation_train_crop_size_range": [360, 440]
         },
-        # {
-        #     "compressed": "ours_gr0p1_400px.tar.gz",
-        #     "train_dataset_names": [
-        #         "tilerized_800_0p5_0p1_None/panama_aguasalud",
-        #         "tilerized_800_0p5_0p1_None/ecuador_tiputini",
-        #         "tilerized_800_0p5_0p1_None/brazil_zf2"
-        #     ],
-        #     "valid_dataset_names": [
-        #         "tilerized_400_0p5_0p1_None/panama_aguasalud",
-        #         "tilerized_400_0p5_0p1_None/ecuador_tiputini",
-        #         "tilerized_400_0p5_0p1_None/brazil_zf2"
-        #     ],
-        #     "augmentation_image_size": 666,
-        #     "augmentation_train_crop_size_range": [360, 440]
-        # },
+        {
+            "compressed": "ours_gr0p1_400px.tar.gz",
+            "train_dataset_names": [
+                "tilerized_800_0p5_0p1_None/panama_aguasalud",
+                "tilerized_800_0p5_0p1_None/ecuador_tiputini",
+                "tilerized_800_0p5_0p1_None/brazil_zf2"
+            ],
+            "valid_dataset_names": [
+                "tilerized_400_0p5_0p1_None/panama_aguasalud",
+                "tilerized_400_0p5_0p1_None/ecuador_tiputini",
+                "tilerized_400_0p5_0p1_None/brazil_zf2"
+            ],
+            "augmentation_image_size": 666,
+            "augmentation_train_crop_size_range": [360, 440]
+        },
     ],
 
 
@@ -180,21 +180,21 @@ dataset_configs = {
             "augmentation_image_size": 1777,
             "augmentation_train_crop_size_range": [1600, 1955]
         },
-        # {
-        #     "compressed": "ours_gr0p06_1333px.tar.gz",
-        #     "train_dataset_names": [
-        #         "tilerized_2666_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_2666_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "valid_dataset_names": [
-        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "augmentation_image_size": 1333,
-        #     "augmentation_train_crop_size_range": [1200, 1466]
-        # },
+        {
+            "compressed": "ours_gr0p06_1333px.tar.gz",
+            "train_dataset_names": [
+                "tilerized_2666_0p5_0p06_None/panama_aguasalud",
+                "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_2666_0p5_0p06_None/brazil_zf2"
+            ],
+            "valid_dataset_names": [
+                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_1333_0p5_0p06_None/brazil_zf2"
+            ],
+            "augmentation_image_size": 1333,
+            "augmentation_train_crop_size_range": [1200, 1466]
+        },
         {
             "compressed": "ours_gr0p1_800px.tar.gz",
             "train_dataset_names": [
@@ -210,21 +210,21 @@ dataset_configs = {
             "augmentation_image_size": 800,
             "augmentation_train_crop_size_range": [720, 880]
         },
-        # {
-        #     "compressed": "ours_gr0p06_1333px.tar.gz",
-        #     "train_dataset_names": [
-        #         "tilerized_2666_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_2666_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "valid_dataset_names": [
-        #         "tilerized_1333_0p5_0p06_None/panama_aguasalud",
-        #         "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
-        #         "tilerized_1333_0p5_0p06_None/brazil_zf2"
-        #     ],
-        #     "augmentation_image_size": 1777,
-        #     "augmentation_train_crop_size_range": [1200, 1466]
-        # },
+        {
+            "compressed": "ours_gr0p06_1333px.tar.gz",
+            "train_dataset_names": [
+                "tilerized_2666_0p5_0p06_None/panama_aguasalud",
+                "tilerized_2666_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_2666_0p5_0p06_None/brazil_zf2"
+            ],
+            "valid_dataset_names": [
+                "tilerized_1333_0p5_0p06_None/panama_aguasalud",
+                "tilerized_1333_0p5_0p06_None/ecuador_tiputini",
+                "tilerized_1333_0p5_0p06_None/brazil_zf2"
+            ],
+            "augmentation_image_size": 1777,
+            "augmentation_train_crop_size_range": [1200, 1466]
+        },
         {
             "compressed": "ours_gr0p1_800px.tar.gz",
             "train_dataset_names": [
@@ -240,21 +240,21 @@ dataset_configs = {
             "augmentation_image_size": 1777,
             "augmentation_train_crop_size_range": [720, 880]
         },
-        # {
-        #     "compressed": "ours_gr0p1_800px.tar.gz",
-        #     "train_dataset_names": [
-        #         "tilerized_1600_0p5_0p1_None/panama_aguasalud",
-        #         "tilerized_1600_0p5_0p1_None/ecuador_tiputini",
-        #         "tilerized_1600_0p5_0p1_None/brazil_zf2"
-        #     ],
-        #     "valid_dataset_names": [
-        #         "tilerized_800_0p5_0p1_None/panama_aguasalud",
-        #         "tilerized_800_0p5_0p1_None/ecuador_tiputini",
-        #         "tilerized_800_0p5_0p1_None/brazil_zf2"
-        #     ],
-        #     "augmentation_image_size": 1333,
-        #     "augmentation_train_crop_size_range": [720, 880]
-        # }
+        {
+            "compressed": "ours_gr0p1_800px.tar.gz",
+            "train_dataset_names": [
+                "tilerized_1600_0p5_0p1_None/panama_aguasalud",
+                "tilerized_1600_0p5_0p1_None/ecuador_tiputini",
+                "tilerized_1600_0p5_0p1_None/brazil_zf2"
+            ],
+            "valid_dataset_names": [
+                "tilerized_800_0p5_0p1_None/panama_aguasalud",
+                "tilerized_800_0p5_0p1_None/ecuador_tiputini",
+                "tilerized_800_0p5_0p1_None/brazil_zf2"
+            ],
+            "augmentation_image_size": 1333,
+            "augmentation_train_crop_size_range": [720, 880]
+        }
     ]
 }
 
@@ -276,7 +276,10 @@ def select_sbatch_args(arch, batch_size, aug_img_size, max_epochs):
             time_arg = "--time=2-00:00:00"
         else:
             time_arg = "--time=3-00:00:00"
-        return gres_arg, time_arg, None, None
+        cpus_arg = "--cpus-per-task=4"
+        mem_arg = "--mem=40G"
+        partition_arg = "--partition=long"
+        return gres_arg, time_arg, cpus_arg, mem_arg, partition_arg
     elif arch == "dinoresnet":
         if (batch_size >= 8 and aug_img_size >= 1333) or aug_img_size >= 1777:
             gres_arg = "--gres=gpu:rtx8000:2"
@@ -285,20 +288,23 @@ def select_sbatch_args(arch, batch_size, aug_img_size, max_epochs):
         else:
             gres_arg = "--gres=gpu:rtx8000:1"
         time_arg = "--time=16:00:00"
-        cpus_arg = "--cpus-per-task=8"
+        cpus_arg = "--cpus-per-task=4"
         mem_arg = "--mem=40G"
-        return gres_arg, time_arg, cpus_arg, mem_arg
+        partition_arg = "--partition=long"
+        return gres_arg, time_arg, cpus_arg, mem_arg, partition_arg
     elif arch == "dinoswin":
         if batch_size >= 8 or aug_img_size >= 1777:
-            gres_arg = "--gres=gpu:l40s:4"
-            cpus_arg = "--cpus-per-task=12"
-            mem_arg = "--mem=60G"
-        else:
-            gres_arg = "--gres=gpu:l40s:2"
+            gres_arg = "--gres=gpu:rtx8000:4"
             cpus_arg = "--cpus-per-task=8"
             mem_arg = "--mem=40G"
-        time_arg = "--time=2-12:00:00"
-        return gres_arg, time_arg, cpus_arg, mem_arg
+            partition_arg = "--partition=long"
+        else:
+            gres_arg = "--gres=gpu:l40s:2"
+            cpus_arg = "--cpus-per-task=6"
+            mem_arg = "--mem=40G"
+            partition_arg = "--partition=long"
+        time_arg = "--time=20:00:00"
+        return gres_arg, time_arg, cpus_arg, mem_arg, partition_arg
 
 # Main grid search loop over each architecture, dataset config, and hyperparameter combination
 for arch in model_architecture_list:
@@ -352,16 +358,12 @@ for arch in model_architecture_list:
                 yaml.dump(config, outfile, default_flow_style=False)
 
             # Get SLURM arguments based on architecture and parameters
-            gres_arg, time_arg, cpus_arg, mem_arg = select_sbatch_args(
+            gres_arg, time_arg, cpus_arg, mem_arg, partition_arg = select_sbatch_args(
                 arch, batch_size, dataset_config["augmentation_image_size"], max_epochs
             )
 
             # Build the sbatch command; add cpus and mem args if defined
-            cmd = ["sbatch", gres_arg, time_arg]
-            if cpus_arg is not None:
-                cmd.append(cpus_arg)
-            if mem_arg is not None:
-                cmd.append(mem_arg)
+            cmd = ["sbatch", gres_arg, time_arg, cpus_arg, mem_arg, partition_arg]
             cmd.extend(['experiments/resolution/sbatch_train.sh', dataset_config["compressed"], config_path])
 
             print("Submitting job with command:")

@@ -16,15 +16,14 @@ conda activate canopyrs
 DATASET_NAME=$1
 LOCAL_DATASET_FOLDER=$SLURM_TMPDIR/data
 mkdir -p $LOCAL_DATASET_FOLDER
-tar -xf $SCRATCH/data/tilerized2/$DATASET_NAME -C $LOCAL_DATASET_FOLDER
+tar -xf $SCRATCH/data/tilerized/$DATASET_NAME -C $LOCAL_DATASET_FOLDER
 ls $LOCAL_DATASET_FOLDER
 
 # Get a unique port for this job based on the job ID
 export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
 export MASTER_ADDR="127.0.0.1"
 
-srun python main.py\
- -t train\
- -st detector\
+srun python train.py\
+ -m detector\
  -c $2\
  -d $LOCAL_DATASET_FOLDER
