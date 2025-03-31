@@ -1,20 +1,19 @@
 import numpy as np
-from geodataset.geodata import Raster
+from geodataset.utils import get_utm_crs
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 import geopandas as gpd
+from shapely.affinity import affine_transform
 
-from engine.config_parsers.evaluator import EvaluatorConfig
 
 
 class CocoEvaluator:
-    def tile_level(self, config: EvaluatorConfig, preds_coco_path: str, truth_coco_path: str) -> dict:
-        if config.type == 'instance_detection':
-            iou_type = 'bbox'
-        elif config.type == 'instance_segmentation':
-            iou_type = 'segm'
-        else:
-            raise ValueError(f'Unknown evaluator type: {config.type}')
+
+    def tile_level(self,
+                   iou_type: str,
+                   preds_coco_path: str,
+                   truth_coco_path: str,
+                   max_dets: list[int] = (1, 10, 100)) -> dict:
 
         truth_coco = COCO(truth_coco_path)
         preds_coco = COCO(preds_coco_path)
@@ -28,7 +27,7 @@ class CocoEvaluator:
             cocoDt=preds_coco,
             iouType=iou_type
         )
-        coco_evaluator.params.maxDets = config.max_dets
+        coco_evaluator.params.maxDets = max_dets
         coco_evaluator.evaluate()
         coco_evaluator.accumulate()
 
@@ -48,23 +47,31 @@ class CocoEvaluator:
 
         return metrics
 
-    def raster_level(self, config: EvaluatorConfig, preds_gpkg_path: str, truth_gpkg_path: str, imagery_path: str) -> dict:
-        raster = Raster(
-            path=imagery_path,
-            ground_resolution=config.raster_eval_ground_resolution,
-        )
+    def raster_level(self,
+                     iou_type: str,
+                     preds_gpkg_path: str,
+                     truth_gpkg_path: str,
+                     ground_resolution: float) -> dict:
 
         truth_gdf = gpd.read_file(truth_gpkg_path)
         infer_gdf = gpd.read_file(preds_gpkg_path)
 
+        truth_gdf, infer_gdf = move_gdfs_to_ground_resolution(truth_gdf, infer_gdf, ground_resolution)
+
+        minx, miny, maxx, maxy = truth_gdf.total_bounds
+        width = int((maxx - minx) / ground_resolution)
+        height = int((maxy - miny) / ground_resolution)
+
         truth_coco = gdf_to_coco_single_image(
             gdf=truth_gdf,
-            raster=raster,
+            width=width,
+            height=height,
             is_ground_truth=True
         )
         infer_coco = gdf_to_coco_single_image(
             gdf=infer_gdf,
-            raster=raster,
+            width=width,
+            height=height,
             is_ground_truth=False
         )
 
@@ -80,7 +87,7 @@ class CocoEvaluator:
         coco_evaluator = Summarize2COCOEval(
             cocoGt=coco_gt_obj,
             cocoDt=coco_dt_obj,
-            iouType='bbox'
+            iouType=iou_type
         )
         coco_evaluator.params.maxDets = [1, 10, 100, len(truth_gdf)]
         coco_evaluator.evaluate()
@@ -96,7 +103,56 @@ class CocoEvaluator:
         metrics['num_truths'] = num_truths
         metrics['num_preds'] = num_preds
 
+        # Adding some composite metrics.
+        # Please note that these are neither standard COCO metrics, nor standard F1 scores as AP and AR are not direct analogs to precision and recall.
+        metrics['F1'] = 2 * metrics['AP'] * metrics['AR'] / (metrics['AP'] + metrics['AR'])
+        metrics['F1_50'] = 2 * metrics['AP50'] * metrics['AR50'] / (metrics['AP50'] + metrics['AR50'])
+        metrics['F1_75'] = 2 * metrics['AP75'] * metrics['AR75'] / (metrics['AP75'] + metrics['AR75'])
+        metrics['F1_small'] = 2 * metrics['AP_small'] * metrics['AR_small'] / (metrics['AP_small'] + metrics['AR_small'])
+        metrics['F1_medium'] = 2 * metrics['AP_medium'] * metrics['AR_medium'] / (metrics['AP_medium'] + metrics['AR_medium'])
+        metrics['F1_large'] = 2 * metrics['AP_large'] * metrics['AR_large'] / (metrics['AP_large'] + metrics['AR_large'])
+
         return metrics
+
+
+def move_gdfs_to_ground_resolution(truth_gdf: gpd.GeoDataFrame, infer_gdf: gpd.GeoDataFrame, ground_resolution: float) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+    # Make sure both have a CRS
+    assert truth_gdf.crs is not None, "Truth GeoDataFrame must have a CRS"
+    assert infer_gdf.crs is not None, "Inference GeoDataFrame must have a CRS"
+
+    # If the two datasets use different CRS, reproject the inference to match truth
+    if truth_gdf.crs != infer_gdf.crs:
+        infer_gdf = infer_gdf.to_crs(truth_gdf.crs)
+
+    # If the truth CRS is not projected (i.e. not in linear units such as meters),
+    # reproject both to an appropriate UTM (meter-based) CRS.
+    if not truth_gdf.crs.is_projected:
+        bounds = truth_gdf.total_bounds  # [minx, miny, maxx, maxy]
+        centroid_lon = (bounds[0] + bounds[2]) / 2.0
+        centroid_lat = (bounds[1] + bounds[3]) / 2.0
+        utm_crs = get_utm_crs(centroid_lon, centroid_lat)
+        truth_gdf = truth_gdf.to_crs(utm_crs)
+        infer_gdf = infer_gdf.to_crs(utm_crs)
+
+    # Compute the overall minimum coordinates from the truth data
+    minx, miny, maxx, maxy = truth_gdf.total_bounds
+
+    # Create an affine transformation that translates and scales coordinates:
+    # new_x = (old_x - minx) / ground_resolution
+    # new_y = (old_y - miny) / ground_resolution
+    affine_params = [
+        1 / ground_resolution, 0,     # scale x, no rotation
+        0, 1 / ground_resolution,       # scale y, no rotation
+        -minx / ground_resolution,      # translation in x
+        -miny / ground_resolution       # translation in y
+    ]
+
+    # Apply the affine transformation to each geometry in both GeoDataFrames.
+    truth_gdf['raster_geom'] = truth_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
+    infer_gdf['raster_geom'] = infer_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
+
+    # Return the updated GeoDataFrames in a dictionary.
+    return truth_gdf, infer_gdf
 
 
 def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
@@ -132,12 +188,9 @@ def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
     preds_coco.createIndex()
 
 
-def gdf_to_coco_single_image(gdf, raster, is_ground_truth=False):
-    pixel_coordinates_gdf = raster.adjust_geometries_to_raster_crs_if_necessary(gdf)
-    pixel_coordinates_gdf = raster.adjust_geometries_to_raster_pixel_coordinates(pixel_coordinates_gdf)
-
-    geometries = pixel_coordinates_gdf['geometry'].tolist()
-    scores = pixel_coordinates_gdf['aggregator_score'].tolist() if not is_ground_truth else None
+def gdf_to_coco_single_image(gdf: gpd.GeoDataFrame, width: int, height: int, is_ground_truth: bool):
+    geometries = gdf['geometry'].tolist()
+    scores = gdf['aggregator_score'].tolist() if not is_ground_truth else None
     categories = [1] * len(geometries)
     image_id = 1
     annotations = []
@@ -173,9 +226,9 @@ def gdf_to_coco_single_image(gdf, raster, is_ground_truth=False):
     coco = {
         'images': [{
             'id': image_id,
-            'file_name': str(raster.name),
-            'width': raster.metadata['width'],
-            'height': raster.metadata['height']
+            'file_name': 'dummy_raster_name.tif',
+            'width': width,
+            'height': height
         }],
         'annotations': annotations,
         'categories': [{
@@ -216,21 +269,34 @@ class Summarize2COCOEval(COCOeval):
             return mean_s, stat_string
 
         def _summarizeDets():
-            stats = np.zeros((13,))
-            stats_strings = ['' for _ in range(13)]
+            # Now 15 metrics instead of 13.
+            stats = np.zeros((15,))
+            stats_strings = ['' for _ in range(15)]
+
+            # AP metrics
             stats[0], stats_strings[0] = _summarize(1, maxDets=self.params.maxDets[max_dets_index])
             stats[1], stats_strings[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
             stats[2], stats_strings[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
             stats[3], stats_strings[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
             stats[4], stats_strings[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
             stats[5], stats_strings[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
+
+            # AR metrics (average recall over different max detections)
             stats[6], stats_strings[6] = _summarize(0, maxDets=self.params.maxDets[0])
             stats[7], stats_strings[7] = _summarize(0, maxDets=self.params.maxDets[1])
             stats[8], stats_strings[8] = _summarize(0, maxDets=self.params.maxDets[2])
-            stats[9], stats_strings[9] = _summarize(0, maxDets=self.params.maxDets[3]) if len(self.params.maxDets) > 3 else _summarize(0, maxDets=self.params.maxDets[2])
-            stats[10], stats_strings[10] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
-            stats[11], stats_strings[11] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
-            stats[12], stats_strings[12] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
+            stats[9], stats_strings[9] = (_summarize(0, maxDets=self.params.maxDets[3])
+                                          if len(self.params.maxDets) > 3
+                                          else _summarize(0, maxDets=self.params.maxDets[2]))
+
+            # New: AR at specific IoU thresholds (mAR50 and mAR75)
+            stats[10], stats_strings[10] = _summarize(0, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
+            stats[11], stats_strings[11] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
+
+            # AR for different object sizes
+            stats[12], stats_strings[12] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
+            stats[13], stats_strings[13] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
+            stats[14], stats_strings[14] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
             return stats, stats_strings
 
         def _summarizeKps():
@@ -265,7 +331,7 @@ class Summarize2COCOEval(COCOeval):
         stats = self.stats
         metric_names = [
             "AP", "AP50", "AP75", "AP_small", "AP_medium", "AP_large",
-            "AR_1", "AR_10", "AR_100", "AR_max", "AR_small", "AR_medium", "AR_large"
+            "AR_1", "AR_10", "AR_100", "AR", "AR50", "AR75", "AR_small", "AR_medium", "AR_large"
         ]
         metrics_dict = {name: float(value) for name, value in zip(metric_names, stats)}
         return metrics_dict
