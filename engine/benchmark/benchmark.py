@@ -110,6 +110,7 @@ class DetectorBenchmarker:
 
     @staticmethod
     def get_tilerizer_params(tile_extent_in_meters):
+        raise NotImplementedError('Different models will have different ground_resolution, not always 0.045. Will have to be passed as an argument.')   # TODO
         if tile_extent_in_meters == 40:
             tile_size = 888
             ground_resolution = 0.045
