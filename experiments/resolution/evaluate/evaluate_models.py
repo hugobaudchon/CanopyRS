@@ -1,5 +1,6 @@
 import subprocess
 import time
+from pathlib import Path
 
 from experiments.resolution.evaluate.get_wandb import wandb_runs_to_dataframe
 
@@ -7,11 +8,18 @@ from experiments.resolution.evaluate.get_wandb import wandb_runs_to_dataframe
 def launch_evaluate(wandb_project, extent, architecture):
     print(f"Extent: {extent}, Architecture: {architecture}")
 
+    root_models_path = f"/home/mila/h/hugo.baudchon/scratch/training/detector_experience_resolution_optimalHPs_{extent}"
+    output_folder = f"/home/mila/h/hugo.baudchon/scratch/eval/detector_experience_resolution_optimalHPs_{extent}/{architecture}"
+    Path(output_folder).mkdir(parents=True, exist_ok=False)
+
     cmd = ["sbatch",]
     cmd.extend([
         'experiments/resolution/evaluate/sbatch_evaluate.sh',
-        dataset_config["compressed"],
-        config_path
+        wandb_project,
+        architecture,
+        extent,
+        root_models_path,
+        output_folder
     ])
 
     # Submit the job
