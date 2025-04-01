@@ -1,6 +1,7 @@
 import itertools
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+import traceback
 
 import numpy as np
 import pandas as pd
@@ -19,33 +20,39 @@ def eval_single_aggregator(
         min_centroid_distance_weight: float,
         ground_resolution: float
 ):
-    output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_mincentroid_{str(min_centroid_distance_weight).replace('.', 'p')}"
-    Path(output_path).mkdir(parents=True, exist_ok=True)
-    aggregator_output_path = output_path / 'aggregator_output.gpkg'
+    try:
+        output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_mincentroid_{str(min_centroid_distance_weight).replace('.', 'p')}"
+        Path(output_path).mkdir(parents=True, exist_ok=True)
+        aggregator_output_path = output_path / 'aggregator_output.gpkg'
 
-    Aggregator.from_coco(
-        output_path=aggregator_output_path,
-        tiles_folder_path=tiles_root,
-        coco_json_path=preds_coco_json,
-        scores_names=['detector_score'],
-        other_attributes_names=None,
-        scores_weights=[1.0],
-        min_centroid_distance_weight=min_centroid_distance_weight,
-        score_threshold=nms_score_threshold,
-        nms_threshold=nms_iou_threshold,
-        nms_algorithm='iou',
-        best_geom_keep_area_ratio=0.5,
-        pre_aggregated_output_path=None
-    )
+        Aggregator.from_coco(
+            polygon_type='bbox',
+            output_path=aggregator_output_path,
+            tiles_folder_path=tiles_root,
+            coco_json_path=preds_coco_json,
+            scores_names=['detector_score'],
+            other_attributes_names=None,
+            scores_weights=[1.0],
+            min_centroid_distance_weight=min_centroid_distance_weight,
+            score_threshold=nms_score_threshold,
+            nms_threshold=nms_iou_threshold,
+            nms_algorithm='iou',
+            best_geom_keep_area_ratio=0.5,
+            pre_aggregated_output_path=None
+        )
 
-    # Evaluate the predictions
-    evaluator = CocoEvaluator()
-    metrics = evaluator.raster_level(
-        iou_type='bbox',
-        preds_gpkg_path=str(aggregator_output_path),
-        truth_gpkg_path=truth_gdf,
-        ground_resolution=ground_resolution
-    )
+        # Evaluate the predictions
+        evaluator = CocoEvaluator()
+        metrics = evaluator.raster_level(
+            iou_type='bbox',
+            preds_gpkg_path=str(aggregator_output_path),
+            truth_gpkg_path=truth_gdf,
+            ground_resolution=ground_resolution
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        raise e
 
     return metrics
 
@@ -132,8 +139,7 @@ def find_optimal_detector_aggregator(
     tasks = []
     for nms_iou_threshold in nms_iou_thresholds:
         for min_centroid_distance_weight in min_centroid_distance_weights:
-            for raster_name, preds_coco_json, truth_gdf, tiles_root in itertools.product(
-                    raster_names, preds_coco_jsons, truths_gdfs, tiles_roots):
+            for raster_name, preds_coco_json, truth_gdf, tiles_root in zip(raster_names, preds_coco_jsons, truths_gdfs, tiles_roots):
                 tasks.append({
                     "raster_name": raster_name,
                     "nms_iou_threshold": nms_iou_threshold,
@@ -173,7 +179,8 @@ def find_optimal_detector_aggregator(
                 record.update(metrics)
                 results_list.append(record)
             except Exception as exc:
-                print(f"Parameters {params} generated an exception: {exc}")
+                print(f"Parameters {params} generated an exception:")
+                traceback.print_exc()
 
     results_df = pd.DataFrame(results_list)
 
