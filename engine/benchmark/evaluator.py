@@ -1,23 +1,28 @@
 import numpy as np
-from geodataset.utils import get_utm_crs
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
 import geopandas as gpd
 from shapely.affinity import affine_transform
+from geodataset.utils import get_utm_crs
 
+from faster_coco_eval.core.coco import COCO
+from faster_coco_eval.core.faster_eval_api import COCOeval      # speeds up raster level evaluation by 10-100x
 
 
 class CocoEvaluator:
     small_max_sq_meters = 16
     medium_max_sq_meters = 100
+
     def tile_level(self,
                    iou_type: str,
                    preds_coco_path: str,
                    truth_coco_path: str,
                    max_dets: list[int] = (1, 10, 100)) -> dict:
 
-        truth_coco = COCO(truth_coco_path)
-        preds_coco = COCO(preds_coco_path)
+        truth_coco = COCO(str(truth_coco_path))
+        preds_coco = COCO(str(preds_coco_path))
+
+        for ann in truth_coco.dataset['annotations']:
+            if 'score' in ann:
+                del ann['score']  # avoids crash when score is None (truth shouldn't have scores)
 
         # Align predictions to truth based on file name
         align_coco_datasets_by_name(truth_coco, preds_coco)
@@ -41,10 +46,6 @@ class CocoEvaluator:
         metrics['num_images'] = num_images
         metrics['num_truths'] = num_truths
         metrics['num_preds'] = num_preds
-
-        print("Final evaluation metrics:")
-        for k, v in metrics.items():
-            print(f"  {k}: {v}")
 
         return metrics
 

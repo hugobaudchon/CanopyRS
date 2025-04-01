@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 from geodataset.aoi import AOIFromPackageConfig
-from geodataset.utils import CocoNameConvention
+from geodataset.utils import CocoNameConvention, validate_and_convert_product_name, strip_all_extensions_and_path
 
 from dataset.detection.tilerize import tilerize_with_overlap
 from engine.benchmark.evaluator import CocoEvaluator
@@ -186,6 +186,20 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
                         'tiles_path': tiles_path
                     }
 
+                    # product_name = validate_and_convert_product_name(strip_all_extensions_and_path(raster_path))
+                    # coco_name = CocoNameConvention.create_name(
+                    #     product_name=product_name,
+                    #     ground_resolution=ground_resolution,
+                    #     fold=fold
+                    # )
+                    # coco_path = Path(temp_folder) / 'tilerized' / f"{tile_size}_{ground_resolution}" / product_name / coco_name
+                    # tiles_path = Path(temp_folder) / 'tilerized' / f"{tile_size}_{ground_resolution}" / product_name / 'tiles' / fold
+                    # tilerized_paths[fold][(tile_size, ground_resolution)][product_name] = {
+                    #     'labels_gpkg_path': labels_path,
+                    #     'labels_coco_path': coco_path,
+                    #     'tiles_path': tiles_path
+                    # }
+
     # Find the best model based on the bbox/AP metric
     best_model = wandb_df.sort_values('bbox/AP.max', ascending=False).iloc[0]
     best_model_config = DetectorConfig(**best_model.to_dict())
@@ -231,8 +245,8 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
         truths_gdfs=best_model_gpkg_truths,
         tiles_roots=best_model_tiles_paths,
         ground_resolution=0.045,            # Evaluating all models on the same resolution, 0.045m/pixel.
-        nms_iou_thresholds=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
-        min_centroid_distance_weights=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        nms_iou_thresholds=[0.2, 0.4], #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+        min_centroid_distance_weights=[0.7], #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
         min_nms_score_threshold=0.2,
         n_workers=4
     )
@@ -243,7 +257,12 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
     # Find the best aggregator based on a composite metric 'F1' (but it is not really F1 as mAP and mAR are not direct analogs to precision and recall)
     aggregators_agg = aggregators_results[aggregators_results['raster_name'] == 'average_over_rasters']
     best_aggregator = aggregators_agg.sort_values('F1', ascending=False).iloc[0]
-    best_aggregator_config = AggregatorConfig(**best_aggregator.to_dict())
+    best_aggregator_config = AggregatorConfig(
+        nms_algorithm='iou',
+        nms_threshold=best_aggregator['nms_iou_threshold'],
+        score_threshold=best_aggregator['nms_score_threshold'],
+        min_centroid_distance_weight=best_aggregator['min_centroid_distance_weight']
+    )
     print("Best aggregator found: ", str(best_aggregator_config))
 
     # Now, evaluate all the models on the TEST (!!!) fold, using the best aggregator
