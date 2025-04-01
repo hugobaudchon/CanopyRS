@@ -229,21 +229,21 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
 
 if __name__ == "__main__":
     bbox_files = [
-        '../montreal_forest_data/nice_cut/05_28_0_gr0p05_infer.gpkg',
-        '../montreal_forest_data/nice_cut/1007_0_gr0p05_infer.gpkg',
+        '../../montreal_forest_data/nice_cut/05_28_0_gr0p05_infer.gpkg',
+        '../../montreal_forest_data/nice_cut/1007_0_gr0p05_infer.gpkg',
         '/run/media/beerend/LALIB_SSD_2/berend/0046_0_gr0p05_infer.gpkg'
     ]
     ann_frames = [0, 5]
     timeseries_sam2(
-        '../montreal_forest_data/nice_cut/morph/',
-        '../montreal_forest_data/nice_cut/output/tiny_warped_morphed/',
+        '../../montreal_forest_data/nice_cut/morph/',
+        '../../montreal_forest_data/nice_cut/output/tiny_warped_morphed/',
         bbox_files[0],
         ann_frames[0],
         max_bboxes=12,
         strategy="default"
     )
     # timeseries_sam2(
-    #     # '../montreal_forest_data/nice_cut/tiny',
+    #     # '../../montreal_forest_data/nice_cut/tiny',
     #     '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_warped/2022/',
     #     '/run/media/beerend/LALIB_SSD_2/berend/output/deadtrees1/',
     #     bbox_files[2],

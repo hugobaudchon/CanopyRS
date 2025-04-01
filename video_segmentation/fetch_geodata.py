@@ -90,11 +90,11 @@ def fetch_geodata(url, aoi_geojson, out_dir):
 if __name__ == '__main__':
 
 
-    # fetch_geodata('http://www.lab.lefolab.stac-assets.umontreal.ca:8888/assets/', '../montreal_forest_data/nice_cut/AOI_nice_cut2.geojson', '../montreal_forest_data/high_res/')
+    # fetch_geodata('http://www.lab.lefolab.stac-assets.umontreal.ca:8888/assets/', '../../montreal_forest_data/nice_cut/AOI_nice_cut2.geojson', '../../montreal_forest_data/high_res/')
     fetch_geodata(
         'http://www.lab.lefolab.stac.umontreal.ca/stac-fastapi-pgstac/api/v1/pgstac',
         # 'http://www.lab.lefolab.stac-assets.umontreal.ca/assets/',
-        '../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson',
+        '../../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson',
         '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1/'
-        # '../montreal_forest_data/pystac_download'
+        # '../../montreal_forest_data/pystac_download'
     )

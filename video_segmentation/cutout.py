@@ -73,15 +73,15 @@ def old_functionality(from_large_and_warp:bool=True):
     dates = ['05-28', '06-17', '07-21', '08-18', '09-02', '10-07']
     for date in dates:
         if from_large_and_warp:
-            input_paths.append(f'../montreal_forest_data/quebec_trees_dataset_2021-{date}/2021-{date}/zone1/2021-{date}-sbl-z1-rgb-cog.tif')
+            input_paths.append(f'../../montreal_forest_data/quebec_trees_dataset_2021-{date}/2021-{date}/zone1/2021-{date}-sbl-z1-rgb-cog.tif')
         else:
-            input_paths.append(f'../montreal_forest_data/nice_cut/small_warped/{date}_1.tif')
+            input_paths.append(f'../../montreal_forest_data/nice_cut/small_warped/{date}_1.tif')
     if from_large_and_warp:
-        aoi_path = '../montreal_forest_data/nice_cut/AOI_nice_cut2.geojson'
-        output_path = '../montreal_forest_data/nice_cut'
+        aoi_path = '../../../montreal_forest_data/nice_cut/AOI_nice_cut2.geojson'
+        output_path = '../../../montreal_forest_data/nice_cut'
     else:
-        aoi_path='../montreal_forest_data/nice_cut/AOI_nice_cut3_tiny.geojson'
-        output_path = '../montreal_forest_data/nice_cut/tiny'
+        aoi_path= '../../../montreal_forest_data/nice_cut/AOI_nice_cut3_tiny.geojson'
+        output_path = '../../../montreal_forest_data/nice_cut/tiny'
 
     aoi_gdf = gpd.read_file(aoi_path)
 
@@ -105,7 +105,7 @@ if __name__=="__main__":
     input_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1/'
     output_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_cut/'
     warped_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_warped/'
-    aoi_path = '../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson'
+    aoi_path = '../../../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson'
     aoi_gdf = gpd.read_file(aoi_path)
     input_paths = [f for f in os.listdir(input_dir) if f.endswith('.tif')]
     input_paths.sort()

@@ -30,12 +30,12 @@ def morph(source, goal, destination):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    # source = "../montreal_forest_data/nice_cut/tiny/0528.tif"
-    # goal = "../montreal_forest_data/nice_cut/tiny/0617.tif"
-    # destination = "../montreal_forest_data/nice_cut/morph/"
+    # source = "../../montreal_forest_data/nice_cut/tiny/0528.tif"
+    # goal = "../../montreal_forest_data/nice_cut/tiny/0617.tif"
+    # destination = "../../montreal_forest_data/nice_cut/morph/"
     # morph(source, goal, destination)
-    input_folder = "../montreal_forest_data/nice_cut/tiny/"
-    destination_folder = "../montreal_forest_data/nice_cut/morph/"
+    input_folder = "../../montreal_forest_data/nice_cut/tiny/"
+    destination_folder = "../../montreal_forest_data/nice_cut/morph/"
     input_paths = [f for f in os.listdir(input_folder) if f.endswith('.tif')]
     input_paths.sort()
     for i in range(len(input_paths)-1):
