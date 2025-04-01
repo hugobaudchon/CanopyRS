@@ -1,6 +1,7 @@
 albumentations==1.4.0
 datasketches==5.0.2
 einops==0.7.0
+faster-coco-eval>=1.6.5
 GDAL>=3.0.0,<=3.8.0
 geopandas==1.0.1
 geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.4.0
