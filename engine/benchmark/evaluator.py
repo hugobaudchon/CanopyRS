@@ -8,7 +8,8 @@ from shapely.affinity import affine_transform
 
 
 class CocoEvaluator:
-
+    small_max_sq_meters = 16
+    medium_max_sq_meters = 100
     def tile_level(self,
                    iou_type: str,
                    preds_coco_path: str,
@@ -58,9 +59,16 @@ class CocoEvaluator:
 
         truth_gdf, infer_gdf = move_gdfs_to_ground_resolution(truth_gdf, infer_gdf, ground_resolution)
 
-        minx, miny, maxx, maxy = truth_gdf.total_bounds
-        width = int((maxx - minx) / ground_resolution)
-        height = int((maxy - miny) / ground_resolution)
+        b1 = truth_gdf.total_bounds  # [minx, miny, maxx, maxy]
+        b2 = infer_gdf.total_bounds
+        combined_bounds = [
+            min(b1[0], b2[0]),  # minx
+            min(b1[1], b2[1]),  # miny
+            max(b1[2], b2[2]),  # maxx
+            max(b1[3], b2[3])  # maxy
+        ]
+        width = int((combined_bounds[2] - combined_bounds[0]))
+        height = int((combined_bounds[3] - combined_bounds[1]))
 
         truth_coco = gdf_to_coco_single_image(
             gdf=truth_gdf,
@@ -90,6 +98,17 @@ class CocoEvaluator:
             iouType=iou_type
         )
         coco_evaluator.params.maxDets = [1, 10, 100, len(truth_gdf)]
+
+        pixel_small = self.small_max_sq_meters / (ground_resolution ** 2)
+        pixel_medium = self.medium_max_sq_meters / (ground_resolution ** 2)
+        coco_evaluator.params.areaRng = [
+            [0, 1e10],                    # all
+            [0, pixel_small],             # small
+            [pixel_small, pixel_medium],  # medium
+            [pixel_medium, 1e10]           # large
+        ]
+        coco_evaluator.params.areaRngLbl = ['all', 'small', 'medium', 'large']
+
         coco_evaluator.evaluate()
         coco_evaluator.accumulate()
 
@@ -135,7 +154,14 @@ def move_gdfs_to_ground_resolution(truth_gdf: gpd.GeoDataFrame, infer_gdf: gpd.G
         infer_gdf = infer_gdf.to_crs(utm_crs)
 
     # Compute the overall minimum coordinates from the truth data
-    minx, miny, maxx, maxy = truth_gdf.total_bounds
+    b1 = truth_gdf.total_bounds  # [minx, miny, maxx, maxy]
+    b2 = infer_gdf.total_bounds
+    combined_bounds = [
+        min(b1[0], b2[0]),  # minx
+        min(b1[1], b2[1]),  # miny
+        max(b1[2], b2[2]),  # maxx
+        max(b1[3], b2[3])  # maxy
+    ]
 
     # Create an affine transformation that translates and scales coordinates:
     # new_x = (old_x - minx) / ground_resolution
@@ -143,13 +169,13 @@ def move_gdfs_to_ground_resolution(truth_gdf: gpd.GeoDataFrame, infer_gdf: gpd.G
     affine_params = [
         1 / ground_resolution, 0,     # scale x, no rotation
         0, 1 / ground_resolution,       # scale y, no rotation
-        -minx / ground_resolution,      # translation in x
-        -miny / ground_resolution       # translation in y
+        -combined_bounds[0] / ground_resolution,      # translation in x
+        -combined_bounds[1] / ground_resolution       # translation in y
     ]
 
     # Apply the affine transformation to each geometry in both GeoDataFrames.
-    truth_gdf['raster_geom'] = truth_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
-    infer_gdf['raster_geom'] = infer_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
+    truth_gdf['geometry'] = truth_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
+    infer_gdf['geometry'] = infer_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
 
     # Return the updated GeoDataFrames in a dictionary.
     return truth_gdf, infer_gdf

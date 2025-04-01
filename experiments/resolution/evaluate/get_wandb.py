@@ -11,6 +11,9 @@ def get_wandb_runs(wandb_project: str):
     run_config_mapping = {}
     for run in runs:
         run_config_mapping[run.name] = run.config
+        summary = run.summary._json_dict if hasattr(run.summary, '_json_dict') else run.summary
+        run_config_mapping[run.name].update(summary)
+        run_config_mapping[run.name]['bbox/AP.max'] = run_config_mapping[run.name]['bbox/AP']['max']
 
     return run_config_mapping
 
@@ -39,3 +42,19 @@ def extract_ground_resolution_regex(input_str):
 
     ground_resolution = float(match.replace("p", "."))
     return ground_resolution
+
+
+def extract_tilerized_image_size_regex(input_str):
+    """
+    Extracts the number following 'tilerized_' and preceding the next underscore.
+    
+    Example:
+      input_str = "tilerized_888_0p5_0p045_None/panama_aguasalud"
+      returns: 888 (as an integer)
+    """
+    matches = re.findall(r'(?<=tilerized_)(\d+)(?=_)', input_str)
+    if matches:
+        # Return the first occurrence as an integer.
+        return int(matches[0])
+    else:
+        raise ValueError(f"No tilerized number found in {input_str}")
