@@ -245,8 +245,8 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
         truths_gdfs=best_model_gpkg_truths,
         tiles_roots=best_model_tiles_paths,
         ground_resolution=0.045,            # Evaluating all models on the same resolution, 0.045m/pixel.
-        nms_iou_thresholds=[0.2, 0.4], #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
-        min_centroid_distance_weights=[0.7], #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        nms_iou_thresholds=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+        min_centroid_distance_weights=[1.0],    # not using this in the end, so setting to 1.0
         min_nms_score_threshold=0.2,
         n_workers=4
     )
