@@ -19,6 +19,24 @@ class RandomChoiceAugmentation(Augmentation):
         self.aug2 = aug2
         self.prob = prob
 
+    def get_transform(self, image):
+        if random() < self.prob:
+            return self.aug1.get_transform(image)
+        else:
+            return self.aug2.get_transform(image)
+
+
+class RandomChoiceAugmentationWithBox(Augmentation):
+    """
+    Randomly selects one of two augmentations based on a given probability.
+    With probability `prob`, applies aug1; otherwise, applies aug2.
+    """
+    def __init__(self, aug1: Augmentation, aug2: Augmentation, prob: float):
+        super().__init__()
+        self.aug1 = aug1
+        self.aug2 = aug2
+        self.prob = prob
+
     def get_transform(self, image, boxes=None):
         if random() < self.prob:
             return self.aug1.get_transform(image, boxes)
@@ -215,25 +233,6 @@ class ConditionalResize(Augmentation):
             return ResizeTransform(orig_h, orig_w, new_h, new_w)
 
 
-class DeterministicResizeWithinRangeTransform(Transform):
-    def __init__(self, orig_h, orig_w, new_h, new_w):
-        super().__init__()
-        self.orig_h = orig_h
-        self.orig_w = orig_w
-        self.new_h = new_h
-        self.new_w = new_w
-
-    def apply_image(self, img):
-        # Resize using OpenCV
-        return cv2.resize(img, (self.new_w, self.new_h), interpolation=cv2.INTER_LINEAR)
-
-    def apply_coords(self, coords):
-        # Adjust coordinates (if needed for bounding boxes, keypoints, etc.)
-        scale_x = self.new_w / self.orig_w
-        scale_y = self.new_h / self.orig_h
-        return coords * [scale_x, scale_y]
-
-
 class DeterministicResizeWithinRange(Augmentation):
     """
     Deterministically resizes the image so that its smallest edge is at least min_size
@@ -277,7 +276,7 @@ class DeterministicResizeWithinRange(Augmentation):
 
         new_h = int(round(h * scale))
         new_w = int(round(w * scale))
-        return DeterministicResizeWithinRangeTransform(h, w, new_h, new_w)
+        return ResizeTransform(h, w, new_h, new_w)
 
 
 class AugmentationAdder:
@@ -504,11 +503,10 @@ class AugmentationAdder:
                 crop_range=(final_image_size, final_image_size),
                 min_intersection_ratio=crop_min_intersection_ratio
             )
+            augs.append(RandomChoiceAugmentationWithBox(crop_aug, fallback_crop_aug, prob=crop_prob))
         else:
-            # Otherwise, use identity transform as fallback (no crop with prob 1-crop_prob).
-            fallback_crop_aug = NoOpTransform()
-
-        augs.append(RandomChoiceAugmentation(crop_aug, fallback_crop_aug, prob=crop_prob))
+            # Otherwise, regularly crop with crop_prob.
+            augs.append(RandomApply(crop_aug, prob=crop_prob))
 
         # 10) Resize to final size or apply range-based resizing
         if isinstance(final_image_size, int):
@@ -534,6 +532,8 @@ class AugmentationAdder:
                 max_size=final_image_size[1]
             )
             augs.append(RandomChoiceAugmentation(resize_shortest_edge, deterministic_resize, prob=crop_prob))
+
+        print(augs)
 
         return augs
 
