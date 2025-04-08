@@ -32,6 +32,12 @@ def show_mask(mask, ax, obj_id=None, random_color=False):
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
 
+def show_points(coords, labels, ax, marker_size=200):
+    pos_points = coords[labels==1]
+    neg_points = coords[labels==0]
+    ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='*', s=marker_size, edgecolor='white', linewidth=1.25)
+    ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='*', s=marker_size, edgecolor='white', linewidth=1.25)
+
 
 def gis_bbox_to_pixel(bbox, src):
     max_row, min_col = src.index(bbox[0], bbox[1])
@@ -110,8 +116,10 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
     # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
     #     inference_state=inference_state,
     #     frame_idx=ann_frame_idx,
-    #     obj_id=10,
-    #     box=(1198, 237, 1347, 374)  # bbox values
+    #     obj_id=3,
+    #     box=bboxes[3],  # bbox with double tree
+    #     points = np.array([[1358, 1126]]),
+    #     labels = np.array([0]) # negative prompt for intertwined tree
     # )
 
     plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
@@ -124,6 +132,21 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
     if strategy == "default" or strategy == "reverse":
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
                                                                                         reverse=(strategy == "reverse")):
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {out_frame_idx}")
+            plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
+            if out_frame_idx == 2:
+                labels = np.array([0])  # negative prompt for intertwined tree
+                points = np.array([[1358, 1126]])
+                _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+                    inference_state=inference_state,
+                    frame_idx=ann_frame_idx,
+                    obj_id=3,
+                    #box=bboxes[3],  # bbox with double tree
+                    points=points,
+                    labels=labels  # negative prompt for intertwined tree
+                )
+                show_points(points, labels, plt.gca(), marker_size=100)
             # video_segments[out_frame_idx] = {
             #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
             #     for i, out_obj_id in enumerate(out_obj_ids)
@@ -131,15 +154,14 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
             video_segments = {out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
                               for i, out_obj_id in enumerate(out_obj_ids)
                               }
-            plt.close("all")
-            plt.figure(figsize=(9, 6))
-            plt.title(f"frame {out_frame_idx}")
-            plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
+
+
             for out_obj_id, out_mask in video_segments.items():
                 show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
             plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
                         dpi=300)
             gc.collect()
+            plt.close("all")
     elif strategy == "feed_segments":
         for frame_nr in range(len(frame_names)):  # Iterate over each frame
             # Propagate only for the current frame
@@ -235,8 +257,8 @@ if __name__ == "__main__":
     ]
     ann_frames = [0, 5]
     timeseries_sam2(
-        '../../montreal_forest_data/nice_cut/morph/',
-        '../../montreal_forest_data/nice_cut/output/tiny_warped_morphed/',
+        '../../montreal_forest_data/nice_cut/misalign_morph/',
+        '../../montreal_forest_data/nice_cut/output/misalign_segmented/',
         bbox_files[0],
         ann_frames[0],
         max_bboxes=12,
