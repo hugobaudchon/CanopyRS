@@ -135,18 +135,22 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
             plt.figure(figsize=(9, 6))
             plt.title(f"frame {out_frame_idx}")
             plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
-            if out_frame_idx == 2:
-                labels = np.array([0])  # negative prompt for intertwined tree
-                points = np.array([[1358, 1126]])
-                _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-                    inference_state=inference_state,
-                    frame_idx=ann_frame_idx,
-                    obj_id=3,
-                    #box=bboxes[3],  # bbox with double tree
-                    points=points,
-                    labels=labels  # negative prompt for intertwined tree
-                )
-                show_points(points, labels, plt.gca(), marker_size=100)
+
+
+            # if out_frame_idx == 2:
+            #     labels = np.array([0])  # negative prompt for intertwined tree
+            #     points = np.array([[1358, 1126]])
+            #     _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+            #         inference_state=inference_state,
+            #         frame_idx=ann_frame_idx,
+            #         obj_id=3,
+            #         #box=bboxes[3],  # bbox with double tree
+            #         points=points,
+            #         labels=labels  # negative prompt for intertwined tree
+            #     )
+            #     show_points(points, labels, plt.gca(), marker_size=100)
+
+
             # video_segments[out_frame_idx] = {
             #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
             #     for i, out_obj_id in enumerate(out_obj_ids)
@@ -257,8 +261,8 @@ if __name__ == "__main__":
     ]
     ann_frames = [0, 5]
     timeseries_sam2(
-        '../../montreal_forest_data/nice_cut/misalign_morph/',
-        '../../montreal_forest_data/nice_cut/output/misalign_segmented/',
+        '../../montreal_forest_data/nice_cut/realigned_morph/',
+        '../../montreal_forest_data/nice_cut/realigned_segmented/',
         bbox_files[0],
         ann_frames[0],
         max_bboxes=12,
