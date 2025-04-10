@@ -3,7 +3,7 @@ from torchvision.models.detection.anchor_utils import AnchorGenerator
 
 from engine.config_parsers import DetectorConfig
 from engine.models.backbone import build_detection_backbone
-from engine.models.detector.detector_base import TorchTrainerDetectorWrapperBase
+from engine.models.detector.detector_base import TorchVisionDetectorWrapperBase
 
 
 def build_retina_net(config: DetectorConfig):
@@ -37,7 +37,7 @@ def build_retina_net(config: DetectorConfig):
 
     return model
 
-class RetinaNetWrapper(TorchTrainerDetectorWrapperBase):
+class RetinaNetWrapper(TorchVisionDetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
         super().__init__(config)
 
