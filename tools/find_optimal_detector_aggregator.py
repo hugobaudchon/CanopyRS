@@ -36,6 +36,7 @@ def eval_single_aggregator(
             score_threshold=nms_score_threshold,
             nms_threshold=nms_iou_threshold,
             nms_algorithm='iou',
+            edge_band_buffer_percentage=0.05,
             best_geom_keep_area_ratio=0.5,
             pre_aggregated_output_path=None
         )

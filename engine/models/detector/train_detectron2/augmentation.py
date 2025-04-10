@@ -391,7 +391,7 @@ class AugmentationAdder:
 
     @staticmethod
     def _get_augmentation_list_train(
-            final_image_size: int,
+            final_image_size: int or tuple,
             early_conditional_image_size: int,
             flip_vertical: bool,
             flip_horizontal: bool,

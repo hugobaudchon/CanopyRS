@@ -1,3 +1,5 @@
+import uuid
+
 import numpy as np
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
@@ -87,7 +89,6 @@ def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
 def register_detection_dataset(
         fold: str,
         root_path: str or list[str],
-        dataset_name: str,
         force_binary_class: bool = True
 ):
     """
@@ -99,8 +100,6 @@ def register_detection_dataset(
         The fold of the dataset to register
     root_path: str or list[str]
         The list of root paths of the dataset
-    dataset_name: str
-        The name of the dataset
     force_binary_class: bool, optional
         Whether to force binary class
 
@@ -115,7 +114,7 @@ def register_detection_dataset(
 
     # Define your classes
     thing_classes = ["tree"]
-
+    dataset_name = f"{fold}_tree_custom_{uuid.uuid4().hex}"
     print(f"Registering as dataset '{dataset_name}'...")
     # Register the dataset
     DatasetCatalog.register(
