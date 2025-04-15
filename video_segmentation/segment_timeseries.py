@@ -146,25 +146,25 @@ def feed_segments(frame_names, inference_state, predictor, video_segments):
     return video_segments
 
 
-def default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments):
+def default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments, start_frame=0, restarted=False):
+    new_points_added = False
+
     for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
-                                                                                    reverse=(strategy == "reverse")):
+                                                                                    reverse=(strategy == "reverse"),
+                                                                                    start_frame_idx=start_frame):
+
+        inference_state['asdf'] = 'immer noch nix'
         plt.figure(figsize=(9, 6))
         plt.title(f"frame {out_frame_idx}")
         plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
 
-        # if out_frame_idx == 2:
-        #     labels = np.array([0])  # negative prompt for intertwined tree
-        #     points = np.array([[1358, 1126]])
-        #     _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-        #         inference_state=inference_state,
-        #         frame_idx=ann_frame_idx,
-        #         obj_id=3,
-        #         #box=bboxes[3],  # bbox with double tree
-        #         points=points,
-        #         labels=labels  # negative prompt for intertwined tree
-        #     )
-        #     show_points(points, labels, plt.gca(), marker_size=100)
+        if out_frame_idx == 2 and not restarted:
+            new_points_added = True
+            break
+
+
+            inference_state['asdf'] = 'jetzt aber!'
+            # new_points_added = True
 
         # video_segments[out_frame_idx] = {
         #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
@@ -180,6 +180,23 @@ def default_SAM2(frame_names, inference_state, input_folder, output_folder, pred
                     dpi=300)
         gc.collect()
         plt.close("all")
+
+    if new_points_added:
+        new_points_added = False
+        labels = np.array([0, 1])  # negative prompt for intertwined tree
+        points = np.array([[1358, 1126], [1426, 580]])
+        _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+            inference_state=inference_state,
+            frame_idx=out_frame_idx,
+            obj_id=16,
+            # box=bboxes[3],  # bbox with double tree
+            points=points,
+            labels=labels,
+            clear_old_points=False
+        )
+        show_points(points, labels, plt.gca(), marker_size=50)
+        default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments, start_frame=out_frame_idx, restarted=True)
+        return None
     return video_segments
 
 
@@ -271,7 +288,8 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
 
     elif strategy == "default" or strategy == "reverse":
         # default strategy saves all frames while looping
-        video_segments = default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy,
+        inference_state['asdf'] = 'erstmal nichts'
+        _ = default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy,
                                       video_segments)
     else:
         raise ValueError(f"Invalid strategy: {strategy}")
@@ -285,8 +303,8 @@ if __name__ == "__main__":
     ]
     ann_frames = [0, 5]
     timeseries_sam2(
-        '../../montreal_forest_data/nice_cut/misalign_morph/',
-        '../../montreal_forest_data/nice_cut/misalign_segmented/',
+        '../../montreal_forest_data/nice_cut/morph/',
+        '../../montreal_forest_data/nice_cut/morph_segmented/',
         bbox_files[0],
         ann_frames[0],
         max_bboxes=12,
