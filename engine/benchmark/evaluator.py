@@ -93,12 +93,13 @@ class CocoEvaluator:
         coco_dt_obj.createIndex()
 
         # Initialize and run COCOeval
+        twice_max_dets = len(truth_gdf) * 2       # We consider up to twice the number of ground truth objects as predictions to be evaluated
         coco_evaluator = Summarize2COCOEval(
             cocoGt=coco_gt_obj,
             cocoDt=coco_dt_obj,
             iouType=iou_type
         )
-        coco_evaluator.params.maxDets = [1, 10, 100, len(truth_gdf)]
+        coco_evaluator.params.maxDets = [1, 10, 100, twice_max_dets]
 
         pixel_small = self.small_max_sq_meters / (ground_resolution ** 2)
         pixel_medium = self.medium_max_sq_meters / (ground_resolution ** 2)
