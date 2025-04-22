@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 import cv2
-import napari
+from PyQt5 import QtWidgets, QtGui, QtCore
 
 
 # from sam2.sam2.benchmark import out_frame_idx
@@ -62,72 +62,74 @@ def print_memory_usage():
     print(f"Memory Usage: {mem_info.rss / 1024 ** 2:.2f} MB")
 
 
+class MaskEditor(QtWidgets.QLabel):
+    def __init__(self, image, mask):
+        super().__init__()
+        self.setWindowTitle("Mask Editor")
+        self.image = image
+        self.mask = mask
+        self.brush_size = 10
+        self.drawing = False
+        self.erasing = False
 
+        self.img_h, self.img_w = self.image.shape[:2]
+        self.setFixedSize(self.img_w, self.img_h)
+        self.setPixmap(self._get_combined_pixmap())
 
-def draw_mask(event, x, y, flags, param):
-    global drawing, erasing, ix, iy, mask_display, brush_size
+    def _get_combined_pixmap(self):
+        """Overlay image and mask into a displayable pixmap"""
+        overlay = self.image.copy()
+        overlay[self.mask > 0] = [0, 255, 0]  # green overlay
+        qimage = QtGui.QImage(overlay.data, self.img_w, self.img_h, 3 * self.img_w, QtGui.QImage.Format_RGB888)
+        return QtGui.QPixmap.fromImage(qimage)
 
-    if event == cv2.EVENT_LBUTTONDOWN:
-        drawing = True
-        ix, iy = x, y
-    elif event == cv2.EVENT_RBUTTONDOWN:
-        erasing = True
-        ix, iy = x, y
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.drawing = True
+            self._paint_mask(event.pos(), draw=True)
+        elif event.button() == QtCore.Qt.RightButton:
+            self.erasing = True
+            self._paint_mask(event.pos(), draw=False)
 
-    elif event == cv2.EVENT_MOUSEMOVE:
-        if drawing:
-            cv2.circle(mask_display, (x, y), brush_size, 255, -1)
-        elif erasing:
-            cv2.circle(mask_display, (x, y), brush_size, 0, -1)
+    def mouseMoveEvent(self, event):
+        if self.drawing or self.erasing:
+            self._paint_mask(event.pos(), draw=self.drawing)
 
-    elif event == cv2.EVENT_LBUTTONUP:
-        drawing = False
-    elif event == cv2.EVENT_RBUTTONUP:
-        erasing = False
+    def mouseReleaseEvent(self, event):
+        self.drawing = False
+        self.erasing = False
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Plus or event.key() == QtCore.Qt.Key_Equal:
+            self.brush_size += 2
+        elif event.key() == QtCore.Qt.Key_Minus or event.key() == QtCore.Qt.Key_Underscore:
+            self.brush_size = max(2, self.brush_size - 2)
+        elif event.key() == QtCore.Qt.Key_Escape:
+            self.close()
+
+    def _paint_mask(self, pos, draw=True):
+        x, y = pos.x(), pos.y()
+        rr, cc = np.ogrid[:self.img_h, :self.img_w]
+        mask_area = (rr - y)**2 + (cc - x)**2 <= self.brush_size**2
+        if draw:
+            self.mask[mask_area] = 255
+        else:
+            self.mask[mask_area] = 0
+        self.setPixmap(self._get_combined_pixmap())
+
 
 def replace_mask(video_segments, output_folder, input_folder, frame_name):
-    global mask_display, brush_size
-
-    # Load the frame image
-    image = np.array(Image.open(input_folder + "/" + frame_name).convert("RGB"))
-
-    # Load the old mask
+    image = np.array(Image.open(f"{input_folder}/{frame_name}").convert("RGB"))
     old_mask = video_segments[3][0].copy().astype(np.uint8)
 
-    # Prepare the mask for editing
-    mask_display = old_mask.copy()
+    app = QtWidgets.QApplication(sys.argv)
+    editor = MaskEditor(image, old_mask)
+    editor.show()
+    app.exec_()
 
-    # Set up window and callback
-    window_name = "Adjust Mask (Draw=LMB | Erase=RMB | +/-=Brush Size | ESC=Done)"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.setMouseCallback(window_name, draw_mask)
-
-    while True:
-        # Create overlay image
-        overlay = image.copy()
-        overlay[mask_display > 0] = [0, 255, 0]  # Green mask overlay
-
-        # Display brush size
-        cv2.putText(overlay, f'Brush: {brush_size}', (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-        cv2.imshow(window_name, overlay)
-
-        k = cv2.waitKey(1) & 0xFF
-
-        if k == 27:  # ESC
-            break
-        elif k == ord('+') or k == ord('='):
-            brush_size = min(100, brush_size + 2)
-        elif k == ord('-') or k == ord('_'):
-            brush_size = max(1, brush_size - 2)
-
-    cv2.destroyAllWindows()
-
-    # Replace in video_segments
-    video_segments[3] = np.expand_dims(mask_display, 0)
+    # Update the mask in video_segments
+    video_segments[3] = np.expand_dims(editor.mask, 0)
     print("Mask updated:", video_segments[3].shape)
-
     return video_segments
 
 
