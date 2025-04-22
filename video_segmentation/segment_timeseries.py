@@ -37,9 +37,9 @@ def show_points(coords, labels, ax, marker_size=200):
     pos_points = coords[labels == 1]
     neg_points = coords[labels == 0]
     ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='*', s=marker_size, edgecolor='white',
-               linewidth=1.25)
+               linewidth=0.25)
     ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='*', s=marker_size, edgecolor='white',
-               linewidth=1.25)
+               linewidth=0.25)
 
 
 def gis_bbox_to_pixel(bbox, src):
@@ -148,23 +148,58 @@ def feed_segments(frame_names, inference_state, predictor, video_segments):
 
 def default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments, start_frame=0, restarted=False):
     new_points_added = False
+    # for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
+    #                                                                                 reverse=(strategy == "reverse"),
+    #                                                                                 start_frame_idx=start_frame,
+    #                                                                                 max_frame_num_to_track=2):
+    #
+    #     # if out_frame_idx == 2 and not restarted:
+    #     #     new_points_added = True
+    #     #     break
+    #     plt.figure(figsize=(9, 6))
+    #     plt.title(f"frame {out_frame_idx}")
+    #     plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
+    #
+    #
+    #     # video_segments[out_frame_idx] = {
+    #     #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+    #     #     for i, out_obj_id in enumerate(out_obj_ids)
+    #     # }
+    #     video_segments = {out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+    #                       for i, out_obj_id in enumerate(out_obj_ids)
+    #                       }
+    #
+    #     for out_obj_id, out_mask in video_segments.items():
+    #         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+    #     plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
+    #                 dpi=300)
+    #     # gc.collect()
+    #     plt.close("all")
+
+    # labels = np.array([0])#,0,0,0])  # negative prompt for intertwined tree
+    # points = np.array([[1358, 1126]])#,[1203,1234],[1281, 1117],[1328,1182]])#, [1426, 580]])
+    # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+    #     inference_state=inference_state,
+    #     frame_idx=2,
+    #     obj_id=3,
+    #     # box=bboxes[3],  # bbox with double tree
+    #     points=points,
+    #     labels=labels,
+    #     # clear_old_points=False
+    # )
 
     for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
                                                                                     reverse=(strategy == "reverse"),
-                                                                                    start_frame_idx=start_frame):
+                                                                                    start_frame_idx=0,
+                                                                                    max_frame_num_to_track=None):
 
-        inference_state['asdf'] = 'immer noch nix'
+        # if out_frame_idx == 2 and not restarted:
+        #     new_points_added = True
+        #     break
         plt.figure(figsize=(9, 6))
         plt.title(f"frame {out_frame_idx}")
         plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
 
-        if out_frame_idx == 2 and not restarted:
-            new_points_added = True
-            break
-
-
-            inference_state['asdf'] = 'jetzt aber!'
-            # new_points_added = True
 
         # video_segments[out_frame_idx] = {
         #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
@@ -178,31 +213,108 @@ def default_SAM2(frame_names, inference_state, input_folder, output_folder, pred
             show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
         plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
                     dpi=300)
-        gc.collect()
+        # gc.collect()
         plt.close("all")
 
-    if new_points_added:
-        new_points_added = False
-        labels = np.array([0, 1])  # negative prompt for intertwined tree
-        points = np.array([[1358, 1126], [1426, 580]])
-        _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-            inference_state=inference_state,
-            frame_idx=out_frame_idx,
-            obj_id=16,
-            # box=bboxes[3],  # bbox with double tree
-            points=points,
-            labels=labels,
-            clear_old_points=False
-        )
-        show_points(points, labels, plt.gca(), marker_size=50)
-        default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments, start_frame=out_frame_idx, restarted=True)
-        return None
+    # if new_points_added:
+    #     # new_points_added = False
+    #     labels = np.array([0,0,0,0])  # negative prompt for intertwined tree
+    #     points = np.array([[1358, 1126],[1203,1234],[1281, 1117],[1328,1182]])#, [1426, 580]])
+    #     inference_state_copy = inference_state.copy()
+    #     _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+    #         inference_state=inference_state,
+    #         frame_idx=2,
+    #         obj_id=3,
+    #         # box=bboxes[3],  # bbox with double tree
+    #         points=points,
+    #         labels=labels,
+    #         # clear_old_points=False
+    #     )
+    #     video_segments = {out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+    #                       for i, out_obj_id in enumerate(out_obj_ids)
+    #                       }
+    #
+    #     for out_obj_id, out_mask in video_segments.items():
+    #         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+    #     show_points(points, labels, plt.gca(), marker_size=10)
+    #     plt.title(f"frame 2X")
+    #     plt.savefig(os.path.join(output_folder, f"frame_{2:04d}X-{strategy}.png"), bbox_inches="tight",
+    #                 dpi=300)
+    #     # gc.collect()
+    #     plt.close("all")
+    #     inference_state['frames_already_tracked'].pop(2)
+    #     default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments, start_frame=2, restarted=True)
+    #     return None
+    # return video_segments
+
+
+def replace_mask(video_segments, output_folder, frame_name):
+    new_mask = np.array(Image.open(output_folder + "/test_mask2.tif").convert("L"))
+    video_segments[3] = np.expand_dims(new_mask,0)
+    print(video_segments[3].shape)
     return video_segments
 
 
+def adjust_masks(frame_names, inference_state, input_folder, output_folder, predictor, strategy, start_frame=0):
+    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
+                                                                                    reverse=(strategy == "reverse"),
+                                                                                    start_frame_idx=start_frame,
+                                                                                    max_frame_num_to_track=None):
+
+        plt.figure(figsize=(9, 6))
+        plt.title(f"frame {out_frame_idx}")
+        plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
+
+        video_segments = {out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+                          for i, out_obj_id in enumerate(out_obj_ids)
+                          }
+
+        for out_obj_id, out_mask in video_segments.items():
+            show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+        plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
+                    dpi=300)
+        plt.close("all")
+
+        if out_frame_idx == 2:
+            # for frame_nr in range(len(frame_names)):  # Iterate over each frame
+            #     # Propagate only for the current frame
+            #     for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
+            #                                                                                     reverse=False):
+            #         if out_frame_idx != frame_nr:
+            #             continue  # Skip frames that are not the current one
+
+            # Store segmentation masks
+            # video_segments[out_frame_idx] = {
+            #     out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            #     for i, out_obj_id in enumerate(out_obj_ids)
+            # }
+
+            video_segments = replace_mask(video_segments, output_folder, frame_names[out_frame_idx])
+
+            predictor.reset_state(inference_state)
+            # Inject the extracted masks into inference state
+            for out_obj_id, out_mask in video_segments.items():
+                predictor.add_new_mask(inference_state, out_frame_idx, out_obj_id, out_mask.squeeze())
+            # Mark the frame as processed
+            inference_state['frames_already_tracked'].update({str(out_frame_idx): {'reverse': False}})
+
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {out_frame_idx}_adjusted")
+            plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
+
+            for out_obj_id, out_mask in video_segments.items():
+                show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+            plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}_adjusted.png"), bbox_inches="tight",
+                        dpi=300)
+            plt.close("all")
+            adjust_masks(frame_names, inference_state, input_folder, output_folder, predictor, strategy,
+                         start_frame=out_frame_idx+1)
+            # Break after handling one frame to restart propagation
+            break
+
 def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_frame_idx: int, max_bboxes: int,
                     strategy: str):
-    if strategy not in ["feed_segments", "feed_boxes", "reverse", "default"]:
+    if strategy not in ["feed_segments", "feed_boxes", "reverse", "default", "adjust_masks"]:
         raise ValueError(f"Invalid strategy: {strategy}")
     output_folder = output_folder + strategy
     Path(output_folder).mkdir(exist_ok=True)
@@ -225,7 +337,11 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
                                                    device=device,
                                                    non_overlap_masks=True,
                                                    use_high_res_features_in_sam=True,
+                                                   # hydra_overrides_extra=["++model.add_all_frames_to_correct_as_cond=True"]
                                                    )
+    # predictor.add_all_frames_to_correct_as_cond = True
+    # predictor.clear_non_cond_mem_around_input = True,
+    # predictor.clear_non_cond_mem_for_multi_obj = True,
     frame_names = [
         p for p in os.listdir(input_folder)
         if os.path.splitext(p)[-1] in [".tif"]
@@ -251,30 +367,68 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
 
     for bbox_id, bbox in bboxes.items():
         print_memory_usage()
-        _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-            inference_state=inference_state,
-            frame_idx=ann_frame_idx,
-            obj_id=bbox_id,
-            box=bbox  # bbox values
-        )
+        # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+        #     inference_state=inference_state,
+        #     frame_idx=ann_frame_idx,
+        #     obj_id=bbox_id,
+        #     box=bbox  # bbox values
+        # )
+        # show_box(bbox, plt.gca())
+        if bbox_id != 3:
+            continue
 
-        print(bbox_id, bbox)
-        show_box(bbox, plt.gca())
+            # points = np.array([[(bbox[0] + bbox[2])//2, (bbox[1]+bbox[3])//2]])
+            # labels = np.array([1])
+            # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+            #     inference_state=inference_state,
+            #     frame_idx=ann_frame_idx,
+            #     obj_id=bbox_id,
+            #     box=bbox  # bbox values
+            # )
+        else:
+            # labels = np.array([1])
+            # points = np.array([[(bbox[0] + bbox[2])//2, (bbox[1]+bbox[3])//2]])
+            # labels = np.array([0,0])
+            # points = np.array([[1352, 1136],[1367, 1143]])
+            _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+                inference_state=inference_state,
+                frame_idx=ann_frame_idx,
+                obj_id=bbox_id,
+                # points=points,
+                # labels = labels,
+                box=bbox
+            )
+            # show_points(points, labels, plt.gca(), marker_size=10)
 
+            # labels = np.array([0])
+            # points = np.array([[1330, 1134]])
+            # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+            #     inference_state=inference_state,
+            #     frame_idx=9,
+            #     obj_id=bbox_id,
+            #     points=points,
+            #     labels=labels,
+            #     box=bbox
+            # )
+            # show_points(points, labels, plt.gca(), marker_size=10)
+            show_box(bbox, ax=plt.gca())
+
+    # labels = np.array([0])#,0,0,0])  # negative prompt for intertwined tree
+    # points = np.array([[1358, 1126]])#,[1203,1234],[1281, 1117],[1328,1182]])#, [1426, 580]])
     # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
     #     inference_state=inference_state,
-    #     frame_idx=ann_frame_idx,
+    #     frame_idx=2,
     #     obj_id=3,
-    #     box=bboxes[3],  # bbox with double tree
-    #     points = np.array([[1358, 1126]]),
-    #     labels = np.array([0]) # negative prompt for intertwined tree
+    #     # box=bboxes[3],  # bbox with double tree
+    #     points=points,
+    #     labels=labels,
+    #     # clear_old_points=False
     # )
-
-    plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
+    # show_points(points, labels, plt.gca(), marker_size=10)
     # plt.figure(figsize=(9, 6))
     # plt.title(f"frame {ann_frame_idx}")
     # plt.imshow(Image.open(os.path.join(input_folder, frame_names[ann_frame_idx])))
-    # plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
+    plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
     # plt.show()
     video_segments = {}
 
@@ -288,9 +442,12 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
 
     elif strategy == "default" or strategy == "reverse":
         # default strategy saves all frames while looping
-        inference_state['asdf'] = 'erstmal nichts'
-        _ = default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy,
+        default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy,
                                       video_segments)
+
+    elif strategy == "adjust_masks":
+        adjust_masks(frame_names, inference_state, input_folder, output_folder, predictor, strategy)
+
     else:
         raise ValueError(f"Invalid strategy: {strategy}")
 
@@ -308,7 +465,7 @@ if __name__ == "__main__":
         bbox_files[0],
         ann_frames[0],
         max_bboxes=12,
-        strategy="default"
+        strategy="adjust_masks"
     )
     # timeseries_sam2(
     #     # '../../montreal_forest_data/nice_cut/tiny',
