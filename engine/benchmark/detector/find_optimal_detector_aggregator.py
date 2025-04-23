@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from geodataset.aggregator import Aggregator
 
-from engine.benchmark.evaluator import CocoEvaluator
+from engine.benchmark.detector.evaluator import CocoEvaluator
 
 
 def eval_single_aggregator(
@@ -14,6 +14,7 @@ def eval_single_aggregator(
         preds_coco_json: str,
         truth_gdf: str,
         tiles_root: str,
+        aoi_gdf: str,
         nms_iou_threshold: float,
         nms_score_threshold: float,
         min_centroid_distance_weight: float,
@@ -47,6 +48,7 @@ def eval_single_aggregator(
             iou_type='bbox',
             preds_gpkg_path=str(aggregator_output_path),
             truth_gpkg_path=truth_gdf,
+            aoi_gpkg_path=aoi_gdf,
             ground_resolution=ground_resolution
         )
 
@@ -124,6 +126,7 @@ def find_optimal_detector_aggregator(
         raster_names: list[str],
         preds_coco_jsons: list[str],
         truths_gdfs: list[str],
+        aois_gdfs: list[str],
         tiles_roots: list[str],
         ground_resolution: float,
         nms_iou_thresholds: list[float],
@@ -132,14 +135,14 @@ def find_optimal_detector_aggregator(
         n_workers: int
 ):
 
-    assert len(raster_names) == len(preds_coco_jsons) == len(truths_gdfs) == len(tiles_roots), \
-        "The number of elements in raster_names, preds_coco_jsons, truths_gdfs, and tiles_roots must be the same."
+    assert len(raster_names) == len(preds_coco_jsons) == len(truths_gdfs) == len(tiles_roots) == len(aois_gdfs), \
+        "The number of elements in raster_names, preds_coco_jsons, truths_gdfs, tiles_roots and aois_gdfs must be the same."
 
     # Create a list to hold all parameter combinations
     tasks = []
     for nms_iou_threshold in nms_iou_thresholds:
         for min_centroid_distance_weight in min_centroid_distance_weights:
-            for raster_name, preds_coco_json, truth_gdf, tiles_root in zip(raster_names, preds_coco_jsons, truths_gdfs, tiles_roots):
+            for raster_name, preds_coco_json, truth_gdf, tiles_root, aoi_gdf in zip(raster_names, preds_coco_jsons, truths_gdfs, tiles_roots, aois_gdfs):
                 tasks.append({
                     "raster_name": raster_name,
                     "nms_iou_threshold": nms_iou_threshold,
@@ -147,7 +150,8 @@ def find_optimal_detector_aggregator(
                     "min_centroid_distance_weight": min_centroid_distance_weight,
                     "preds_coco_json": preds_coco_json,
                     "truth_gdf": truth_gdf,
-                    "tiles_root": tiles_root
+                    "tiles_root": tiles_root,
+                    "aoi_gdf": aoi_gdf
                 })
 
     results_list = []
@@ -163,6 +167,7 @@ def find_optimal_detector_aggregator(
                 preds_coco_json=params["preds_coco_json"],
                 truth_gdf=params["truth_gdf"],
                 tiles_root=params["tiles_root"],
+                aoi_gdf=params["aoi_gdf"],
                 nms_iou_threshold=params["nms_iou_threshold"],
                 nms_score_threshold=min_nms_score_threshold,
                 min_centroid_distance_weight=params["min_centroid_distance_weight"],

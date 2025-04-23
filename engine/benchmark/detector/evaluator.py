@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import geopandas as gpd
 from shapely.affinity import affine_transform
@@ -53,10 +55,22 @@ class CocoEvaluator:
                      iou_type: str,
                      preds_gpkg_path: str,
                      truth_gpkg_path: str,
+                     aoi_gpkg_path: str or None,
                      ground_resolution: float) -> dict:
 
         truth_gdf = gpd.read_file(truth_gpkg_path)
         infer_gdf = gpd.read_file(preds_gpkg_path)
+
+        # Only keep the truth and inference geometries that are inside the AOI
+        if aoi_gpkg_path is not None:
+            aoi_gdf = gpd.read_file(aoi_gpkg_path)
+            truth_gdf = gpd.overlay(truth_gdf, aoi_gdf, how='intersection')
+            infer_gdf = gpd.overlay(infer_gdf, aoi_gdf, how='intersection')
+        else:
+            warnings.warn("AOI GPKG path is None. No AOI filtering will be applied."
+                          " Please make sure the truth gpkg extent matches the prediction one or the metrics will be"
+                          " low if the truth gpkg extent is much larger than the prediction one (i.e if truth gpkg has"
+                          " train, valid and test folds sections, you only want to eval against valid or test areas).")
 
         truth_gdf, infer_gdf = move_gdfs_to_ground_resolution(truth_gdf, infer_gdf, ground_resolution)
 
