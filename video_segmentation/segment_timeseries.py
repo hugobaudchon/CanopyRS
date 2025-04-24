@@ -10,6 +10,7 @@ import rasterio
 import torch
 from PIL import Image
 from sam2.sam2_video_predictor import SAM2VideoPredictor
+from skimage.measure import find_contours
 
 
 # from sam2.sam2.benchmark import out_frame_idx
@@ -19,6 +20,7 @@ def show_box(box, ax):
     x0, y0 = box[0], box[1]
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2))
+    print(f"box added: {box}")
 
 
 def show_mask(mask, ax, obj_id=None, random_color=False):
@@ -32,6 +34,45 @@ def show_mask(mask, ax, obj_id=None, random_color=False):
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
 
+def show_mask_outline(mask, ax, obj_id=None, random_color=False, lw=1):
+    """
+    Draw only the outline of a binary mask on the given Matplotlib Axes.
+
+    Parameters
+    ----------
+    mask : ndarray, shape (H, W)
+        Boolean or {0,1} array where 1/True marks the object.
+    ax : matplotlib.axes.Axes
+        The axes to draw on (must already display the underlying image).
+    obj_id : int or None, optional
+        Which colour index to use from the 'tab10' colormap when
+        random_color is False.
+    random_color : bool, default False
+        If True pick a random RGB colour; otherwise use a repeatable one
+        from 'tab10'.
+    lw : int, default 2
+        Line‑width of the outline in pixels.
+    """
+    # print(mask.shape)
+    # pick colour ------------------------------------------------------------
+    if random_color:
+        rgb = np.random.rand(3)
+    else:
+        cmap = plt.get_cmap("tab10")
+        idx = 0 if obj_id is None else obj_id % cmap.N
+        rgb = cmap(idx)[:3]
+
+    # find mask contours ------------------------------------------------------
+    # level=0.5 traces the 0/1 frontier; results are (n_points, 2) arrays
+    contours = find_contours(mask.squeeze().astype(float), level=0.5)
+
+    # draw each contour -------------------------------------------------------
+    for contour in contours:
+        # find_contours returns (row, col); flip to (x, y)
+        ax.plot(contour[:, 1], contour[:, 0],
+                color=rgb, linewidth=lw, alpha=0.75)
+
+
 
 def show_points(coords, labels, ax, marker_size=200):
     pos_points = coords[labels == 1]
@@ -43,8 +84,10 @@ def show_points(coords, labels, ax, marker_size=200):
 
 
 def gis_bbox_to_pixel(bbox, src):
+    print(bbox)
     max_row, min_col = src.index(bbox[0], bbox[1])
     min_row, max_col = src.index(bbox[2], bbox[3])
+    # print(f"bbox {bbox} to {min_col, min_row, max_col, max_row}")
     return min_col, min_row, max_col, max_row
 
 
@@ -63,11 +106,11 @@ def save_all_frames(frame_names, input_folder, output_folder, strategy, video_se
         plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
         for out_obj_id, out_mask in video_segments[out_frame_idx].items():
             if strategy == "feed_boxes":
-                show_mask(out_mask["mask"], plt.gca(), obj_id=out_obj_id)
+                show_mask_outline(out_mask["mask"], plt.gca(), obj_id=out_obj_id)
                 if out_mask["bbox"]:
                     show_box(out_mask["bbox"], plt.gca())
             else:
-                show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+                show_mask_outline(out_mask, plt.gca(), obj_id=out_obj_id)
         plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
                     dpi=300)
 
@@ -147,7 +190,6 @@ def feed_segments(frame_names, inference_state, predictor, video_segments):
 
 
 def default_SAM2(frame_names, inference_state, input_folder, output_folder, predictor, strategy, video_segments, start_frame=0, restarted=False):
-    new_points_added = False
     # for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state,
     #                                                                                 reverse=(strategy == "reverse"),
     #                                                                                 start_frame_idx=start_frame,
@@ -170,7 +212,7 @@ def default_SAM2(frame_names, inference_state, input_folder, output_folder, pred
     #                       }
     #
     #     for out_obj_id, out_mask in video_segments.items():
-    #         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+    #         show_mask_outline(out_mask, plt.gca(), obj_id=out_obj_id)
     #     plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
     #                 dpi=300)
     #     # gc.collect()
@@ -210,7 +252,7 @@ def default_SAM2(frame_names, inference_state, input_folder, output_folder, pred
                           }
 
         for out_obj_id, out_mask in video_segments.items():
-            show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+            show_mask_outline(out_mask, plt.gca(), obj_id=out_obj_id)
         plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
                     dpi=300)
         # gc.collect()
@@ -235,7 +277,7 @@ def default_SAM2(frame_names, inference_state, input_folder, output_folder, pred
     #                       }
     #
     #     for out_obj_id, out_mask in video_segments.items():
-    #         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+    #         show_mask_outline(out_mask, plt.gca(), obj_id=out_obj_id)
     #     show_points(points, labels, plt.gca(), marker_size=10)
     #     plt.title(f"frame 2X")
     #     plt.savefig(os.path.join(output_folder, f"frame_{2:04d}X-{strategy}.png"), bbox_inches="tight",
@@ -270,7 +312,7 @@ def adjust_masks(frame_names, inference_state, input_folder, output_folder, pred
                           }
 
         for out_obj_id, out_mask in video_segments.items():
-            show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+            show_mask_outline(out_mask, plt.gca(), obj_id=out_obj_id)
         plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}.png"), bbox_inches="tight",
                     dpi=300)
         plt.close("all")
@@ -303,7 +345,7 @@ def adjust_masks(frame_names, inference_state, input_folder, output_folder, pred
             plt.imshow(Image.open(os.path.join(input_folder, frame_names[out_frame_idx])))
 
             for out_obj_id, out_mask in video_segments.items():
-                show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+                show_mask_outline(out_mask, plt.gca(), obj_id=out_obj_id)
             plt.savefig(os.path.join(output_folder, f"frame_{out_frame_idx:04d}-{strategy}_adjusted.png"), bbox_inches="tight",
                         dpi=300)
             plt.close("all")
@@ -374,7 +416,8 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
         #     box=bbox  # bbox values
         # )
         # show_box(bbox, plt.gca())
-        if bbox_id != 3:
+        # if bbox_id != 3:
+        if False:
             continue
 
             # points = np.array([[(bbox[0] + bbox[2])//2, (bbox[1]+bbox[3])//2]])
@@ -385,6 +428,7 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
             #     obj_id=bbox_id,
             #     box=bbox  # bbox values
             # )
+
         else:
             # labels = np.array([1])
             # points = np.array([[(bbox[0] + bbox[2])//2, (bbox[1]+bbox[3])//2]])
@@ -412,7 +456,16 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
             # )
             # show_points(points, labels, plt.gca(), marker_size=10)
             show_box(bbox, ax=plt.gca())
-
+    bbox_dead = np.array([1187,1953, 1424, 2200])
+    _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+        inference_state=inference_state,
+        frame_idx=ann_frame_idx,
+        obj_id=13,
+        # points=points,
+        # labels = labels,
+        box=bbox_dead
+    )
+    show_box(bbox_dead, ax=plt.gca())
     # labels = np.array([0])#,0,0,0])  # negative prompt for intertwined tree
     # points = np.array([[1358, 1126]])#,[1203,1234],[1281, 1117],[1328,1182]])#, [1426, 580]])
     # _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
@@ -428,7 +481,7 @@ def timeseries_sam2(input_folder: str, output_folder: str, bbox_file: str, ann_f
     # plt.figure(figsize=(9, 6))
     # plt.title(f"frame {ann_frame_idx}")
     # plt.imshow(Image.open(os.path.join(input_folder, frame_names[ann_frame_idx])))
-    plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}_bboxes.png"), bbox_inches="tight", dpi=300)
+    plt.savefig(os.path.join(output_folder, f"frame_{ann_frame_idx:04d}-bboxes.png"), bbox_inches="tight", dpi=300)
     # plt.show()
     video_segments = {}
 
@@ -456,16 +509,19 @@ if __name__ == "__main__":
     bbox_files = [
         '../../montreal_forest_data/nice_cut/05_28_0_gr0p05_infer.gpkg',
         '../../montreal_forest_data/nice_cut/1007_0_gr0p05_infer.gpkg',
-        '/run/media/beerend/LALIB_SSD_2/berend/0046_0_gr0p05_infer.gpkg'
+        '/run/media/beerend/LALIB_SSD_2/berend/0046_0_gr0p05_infer.gpkg',
+        '../../montreal_forest_data/2024_deadtree_bboxes.gpkg'
     ]
     ann_frames = [0, 5]
     timeseries_sam2(
-        '../../montreal_forest_data/nice_cut/morph/',
-        '../../montreal_forest_data/nice_cut/morph_segmented/',
-        bbox_files[0],
+        # '../../montreal_forest_data/nice_cut/morph/',
+        # '../../montreal_forest_data/nice_cut/morph_segmented/',
+        '../../montreal_forest_data/deadtrees1_warped/2024_morph/',
+        '../../montreal_forest_data/deadtrees1_warped/2024_morph_segmented/',
+        bbox_files[3],
         ann_frames[0],
-        max_bboxes=12,
-        strategy="adjust_masks"
+        max_bboxes=5,
+        strategy = 'default'
     )
     # timeseries_sam2(
     #     # '../../montreal_forest_data/nice_cut/tiny',
