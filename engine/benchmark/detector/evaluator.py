@@ -64,6 +64,12 @@ class CocoEvaluator:
         # Only keep the truth and inference geometries that are inside the AOI
         if aoi_gpkg_path is not None:
             aoi_gdf = gpd.read_file(aoi_gpkg_path)
+            common_crs = aoi_gdf.crs
+            truth_gdf = truth_gdf.to_crs(common_crs)
+            infer_gdf = infer_gdf.to_crs(common_crs)
+            aoi_union = aoi_gdf.geometry.unary_union
+            truth_gdf = filter_min_overlap(truth_gdf, aoi_union, min_frac=0.4)
+            infer_gdf = filter_min_overlap(infer_gdf, aoi_union, min_frac=0.4)
             truth_gdf = gpd.overlay(truth_gdf, aoi_gdf, how='intersection')
             infer_gdf = gpd.overlay(infer_gdf, aoi_gdf, how='intersection')
         else:
@@ -280,6 +286,13 @@ def gdf_to_coco_single_image(gdf: gpd.GeoDataFrame, width: int, height: int, is_
     return coco
 
 
+def filter_min_overlap(gdf, aoi_geom, min_frac=0.4):
+    orig_areas = gdf.geometry.area
+    inter_areas = gdf.geometry.apply(lambda geom: geom.intersection(aoi_geom).area)
+    mask = (inter_areas / orig_areas) >= min_frac
+    return gdf[mask].copy()
+
+
 class Summarize2COCOEval(COCOeval):
     def summarize_custom(self):
         max_dets_index = len(self.params.maxDets) - 1
@@ -377,3 +390,4 @@ class Summarize2COCOEval(COCOeval):
         ]
         metrics_dict = {name: float(value) for name, value in zip(metric_names, stats)}
         return metrics_dict
+    

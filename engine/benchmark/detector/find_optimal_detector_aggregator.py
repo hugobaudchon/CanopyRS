@@ -17,11 +17,10 @@ def eval_single_aggregator(
         aoi_gdf: str,
         nms_iou_threshold: float,
         nms_score_threshold: float,
-        min_centroid_distance_weight: float,
         ground_resolution: float
 ):
     try:
-        output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_mincentroid_{str(min_centroid_distance_weight).replace('.', 'p')}"
+        output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_nmsscorethresh_{str(nms_score_threshold).replace('.', 'p')}"
         Path(output_path).mkdir(parents=True, exist_ok=True)
         aggregator_output_path = output_path / 'aggregator_output.gpkg'
 
@@ -33,7 +32,7 @@ def eval_single_aggregator(
             scores_names=['detector_score'],
             other_attributes_names=None,
             scores_weights=[1.0],
-            min_centroid_distance_weight=min_centroid_distance_weight,
+            min_centroid_distance_weight=1.0,
             score_threshold=nms_score_threshold,
             nms_threshold=nms_iou_threshold,
             nms_algorithm='iou',
@@ -60,7 +59,7 @@ def eval_single_aggregator(
 
 
 def average_metrics_by_raster(results_df: pd.DataFrame):
-    grouping_cols = ['nms_iou_threshold', 'nms_score_threshold', 'min_centroid_distance_weight']
+    grouping_cols = ['nms_iou_threshold', 'nms_score_threshold']
     # Columns that we don't want to aggregate (identification columns)
     ignore_cols = set(grouping_cols + ['raster_name', 'preds_coco_json', 'truth_gdf', 'tiles_root'])
 
@@ -130,8 +129,7 @@ def find_optimal_detector_aggregator(
         tiles_roots: list[str],
         ground_resolution: float,
         nms_iou_thresholds: list[float],
-        min_centroid_distance_weights: list[float],
-        min_nms_score_threshold: float,
+        nms_score_thresholds: list[float],
         n_workers: int
 ):
 
@@ -141,13 +139,12 @@ def find_optimal_detector_aggregator(
     # Create a list to hold all parameter combinations
     tasks = []
     for nms_iou_threshold in nms_iou_thresholds:
-        for min_centroid_distance_weight in min_centroid_distance_weights:
+        for nms_score_threshold in nms_score_thresholds:
             for raster_name, preds_coco_json, truth_gdf, tiles_root, aoi_gdf in zip(raster_names, preds_coco_jsons, truths_gdfs, tiles_roots, aois_gdfs):
                 tasks.append({
                     "raster_name": raster_name,
                     "nms_iou_threshold": nms_iou_threshold,
-                    "nms_score_threshold": min_nms_score_threshold,
-                    "min_centroid_distance_weight": min_centroid_distance_weight,
+                    "nms_score_threshold": nms_score_threshold,
                     "preds_coco_json": preds_coco_json,
                     "truth_gdf": truth_gdf,
                     "tiles_root": tiles_root,
@@ -169,8 +166,7 @@ def find_optimal_detector_aggregator(
                 tiles_root=params["tiles_root"],
                 aoi_gdf=params["aoi_gdf"],
                 nms_iou_threshold=params["nms_iou_threshold"],
-                nms_score_threshold=min_nms_score_threshold,
-                min_centroid_distance_weight=params["min_centroid_distance_weight"],
+                nms_score_threshold=params["nms_score_threshold"],
                 ground_resolution=ground_resolution
             )
             future_to_params[future] = params
