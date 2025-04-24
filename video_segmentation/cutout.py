@@ -102,14 +102,14 @@ def old_functionality(from_large_and_warp:bool=True):
 
 
 if __name__=="__main__":
-    input_dir = '../../montreal_forest_data/nice_cut/misalign/'
-    output_dir = '../../montreal_forest_data/nice_cut/misalign_cut/'
-    warped_dir = '../../montreal_forest_data/nice_cut/misalign_warped/'
-    aoi_path = '../../montreal_forest_data/nice_cut/AOI_nice_cut_tiny.geojson'
-    # input_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1/'
-    # output_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_cut/'
-    # warped_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_warped/'
-    # aoi_path = '../../../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson'
+    # input_dir = '../../montreal_forest_data/nice_cut/misalign/'
+    # output_dir = '../../montreal_forest_data/nice_cut/misalign_cut/'
+    # warped_dir = '../../montreal_forest_data/nice_cut/misalign_warped/'
+    # aoi_path = '../../montreal_forest_data/nice_cut/AOI_nice_cut_tiny.geojson'
+    input_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1/'
+    output_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_cut/'
+    warped_dir = '/run/media/beerend/LALIB_SSD_2/berend/deadtrees1_warped/'
+    aoi_path = '../../../montreal_forest_data/nice_cut/AOI_deadtrees2.geojson'
     aoi_gdf = gpd.read_file(aoi_path)
     input_paths = [f for f in os.listdir(input_dir) if f.endswith('.tif')]
     input_paths.sort()

@@ -19,7 +19,7 @@ def morph(source, goal, destination):
     #morphing in 100 steps
     for i in range(34, 100, 33):
         percentage = float(i / 100)
-        print(percentage)
+        print(f"{percentage} of {image_source_name}")
         imgAdd = cv2.addWeighted(image_source, 1 - percentage, image_goal, percentage, 0)
         # cv2.imshow("Morphed", imgAdd)
         # cv2.waitKey(100)
@@ -35,8 +35,8 @@ if __name__ == "__main__":
     # destination = "../../montreal_forest_data/nice_cut/morph/"
     # morph(source, goal, destination)
 
-    input_folder = "../../montreal_forest_data/nice_cut/realigned/"
-    destination_folder = "../../montreal_forest_data/nice_cut/realigned_morph/"
+    input_folder = "../../montreal_forest_data/deadtrees1_warped/2024/"
+    destination_folder = "../../montreal_forest_data/deadtrees1_warped/2024_morph/"
 
     # input_folder = "../../montreal_forest_data/deadtrees1_warped/2022"
     # destination_folder = "../../montreal_forest_data/deadtrees1_morph/2022"
@@ -44,5 +44,5 @@ if __name__ == "__main__":
     input_paths.sort()
     for i in range(len(input_paths)-1):
         morph(input_folder + input_paths[i], input_folder + input_paths[i+1], destination_folder)
-    shutil.copy(input_folder + input_paths[0], destination_folder + input_paths[0].replace('.tif', '00.tif'))
-    shutil.copy(input_folder + input_paths[-1], destination_folder + input_paths[-1].replace('.tif', '00.tif'))
+    shutil.copy2(input_folder + input_paths[0], destination_folder + input_paths[0].replace('.tif', '00.tif'))
+    shutil.copy2(input_folder + input_paths[-1], destination_folder + input_paths[-1].replace('.tif', '00.tif'))
