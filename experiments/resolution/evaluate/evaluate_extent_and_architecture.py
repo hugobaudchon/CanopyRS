@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 from geodataset.aoi import AOIFromPackageConfig
-from geodataset.utils import CocoNameConvention, validate_and_convert_product_name, strip_all_extensions_and_path
+from geodataset.utils import CocoNameConvention
 
-from dataset.detection.tilerize import tilerize_with_overlap
-from engine.benchmark.detector.evaluator import CocoEvaluator
+from data.detection.tilerize import tilerize_with_overlap
+from engine.benchmark.detector.detector.evaluator import CocoEvaluator
 from engine.config_parsers import DetectorConfig, InferIOConfig, PipelineConfig, AggregatorConfig
 from engine.pipeline import Pipeline
 from experiments.resolution.evaluate.get_wandb import extract_tilerized_image_size_regex, wandb_runs_to_dataframe, extract_ground_resolution_regex

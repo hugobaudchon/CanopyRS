@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List, Set
@@ -218,4 +219,45 @@ def init_spawn_method():
     except RuntimeError:
         # The start method was already set
         pass
+
+def merge_coco_jsons(json_files: list[str or Path], output_file: str or Path):
+    merged = {
+        "images": [],
+        "annotations": [],
+        "categories": None  # assuming all files have the same categories
+    }
+
+    new_image_id = 0
+    new_annotation_id = 0
+
+    for json_file in json_files:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+
+        # For the first file, grab the categories
+        if merged["categories"] is None and "categories" in data:
+            merged["categories"] = data["categories"]
+
+        # Create a mapping from old image ids to new image ids
+        id_mapping = {}
+        for image in data["images"]:
+            old_id = image["id"]
+            image["id"] = new_image_id
+            id_mapping[old_id] = new_image_id
+            merged["images"].append(image)
+            new_image_id += 1
+
+        # Update annotations: assign new annotation ids and update image_id
+        for ann in data["annotations"]:
+            ann["id"] = new_annotation_id
+            if ann["image_id"] in id_mapping:
+                ann["image_id"] = id_mapping[ann["image_id"]]
+            else:
+                raise ValueError(f"Annotation references missing image id: {ann['image_id']}")
+            merged["annotations"].append(ann)
+            new_annotation_id += 1
+
+    # Write the merged result to the output file
+    with open(output_file, "w") as f:
+        json.dump(merged, f, indent=2)
 

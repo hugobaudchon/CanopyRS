@@ -61,7 +61,7 @@ class CocoEvaluator:
         truth_gdf = gpd.read_file(truth_gpkg_path)
         infer_gdf = gpd.read_file(preds_gpkg_path)
 
-        # Only keep the truth and inference geometries that are inside the AOI
+        # Only keep the truth and inference geometries that are inside the AOI (40% overlap minimum)
         if aoi_gpkg_path is not None:
             aoi_gdf = gpd.read_file(aoi_gpkg_path)
             common_crs = aoi_gdf.crs

@@ -20,6 +20,7 @@ class DetectorConfig(BaseConfig):
     data_root_path: str = None   # Parent folder of datasets
     train_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
     valid_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
+    test_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
     train_output_path: str = None
 
     # Training Params

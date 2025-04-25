@@ -533,8 +533,6 @@ class AugmentationAdder:
             )
             augs.append(RandomChoiceAugmentation(resize_shortest_edge, deterministic_resize, prob=crop_prob))
 
-        print(augs)
-
         return augs
 
     @staticmethod

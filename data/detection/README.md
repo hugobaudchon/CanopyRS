@@ -2,9 +2,8 @@
 
 This dataset contains code to download and tilerize detection datasets. Here is an exemple:
 
-
 ```python
-from dataset.detection.public_datasets import BCI50haDataset, ReforesTreeDataset, NeonTreeEvaluationDataset, OamTcdDataset
+from data.detection.raw_datasets import BCI50haDataset, ReforesTreeDataset, NeonTreeEvaluationDataset, OamTcdDataset
 
 raw_output = '/network/scratch/h/hugo.baudchon/data/raw'
 tilerized_output = f'/network/scratch/h/hugo.baudchon/data/tilerized'

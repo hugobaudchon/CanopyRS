@@ -12,7 +12,7 @@ import geopandas as gpd
 
 from geodataset.utils import CocoNameConvention, COCOGenerator, create_coco_folds
 
-from dataset.detection.public_datasets.base_dataset import BasePublicZipDataset
+from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
 from dataset.detection.tilerize import tilerize_no_overlap, tilerize_with_overlap
 
 
