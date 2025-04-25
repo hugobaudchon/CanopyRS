@@ -195,8 +195,8 @@ class DetectorBenchmarker:
                 truth_coco_path=str(merged_truths_coco_path),
                 max_dets=[1, 10, 100, dataset.tile_level_eval_maxDets]
             )
-            dataset_tile_level_metrics['location'] = 'average_over_rasters'
-            dataset_tile_level_metrics['product_name'] = dataset_name
+            dataset_tile_level_metrics['location'] = dataset_name
+            dataset_tile_level_metrics['product_name'] = "average_over_rasters"
             all_tile_level_metrics.append(dataset_tile_level_metrics)
 
             # Compute weighted average of raster-level metrics for the dataset, weighted by the number of num_truths
@@ -209,14 +209,14 @@ class DetectorBenchmarker:
                 weights = merged_df['num_truths']
                 total_truths = weights.sum()
 
-                weighted_avg_metrics: dict[str, float] = {}
+                weighted_avg_metrics = {}
                 for metric in metrics_to_average:
                     weighted_avg_metrics[metric] = (merged_df[metric] * weights).sum() / total_truths
 
                 # carry over total count and labeling
                 weighted_avg_metrics['num_truths'] = int(total_truths)
-                weighted_avg_metrics['location'] = 'average_over_rasters'
-                weighted_avg_metrics['product_name'] = dataset_name
+                weighted_avg_metrics['location'] = dataset_name
+                weighted_avg_metrics['product_name'] = "average_over_rasters"
 
                 all_raster_level_metrics.append(weighted_avg_metrics)
 
