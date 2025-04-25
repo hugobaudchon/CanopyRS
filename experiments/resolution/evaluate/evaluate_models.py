@@ -9,7 +9,7 @@ def launch_evaluate(wandb_project, extent, architecture):
     print(f"Extent: {extent}, Architecture: {architecture}")
 
     root_models_path = f"/home/mila/h/hugo.baudchon/scratch/training/detector_experience_resolution_optimalHPs_{extent}_FIXED"
-    output_folder = f"/home/mila/h/hugo.baudchon/scratch/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new/{architecture.split('.')[0].split('/')[-1]}"
+    output_folder = f"/home/mila/h/hugo.baudchon/scratch/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new6/{architecture.split('.')[0].split('/')[-1]}"
     Path(output_folder).mkdir(parents=True, exist_ok=False)
 
     partition_arg = '--partition=long'

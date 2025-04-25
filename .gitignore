@@ -4,7 +4,11 @@ pretrained_models/
 jobs/
 experiments/dataset_statistics/*.png
 experiments/resolution/*/*.yaml
+experiments/multi_resolution/*/*.yaml
 output/*
+*.png
+*.txt
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

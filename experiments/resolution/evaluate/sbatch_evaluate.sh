@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --output=./jobs/job_output_%j.txt        # Standard output (%j expands to job ID)
+#SBATCH --output=./jobs_eval/job_output_%j.txt        # Standard output (%j expands to job ID)
 #SBATCH --time=48:00:00                   # Time limit (hh:mm:ss) – adjust as needed
 #SBATCH --nodes=1                         # Request one node
 #SBATCH --ntasks=1                        # Request one task (process)
-#SBATCH --cpus-per-task=12                # Number of CPU cores per task
+#SBATCH --cpus-per-task=10                # Number of CPU cores per task
 #SBATCH --mem=80G                        # Total memory per node
 #SBATCH --gres=gpu:l40s:1                 # Request 4 A100 GPUs         #a100l for 80gb
 

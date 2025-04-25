@@ -7,11 +7,11 @@ from geodataset.aoi import AOIFromPackageConfig
 from geodataset.utils import CocoNameConvention, validate_and_convert_product_name, strip_all_extensions_and_path
 
 from dataset.detection.tilerize import tilerize_with_overlap
-from engine.benchmark.evaluator import CocoEvaluator
+from engine.benchmark.detector.evaluator import CocoEvaluator
 from engine.config_parsers import DetectorConfig, InferIOConfig, PipelineConfig, AggregatorConfig
 from engine.pipeline import Pipeline
 from experiments.resolution.evaluate.get_wandb import extract_tilerized_image_size_regex, wandb_runs_to_dataframe, extract_ground_resolution_regex
-from tools.find_optimal_detector_aggregator import find_optimal_detector_aggregator
+from engine.benchmark.detector.find_optimal_detector_aggregator import find_optimal_detector_aggregator
 
 inputs = {
     'valid': {              # TODO move these as constants in the dataset/detection Dataset classes
@@ -182,6 +182,7 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
 
                     tilerized_paths[fold][(tile_size, ground_resolution)][product_name] = {
                         'labels_gpkg_path': labels_path,
+                        'aoi_gpkg_path': aoi_path,
                         'labels_coco_path': coco_path,
                         'tiles_path': tiles_path
                     }
@@ -212,6 +213,7 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
     best_model_coco_preds = []
     best_model_gpkg_truths = []
     best_model_tiles_paths = []
+    best_model_gpkg_aois = []
     for product_name, tilerized_product_paths in tilerized_paths['valid'][(best_model['tilerizer_tile_size'], best_model['ground_resolution'])].items():
         tiles_path = tilerized_product_paths['tiles_path']
 
@@ -236,6 +238,7 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
         best_model_gpkg_truths.append(tilerized_product_paths['labels_gpkg_path'])
         best_model_tiles_paths.append(tiles_path)
         best_model_raster_names.append(product_name)
+        best_model_gpkg_aois.append(tilerized_product_paths['aoi_gpkg_path'])
 
     # Find the optimal detector aggregator
     aggregators_results = find_optimal_detector_aggregator(
@@ -244,30 +247,31 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
         preds_coco_jsons=best_model_coco_preds,
         truths_gdfs=best_model_gpkg_truths,
         tiles_roots=best_model_tiles_paths,
+        aois_gdfs=best_model_gpkg_aois,
         ground_resolution=0.045,            # Evaluating all models on the same resolution, 0.045m/pixel.
-        nms_iou_thresholds=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
-        min_centroid_distance_weights=[1.0],    # not using this in the end, so setting to 1.0
-        min_nms_score_threshold=0.2,
+        nms_iou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
+        nms_score_thresholds=[0.2], #[0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
         n_workers=4
     )
 
     aggregators_results.to_csv(f"{output_folder}/aggregator_search_results_valid_fold.csv")
     aggregators_results.to_csv(f"{output_folder}/best_model/aggregator_search_results_valid_fold.csv")
 
-    # Find the best aggregator based on a composite metric 'F1' (but it is not really F1 as mAP and mAR are not direct analogs to precision and recall)
+    # Find the best aggregator based on a composite metric 'AP' or 'F1'
     aggregators_agg = aggregators_results[aggregators_results['raster_name'] == 'average_over_rasters']
-    best_aggregator = aggregators_agg.sort_values('F1', ascending=False).iloc[0]
+    best_aggregator = aggregators_agg.sort_values('AP', ascending=False).iloc[0]                            # TODO I currently have F1 to make sure model doesnt gets super high AP by using super high score threshold and doesnt get super high AR by setting score threshold very low
     best_aggregator_config = AggregatorConfig(
         nms_algorithm='iou',
         nms_threshold=best_aggregator['nms_iou_threshold'],
         score_threshold=best_aggregator['nms_score_threshold'],
-        min_centroid_distance_weight=best_aggregator['min_centroid_distance_weight']
+        min_centroid_distance_weight=1.0
     )
     print("Best aggregator found: ", str(best_aggregator_config))
 
     # Now, evaluate all the models on the TEST (!!!) fold, using the best aggregator
     all_tile_level_metrics = []
     all_raster_level_metrics = []
+    max_det = 400 if extent == '80m' else 100
     for idx, model_row in wandb_df.iterrows():
         # Create a DetectorConfig for the current model.
         detector_config = DetectorConfig(**model_row.to_dict())
@@ -304,13 +308,14 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
                 iou_type='bbox',
                 preds_coco_path=detector_output,
                 truth_coco_path=tilerized_product_paths['labels_coco_path'],
-                max_dets=[1, 10, 100]
+                max_dets=[1, 10, 100, max_det]
             )
 
             raster_level_metrics = evaluator.raster_level(
                 iou_type='bbox',
                 preds_gpkg_path=aggregator_output,
                 truth_gpkg_path=tilerized_product_paths['labels_gpkg_path'],
+                aoi_gpkg_path=tilerized_product_paths['aoi_gpkg_path'],
                 ground_resolution=0.045            # Evaluating all models on the same resolution, 0.045m/pixel.
             )
 
@@ -350,7 +355,7 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
             iou_type='bbox',
             preds_coco_path=str(merged_tile_level_preds_path),
             truth_coco_path=str(merged_tile_level_truth_path),
-            max_dets=[1, 10, 100]            
+            max_dets=[1, 10, 100, max_det]         
         )
 
         all_tile_level_metrics.append(

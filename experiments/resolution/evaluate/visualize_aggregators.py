@@ -28,13 +28,13 @@ if __name__ == "__main__":
     
     # Load CSVs
     faster_rcnn_results_aggregator = pd.read_csv(
-        f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/faster_rcnn_R_50_FPN_3x/aggregator_search_results_valid_fold.csv'
+        f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new/faster_rcnn_R_50_FPN_3x/aggregator_search_results_valid_fold.csv'
     )
     dino_resnet_results_aggregator = pd.read_csv(
-        f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/dino_r50_4scale_24ep/aggregator_search_results_valid_fold.csv'
+        f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new/dino_r50_4scale_24ep/aggregator_search_results_valid_fold.csv'
     )
     dino_swin_results_aggregator = pd.read_csv(
-        f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/dino_swin_large_384_5scale_36ep/aggregator_search_results_valid_fold.csv'
+        f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new/dino_swin_large_384_5scale_36ep/aggregator_search_results_valid_fold.csv'
     )
     
     # Optionally, print the columns to verify the structure

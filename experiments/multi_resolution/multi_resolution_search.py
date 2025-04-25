@@ -18,7 +18,7 @@ model_architecture_list = [
     "dinoswin"
 ]
 seeds_list = [
-    # 1,
+    1,
     33,
     42
 ]
@@ -34,7 +34,7 @@ max_epochs_list = [
     500,
     # 1000
 ]
-scheduler_type = "WarmupCosineLR"  # or "WarmupMultiStepLR"
+scheduler_type = "WarmupCosineLR"  # "WarmupCosineLR" or "WarmupMultiStepLR"
 lrs = [
     # fasterrcnn
     # 1e-3,
@@ -109,7 +109,7 @@ dataset_config = {
             # "tilerized_888_0p5_0p045_None/brazil_zf2",
         ],
         "augmentation_image_size": [1024, 1777], #[720, 1955],                 # resizing range for training (random or deterministic with p_crop prob) and for test (just a deterministic [min,max] resize if image is too small or too large)
-        "augmentation_train_crop_size_range": [666, 2222] #[720, 1955]  #[666, 2222]     # cropping range for training
+        "augmentation_train_crop_size_range": [666, 2666] #[666, 2222] #[720, 1955]  #[666, 2222]     # cropping range for training
 }
 
 

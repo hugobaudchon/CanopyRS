@@ -24,17 +24,17 @@ def get_variant_color(base_color, total, index, range_l=0.15, range_s=0.5):
 
 if __name__ == "__main__":
     # Set the extent and the raster metric to display ("AP", "AR", or "F1")
-    extent = '80m'
-    raster_metric = "AR"  # Change to "AR" or "F1" as needed
+    extent = '40m'
+    raster_metric = "F1"  # Change to "AR" or "F1" as needed
     root = '/network/scratch/h/hugo.baudchon'
     
     # Load CSVs
-    faster_rcnn_results_tile = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/faster_rcnn_R_50_FPN_3x/test_tile_level_metrics.csv')
-    faster_rcnn_results_raster = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/faster_rcnn_R_50_FPN_3x/test_raster_level_metrics.csv')
-    dino_resnet_results_tile = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/dino_r50_4scale_24ep/test_tile_level_metrics.csv')
-    dino_resnet_results_raster = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/dino_r50_4scale_24ep/test_raster_level_metrics.csv')
-    dino_swin_results_tile = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/dino_swin_large_384_5scale_36ep/test_tile_level_metrics.csv')
-    dino_swin_results_raster = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED/dino_swin_large_384_5scale_36ep/test_raster_level_metrics.csv')
+    faster_rcnn_results_tile = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new5/faster_rcnn_R_50_FPN_3x/test_tile_level_metrics.csv')
+    faster_rcnn_results_raster = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new5/faster_rcnn_R_50_FPN_3x/test_raster_level_metrics.csv')
+    dino_resnet_results_tile = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new5/dino_r50_4scale_24ep/test_tile_level_metrics.csv')
+    dino_resnet_results_raster = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new5/dino_r50_4scale_24ep/test_raster_level_metrics.csv')
+    dino_swin_results_tile = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new5/dino_swin_large_384_5scale_36ep/test_tile_level_metrics.csv')
+    dino_swin_results_raster = pd.read_csv(f'{root}/eval/detector_experience_resolution_optimalHPs_{extent}_FIXED_new5/dino_swin_large_384_5scale_36ep/test_raster_level_metrics.csv')
     
     # Define the base colors for each architecture.
     base_colors = {
@@ -92,6 +92,53 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.savefig(f"tile_level_map_{extent}.png")
     plt.close()
+
+    # ----------------------------
+    # Plot Tile Level AR Graph
+    # ----------------------------
+    plt.figure(figsize=(10, 6))
+
+    # Re-order the dictionary to show dinoswin first, then dino_resnet, and finally faster_rcnn.
+    for arch, df in tile_dfs.items():
+        df_tile = df[df['product_name'] == 'all']
+        # compute mean and std of AR instead of AP
+        grouped = df_tile.groupby(['augmentation_image_size', 'ground_resolution']).agg(
+            mean_AR=('AR', 'mean'),
+            std_AR=('AR', 'std')
+        ).reset_index()
+
+        unique_ground_res = sorted(grouped['ground_resolution'].unique())
+        num_groups = len(unique_ground_res)
+
+        for i, gr in enumerate(unique_ground_res):
+            df_grp = (grouped[grouped['ground_resolution'] == gr]
+                      .sort_values('augmentation_image_size'))
+            color_variant = get_variant_color(base_colors[arch], num_groups, i)
+            marker = markers[i % len(markers)]
+            label = f"{arch} @ {gr}"
+            plt.errorbar(
+                df_grp['augmentation_image_size'],
+                df_grp['mean_AR'],
+                yerr=df_grp['std_AR'],
+                color=color_variant,
+                linestyle=linestyles[i % len(linestyles)],
+                marker=marker,
+                label=label
+            )
+
+    plt.xlabel("image size")
+    plt.ylabel("mAR")
+    plt.title(f"Tile Level mAR vs Image Size ({tile_extent})")
+    plt.legend(
+        loc='center left',
+        bbox_to_anchor=(1, 0.5),
+        title="Architecture @ Ground Resolution",
+        framealpha=1
+    )
+    plt.tight_layout()
+    plt.savefig(f"tile_level_mar_{extent}.png")
+    plt.close()
+
     
     # ----------------------------
     # Plot Raster Level Graph with Error Bars
