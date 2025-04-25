@@ -9,7 +9,7 @@ from geodataset.utils import create_coco_folds
 from rasterio.transform import xy
 from shapely.geometry.geo import box
 
-from dataset.detection.public_datasets.base_dataset import BasePublicZipDataset
+from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
 from dataset.detection.tilerize import combine_gdfs, tilerize_no_overlap, tilerize_with_overlap
 
 

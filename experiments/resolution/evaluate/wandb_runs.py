@@ -2,8 +2,8 @@ import re
 
 import wandb
 
-from engine.benchmark.benchmark import DetectorBenchmarker
-from engine.config_parsers import DetectorConfig, PipelineConfig, TilerizerConfig, AggregatorConfig
+from engine.benchmark.detector.benchmark import DetectorBenchmarker
+from engine.config_parsers import DetectorConfig, AggregatorConfig
 
 
 def get_wandb_runs(wandb_project: str):

@@ -11,7 +11,7 @@ from geodataset.utils import CocoNameConvention, create_coco_folds
 from pycocotools import mask as maskUtils
 from tqdm import tqdm
 
-from dataset.detection.public_datasets.base_dataset import BasePublicZipDataset
+from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
 
 
 class OamTcdDataset(BasePublicZipDataset):

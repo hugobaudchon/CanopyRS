@@ -6,7 +6,7 @@ import geopandas as gpd
 from geodataset.aoi import AOIFromPackageConfig
 from geodataset.utils import create_coco_folds
 
-from dataset.detection.public_datasets.base_dataset import BasePublicZipDataset
+from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
 from dataset.detection.tilerize import tilerize_no_overlap, combine_gdfs, tilerize_with_overlap
 
 
