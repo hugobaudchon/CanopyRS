@@ -104,7 +104,7 @@ class DetectorBenchmarker:
             tiles_roots=tiles_roots,
             ground_resolution=eval_at_ground_resolution,
             nms_iou_thresholds=nms_iou_thresholds,
-            nms_score_thresholds=[0.2],
+            nms_score_thresholds=[0.05],
             n_workers=n_workers
         )
 
@@ -132,9 +132,9 @@ class DetectorBenchmarker:
         datasets = self.get_preprocessed_datasets(dataset_names)
 
         if aggregator_config:
-            if aggregator_config.score_threshold != 0.2:
-                aggregator_config.score_threshold = 0.2
-                print(f"Warning: Aggregator score threshold set to 0.2 for evaluation. Was {aggregator_config.score_threshold}.")
+            if aggregator_config.score_threshold != 0.05:
+                aggregator_config.score_threshold = 0.05
+                print(f"Warning: Aggregator score threshold set to 0.05 for evaluation. Was {aggregator_config.score_threshold}.")
 
         evaluator = CocoEvaluator()
 
