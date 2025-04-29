@@ -32,11 +32,13 @@ class BasePreprocessedDataset(ABC):
     products_per_location: dict[str, list[str]] = None
     raster_level_eval_inputs: dict[str, dict[str, dict[str, str]]] = None
 
-    def download_and_extract(self, root_output_path: str, folds: list[str], hf_root='CanopyRS'):
+    def download_and_extract(self, root_output_path: str, folds: list[str], hf_root='CanopyRSAdmin'):
         # Download the dataset from Hugging Face, and extract images and annotations from the parquet files
         HFDatasetTools.download_and_extract_huggingface_dataset(
             hf_dataset_name=f'{hf_root}/{self.dataset_name}',
-            root_output_path=root_output_path
+            root_output_path=root_output_path,
+            cleanup_hf_cache=True,
+            cleanup_hf_cache_temp_dir=f"{root_output_path}/hf_cache_temp"
         )
 
         # Download the raster level evaluation inputs (.gpkg files)
@@ -74,7 +76,7 @@ class BasePreprocessedDataset(ABC):
             self,
             root_output_path: Union[str, Path],
             fold: str,
-            hf_root: str = "CanopyRS"
+            hf_root: str = "CanopyRSAdmin"
     ) -> Iterator[Tuple[
         str,  # location
         str,  # product_name
@@ -148,9 +150,9 @@ def register_dataset(cls: Type[BasePreprocessedDataset]) -> Type[BasePreprocesse
 
 
 @register_dataset
-class CanopyDataset(BasePreprocessedDataset):
-    dataset_name = 'canopy3'
-    license = 'CC-BY-NC-4.0'
+class SelvaBoxDataset(BasePreprocessedDataset):
+    dataset_name = 'SelvaBox'
+    license = 'CC-BY-4.0'
     ground_resolution = 0.045   # 4.5cm/pixel
     scale_factor = None
 
@@ -238,4 +240,192 @@ class CanopyDataset(BasePreprocessedDataset):
                 'aoi_gpkg': '20231208_asforestnorthe2_m3m_labels_boxes_aoi_test.gpkg'
             }
         }
+    }
+
+
+@register_dataset
+class BCI50haDataset(BasePreprocessedDataset):
+    dataset_name = 'BCI50ha'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.045
+    scale_factor = None
+
+    train_tile_size = None
+    train_n_tiles = None
+    train_n_annotations = None
+
+    valid_tile_size = None
+    valid_n_tiles = None
+    valid_n_annotations = None
+
+    test_tile_size = 1777
+    test_n_tiles = 2706
+    test_n_annotations = 75493
+
+    tile_level_eval_maxDets = 400
+
+    locations = [
+        'panama_bci50ha'
+    ]
+
+    products_per_location = {
+        'panama_bci50ha': [
+            'bci_50ha_2020_08_01_crownmap_raw',
+            'bci_50ha_2022_09_29_crownmap_raw',
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        'test': {
+            'bci_50ha_2020_08_01_crownmap_raw': {
+                'ground_truth_gpkg': 'BCI_50ha_2020_08_01_crownmap_improved.gpkg',
+                'aoi_gpkg': '20200801_aoi_test.gpkg'
+            },
+            'bci_50ha_2022_09_29_crownmap_raw': {
+                'ground_truth_gpkg': 'BCI_50ha_2022_09_29_crownmap_improved.gpkg',
+                'aoi_gpkg': '20220929_aoi_test.gpkg'
+            }
+        }
+    }
+
+
+@register_dataset
+class QuebecTreesDataset(BasePreprocessedDataset):
+    dataset_name = 'QuebecTrees'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.03
+    scale_factor = None
+
+    train_tile_size = 3333
+    train_n_tiles = 148
+    train_n_annotations = 53289
+
+    valid_tile_size = 1666
+    valid_n_tiles = 139
+    valid_n_annotations = 15155
+
+    test_tile_size = 1666
+    test_n_tiles = 168
+    test_n_annotations = 22818
+
+    tile_level_eval_maxDets = 400
+
+    locations = [
+        'quebec_trees'
+    ]
+
+    products_per_location = {
+        'quebec_trees': [
+            '20210902_sblz1_p4rtk_rgb',
+            '20210902_sblz2_p4rtk_rgb',
+            '20210902_sblz3_p4rtk_rgb',
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        'valid': {
+            '20210902_sblz1_p4rtk_rgb': {
+                'ground_truth_gpkg': '20210902_sblz1_p4rtk_labels_masks.gpkg',
+                'aoi_gpkg': '20210902_sblz1_p4rtk_labels_masks_aoi_valid.gpkg'
+            },
+        },
+        'test': {
+            '20210902_sblz1_p4rtk_rgb': {
+                'ground_truth_gpkg': '20210902_sblz1_p4rtk_labels_masks.gpkg',
+                'aoi_gpkg': '20210902_sblz1_p4rtk_labels_masks_aoi_test.gpkg'
+            },
+            '20210902_sblz3_p4rtk_rgb': {
+                'ground_truth_gpkg': '20210902_sblz3_p4rtk_labels_masks.gpkg',
+                'aoi_gpkg': '20210902_sblz3_p4rtk_labels_masks_aoi_test.gpkg'
+            }
+        }
+    }
+
+
+@register_dataset
+class NeonTreeEvaluationDataset(BasePreprocessedDataset):
+    dataset_name = 'NeonTreeEvaluation'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.1
+    scale_factor = None
+
+    train_tile_size = 1200
+    train_n_tiles = 912
+    train_n_annotations = 61812
+
+    valid_tile_size = 400
+    valid_n_tiles = 934
+    valid_n_annotations = 11580
+
+    test_tile_size = 400
+    test_n_tiles = 194
+    test_n_annotations = 6634
+
+    tile_level_eval_maxDets = 100
+
+    locations = [
+        'unitedstates_neon'
+    ]
+
+    products_per_location = {
+        'unitedstates_neon': [
+            '2018_bart_4_322000_4882000_image_crop',
+            '2018_harv_5_733000_4698000_image_crop',
+            '2018_jerc_4_742000_3451000_image_crop',
+            '2018_mlbs_3_541000_4140000_image_crop',
+            '2018_mlbs_3_541000_4140000_image_crop2',
+            '2018_niwo_2_450000_4426000_image_crop',
+            '2018_osbs_4_405000_3286000_image',
+            '2018_sjer_3_258000_4106000_image',
+            '2018_sjer_3_259000_4110000_image',
+            '2018_teak_3_315000_4094000_image_crop',
+            '2019_dela_5_423000_3601000_image_crop',
+            '2019_leno_5_383000_3523000_image_crop',
+            '2019_onaq_2_367000_4449000_image_crop',
+            '2019_osbs_5_405000_3287000_image_crop',
+            '2019_osbs_5_405000_3287000_image_crop2',
+            '2019_sjer_4_251000_4103000_image',
+            '2019_tool_3_403000_7617000_image',
+            'NeonTreeEvaluation_Test'
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        # nothing here
+    }
+
+
+@register_dataset
+class OamTcdDataset(BasePreprocessedDataset):
+    dataset_name = 'OAM-TCD'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.1
+    scale_factor = None
+
+    train_tile_size = 2048
+    train_n_tiles = 3024
+    train_n_annotations = 199515
+
+    valid_tile_size = 1024
+    valid_n_tiles = 4010
+    valid_n_annotations = 91772
+
+    test_tile_size = 1024
+    test_n_tiles = 2527
+    test_n_annotations = 56727
+
+    tile_level_eval_maxDets = 100
+
+    locations = [
+        'global_oamtcd'
+    ]
+
+    products_per_location = {
+        'global_oamtcd': [
+            'oam_tcd'
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        # nothing here
     }

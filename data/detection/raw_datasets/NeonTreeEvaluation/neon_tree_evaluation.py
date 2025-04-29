@@ -5,31 +5,26 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import rasterio
-from geodataset.aoi import AOIGeneratorConfig
+from geodataset.aoi import AOIFromPackageConfig
 from rasterio.transform import xy
 from shapely.geometry import box
 import geopandas as gpd
 
-from geodataset.utils import CocoNameConvention, COCOGenerator, create_coco_folds
+from geodataset.utils import CocoNameConvention, COCOGenerator, TileNameConvention
 
-from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
-from dataset.detection.tilerize import tilerize_no_overlap, tilerize_with_overlap
+from data.detection.raw_datasets.base_dataset import BasePublicZipDataset
+from data.detection.tilerize import tilerize_with_overlap
+
+
+parent_folder = Path(__file__).parent
 
 
 class NeonTreeEvaluationDataset(BasePublicZipDataset):
     zip_url = "https://zenodo.org/api/records/5914554/files-archive"
     name = "unitedstates_neon"
     annotation_type = "box"
-    aois = {
-        "all": {
-            "aoi_type": "band",
-            "aois": {
-                "train1": {"percentage": 0.4, "position": 1, "actual_name": "train"},
-                "valid": {"percentage": 0.2, "position": 2, "actual_name": "valid", "priority_aoi": True},
-                "train2": {"percentage": 0.4, "position": 3, "actual_name": "train"}
-            }
-        }
-    }
+
+    aois_folder = parent_folder / 'aois'
 
     categories = None
 
@@ -84,12 +79,17 @@ class NeonTreeEvaluationDataset(BasePublicZipDataset):
     def tilerize(self,
                  raw_path: str or Path,
                  output_path: str or Path,
-                 cross_validation: bool,
+                 folds: set[str],
                  ground_resolution: float = None,
                  scale_factor: float = None,
                  tile_size: int = 1024,
                  tile_overlap: float = 0.5,
+                 binary_category: bool = True,
                  **kwargs):
+
+        if binary_category is False:
+            raise ValueError("Binary category is not supported for NeonTreeEvaluation dataset as the dataset doesn't specify tree species."
+                             " Please set binary_category to False.")
 
         raw_path = Path(raw_path)
         output_path = Path(output_path) / self.name
@@ -101,39 +101,61 @@ class NeonTreeEvaluationDataset(BasePublicZipDataset):
         assert raw_path.exists(), (f"Path {raw_path} does not exist."
                                    f" Make sure you called the download AND parse methods first.")
 
-        # Move the test data already tilerized
-        (output_path / 'NeonTreeEvaluation').mkdir(exist_ok=True)
-        shutil.copy2(raw_path / 'test' / 'NeonTreeEvaluation_coco_sf1p0_test.json',
-                     output_path / 'NeonTreeEvaluation' / 'NeonTreeEvaluation_coco_sf1p0_test.json')
-        shutil.copytree(raw_path / 'test' / 'RGB', output_path / 'NeonTreeEvaluation' / 'tiles' / 'test', dirs_exist_ok=True)
+        # Also move the test data already tilerized if 'test' is in folds (but in a separate sub-folder)
+        if 'test' in folds:
+            # Paths
+            test_out = output_path / 'NeonTreeEvaluation_Test'
+            test_out.mkdir(exist_ok=False)
+            src_coco = raw_path / 'test' / 'NeonTreeEvaluation_coco_sf1p0_test.json'
+            dest_coco = test_out / 'NeonTreeEvaluation_coco_sf1p0_test.json'
+            tiles_src = raw_path / 'test' / 'RGB'
+            tiles_dest = test_out / 'tiles' / 'test'
+            tiles_dest.mkdir(parents=True, exist_ok=True)
+
+            # 1) Load and modify COCO JSON
+            with open(src_coco, 'r') as f:
+                coco = json.load(f)
+
+            rename_map = {}
+            for img in coco.get('images', []):
+                orig_name = img['file_name']
+
+                new_name = TileNameConvention().create_name(
+                    product_name=orig_name.replace('.tif', ''),
+                    aoi='test',
+                    scale_factor=1.0,
+                    col=0,
+                    row=0
+                )
+
+                rename_map[orig_name] = new_name
+                img['file_name'] = new_name
+
+            # 2) Write out the modified COCO
+            with open(dest_coco, 'w') as f:
+                json.dump(coco, f, indent=2)
+
+            # 3) Copy & rename only the files listed in the original COCO
+            for orig_name, new_name in rename_map.items():
+                src_file = tiles_src / orig_name
+                if not src_file.exists():
+                    print(f"Warning: source tile not found: {src_file}")
+                    continue
+                dest_file = tiles_dest / new_name
+                shutil.copy2(src_file, dest_file)
 
         train_files = (raw_path / 'train').iterdir()
         tif_names = [f.stem for f in train_files if f.suffix == '.tif']
         for tif_name in tif_names:
-            if cross_validation:
-                aois_config = AOIGeneratorConfig(aois={'train': {'percentage': 1.0, 'position': 1}}, aoi_type='band')
+            aois = {}
+            if 'train' in folds:
+                aois['train'] = self.aois_folder / f"{tif_name}_aoi_train.gpkg"
+            if 'valid' in folds:
+                aois['valid'] = self.aois_folder / f"{tif_name}_aoi_valid.gpkg"
 
-                coco_paths = tilerize_no_overlap(
-                    raster_path=raw_path / 'train' / f"{tif_name}.tif",
-                    labels=raw_path / 'train' / f"{tif_name}.gpkg",
-                    main_label_category_column_name=None,
-                    coco_categories_list=None,
-                    aois_config=aois_config,
-                    output_path=output_path
-                )
+            aois_config = AOIFromPackageConfig(aois)
 
-                if 'train' in coco_paths:
-                    create_coco_folds(
-                        coco_paths['train'],
-                        coco_paths['train'].parent,
-                        5
-                    )
-            else:
-                aois_config = AOIGeneratorConfig(
-                    aois=self.aois['all']['aois'],
-                    aoi_type=self.aois['all']['aoi_type']
-                )
-
+            try:
                 tilerize_with_overlap(
                     raster_path=raw_path / 'train' / f"{tif_name}.tif",
                     labels=raw_path / 'train' / f"{tif_name}.gpkg",
@@ -146,6 +168,11 @@ class NeonTreeEvaluationDataset(BasePublicZipDataset):
                     tile_size=tile_size,
                     tile_overlap=tile_overlap
                 )
+            except Exception:
+                print(f"Error tilerizing {tif_name}.tif. Skipping this file.")
+                print(f"This is probably due to no annotations being found in one of the AOIs.")
+                continue
+
 
 def xml_to_gpkg(xml_path: str or Path):
     # Derive file stem and TIFF file path
@@ -195,6 +222,7 @@ def xml_to_gpkg(xml_path: str or Path):
     gdf.to_file(str(gpkg_path), driver="GPKG")
 
     print(f"GeoPackage saved to: {gpkg_path}")
+
 
 def csv_to_coco(csv_path: Path):
     gdf = gpd.read_file(csv_path)

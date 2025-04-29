@@ -1,16 +1,17 @@
+import os
 import shutil
 from pathlib import Path
 
 import rasterio
 import pandas as pd
 import geopandas as gpd
+from geodataset.aggregator import Aggregator
 from geodataset.aoi import AOIFromPackageConfig
-from geodataset.utils import create_coco_folds
 from rasterio.transform import xy
 from shapely.geometry.geo import box
 
-from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
-from dataset.detection.tilerize import combine_gdfs, tilerize_no_overlap, tilerize_with_overlap
+from data.detection.raw_datasets.base_dataset import BasePublicZipDataset
+from data.detection.tilerize import tilerize_with_overlap
 
 
 parent_folder = Path(__file__).parent
@@ -25,6 +26,24 @@ class ReforesTreeDataset(BasePublicZipDataset):
             "train": parent_folder / "aoi_train.gpkg",
             "valid": parent_folder / "aoi_valid.gpkg",
             "test": parent_folder / "aoi_test.gpkg"
+        },
+        "Carlos Vera Arteaga RGB": {
+            "train": parent_folder / "aoi_train.gpkg",
+        },
+        "Carlos Vera Guevara RGB": {
+            "test": parent_folder / "aoi_test.gpkg"
+        },
+        "Flora Pluas RGB": {
+            "train": parent_folder / "aoi_train.gpkg",
+        },
+        "Leonor Aspiazu RGB": {
+            "valid": parent_folder / "aoi_valid.gpkg",
+        },
+        "Manuel Macias RGB": {
+            "train": parent_folder / "aoi_train.gpkg",
+        },
+        "Nestor Macias RGB": {
+            "train": parent_folder / "aoi_train.gpkg",
         }
     }
 
@@ -60,8 +79,26 @@ class ReforesTreeDataset(BasePublicZipDataset):
             tif_file.rename(new_tif_path)
 
             with rasterio.open(new_tif_path) as dataset:
+                # the annotations have many duplicate geometries, so we need to remove them
                 annotations = transform_annotations_with_geometry(annotations, dataset)
-                annotations.to_file(path / f'{raster_name_prefix}_annotations_box.gpkg', driver='GPKG')
+                annotations['img_path'] = new_tif_path
+                aggregator_output_path = path / f'{raster_name_prefix}_annotations_box_aggregator_temp.gpkg'
+                aggregator = Aggregator.from_gdf(
+                    output_path=aggregator_output_path,
+                    gdf=annotations,
+                    tiles_paths_column='img_path',
+                    polygons_column='geometry',
+                    scores_column='score',
+                    nms_threshold=0.7,
+                    nms_algorithm='iou'
+                )
+                final_annotations = aggregator.polygons_gdf
+                final_annotations.drop(
+                    columns=['img_name', 'img_path'],
+                    inplace=True
+                )
+                aggregator_output_path.unlink()
+                final_annotations.to_file(str(path / f'{raster_name_prefix}_annotations_box.gpkg'), driver='GPKG')
 
         shutil.rmtree(path / 'annotations')
         shutil.rmtree(path / 'wwf_ecuador')
@@ -71,13 +108,17 @@ class ReforesTreeDataset(BasePublicZipDataset):
     def tilerize(self,
                  raw_path: str,
                  output_path: str,
-                 cross_validation: bool,
                  folds: set[str],
                  ground_resolution: float = None,
                  scale_factor: float = None,
                  tile_size: int = 1024,
                  tile_overlap: float = 0.5,
+                 binary_category: bool = True,
                  **kwargs):
+
+        if binary_category is False:
+            raise ValueError("Binary category is not supported for ReforesTree dataset as the dataset doesn't specify tree species."
+                             " Please set binary_category to False.")
 
         raw_path = Path(raw_path)
         output_path = Path(output_path) / self.name
@@ -92,55 +133,24 @@ class ReforesTreeDataset(BasePublicZipDataset):
         tifs = [f for f in raw_path.iterdir() if f.suffix == '.tif']
 
         for tif in tifs:
-            if cross_validation:
-                # First, combining train and valid aois into a single one as we will tile them together
-                # and then split the COCO into cross validation folds.
-                train_aoi = combine_gdfs(
-                    gpd.read_file(self.aois['all']['train']),
-                    gpd.read_file(self.aois['all']['valid'])
-                )
+            aois = self.aois[tif.stem]
+            aois = {k: v for k, v in aois.items() if k in folds}
+            if not aois:
+                continue
+            aois_config = AOIFromPackageConfig(aois)
 
-                aois = {
-                    'train': train_aoi,
-                    'test': self.aois['all']['test']
-                }
-
-                aois_config = AOIFromPackageConfig(aois)
-
-                coco_paths = tilerize_no_overlap(
-                    raster_path=tif,
-                    labels=tif.parent / f"{tif.stem}_annotations_box.gpkg",
-                    main_label_category_column_name=None,
-                    coco_categories_list=None,
-                    aois_config=aois_config,
-                    output_path=output_path
-                )
-
-                if 'train' in coco_paths:
-                    create_coco_folds(
-                        coco_paths['train'],
-                        coco_paths['train'].parent,
-                        5
-                    )
-            else:
-                aois = self.aois['all']
-                for aoi in aois.keys():
-                    if aoi not in folds:
-                        del aois[aoi]
-                aois_config = AOIFromPackageConfig(self.aois['all'])
-
-                tilerize_with_overlap(
-                    raster_path=tif,
-                    labels=tif.parent / f"{tif.stem}_annotations_box.gpkg",
-                    main_label_category_column_name=None,
-                    coco_categories_list=None,
-                    aois_config=aois_config,
-                    output_path=output_path,
-                    ground_resolution=ground_resolution,
-                    scale_factor=scale_factor,
-                    tile_size=tile_size,
-                    tile_overlap=tile_overlap
-                )
+            tilerize_with_overlap(
+                raster_path=tif,
+                labels=tif.parent / f"{tif.stem}_annotations_box.gpkg",
+                main_label_category_column_name=None,
+                coco_categories_list=None,
+                aois_config=aois_config,
+                output_path=output_path,
+                ground_resolution=ground_resolution,
+                scale_factor=scale_factor,
+                tile_size=tile_size,
+                tile_overlap=tile_overlap
+            )
 
 
 def transform_annotations_with_geometry(annotations, dataset):
