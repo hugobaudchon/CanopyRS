@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -28,12 +29,17 @@ class HFDatasetTools:
         output_path.mkdir(parents=True, exist_ok=True)
 
         for fold in ['train', 'valid', 'test']:
+            try:
+                dataset = SegmentationLabeledRasterCocoDataset(
+                    fold=fold,
+                    root_path=root_paths
+                )
+            except Exception as e:
+                warnings.warn(f"Error loading dataset for fold {fold}: {e}")
+                continue
+
             fold_path = output_path / fold
             fold_path.mkdir(parents=True, exist_ok=True)
-            dataset = SegmentationLabeledRasterCocoDataset(
-                fold=fold,
-                root_path=root_paths
-            )
 
             tiles_metadata = []
             for (index, tile_data) in tqdm(dataset.tiles.items(), desc=f"Processing {fold} fold", total=len(dataset.tiles)):
@@ -47,9 +53,15 @@ class HFDatasetTools:
                 tile_data['tile_name'] = tile_data['name']      # for extracting needs later, since tile_data['file_name'] isn't kept by huggingface when pushing to the hub
                 del tile_data['name']
                 tile_data['annotations'] = {
-                    'bbox': [x['bbox'] for x in tile_data['labels']],
+                     'bbox': [
+                        [float(coord) for coord in x['bbox']]
+                        for x in tile_data['labels']
+                    ],
                     'segmentation': [x['segmentation'] for x in tile_data['labels']] if include_segmentations else None,
-                    'area': [x['area'] for x in tile_data['labels']],
+                    'area': [
+                        float(x['area'])
+                        for x in tile_data['labels']
+                    ],
                     'iscrowd': [x['iscrowd'] for x in tile_data['labels']],
                     'is_rle_format': [x['is_rle_format'] for x in tile_data['labels']] if include_segmentations else None,
                     'category': ['tree',] * len(tile_data['labels']),
@@ -66,7 +78,7 @@ class HFDatasetTools:
                         'height': src.height,
                         'count': src.count,
                         'dtypes': src.dtypes,
-                        'nodata': src.nodata
+                        'nodata': float(src.nodata) if src.nodata is not None else 0.0
                     }
 
                     # Add metadata to tile_data
@@ -256,15 +268,27 @@ class HFDatasetTools:
 
 
 if __name__ == "__main__":
+    hf_dataset_name = "CanopyRSAdmin/OAM-TCD"
+
     include_segmentations = False
-    output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/canopy3'
+    output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/oam_tcd'
     root_paths = [
-        '/home/hugo/Documents/CanopyRS/data/tilerized/tilerized_3555_0p5_0p045_None',
-        '/home/hugo/Documents/CanopyRS/data/tilerized/tilerized_1777_0p5_0p045_None',
-        '/home/hugo/Documents/CanopyRS/data/tilerized/tilerized_1777_0p75_0p045_None'
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_3555_0p5_0p045_None',
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_1777_0p5_0p045_None',
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_1777_0p75_0p045_None'
+
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/neon_trees/tilerized_400_0p5_None_1p0',
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/neon_trees/tilerized_1200_0p5_None_1p0'
+
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/bci50ha/tilerized_1777_0p75_0p045_None'
+
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/quebec_trees/tilerized_1666_0p5_0p03_None',
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/quebec_trees/tilerized_3333_0p5_0p03_None'
+
+        '/home/hugo/Documents/CanopyRS/data/tilerized/oam_tcd/tilerized_1024_0p5_None_1p0'
     ]
 
-    # HFDatasetWrapper.process_coco_datasets_for_huggingface(root_paths, include_segmentations, output_folder)
-    # HFDatasetWrapper.push_to_hub(output_folder, "CanopyRS/canopy3")
+    HFDatasetTools.process_coco_datasets_for_huggingface(root_paths, include_segmentations, output_folder)
+    HFDatasetTools.push_to_hub(output_folder, hf_dataset_name)
 
-    HFDatasetTools.download_and_extract_huggingface_dataset("CanopyRS/canopy3", "/home/hugo/Documents/CanopyRS/extracted_datasets")
+    # HFDatasetTools.download_and_extract_huggingface_dataset(hf_dataset_name, "/home/hugo/Documents/CanopyRS/extracted_datasets")

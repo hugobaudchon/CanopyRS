@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from src.public_datasets.utils import download_and_unzip
+from data.detection.raw_datasets.utils import download_and_unzip
 
 
 class BasePublicZipDataset(ABC):
@@ -21,10 +21,10 @@ class BasePublicZipDataset(ABC):
     def tilerize(self,
                  raw_path: str or Path,
                  output_path: str or Path,
-                 cross_validation: bool,
                  ground_resolution: float,
                  scale_factor: float,
                  tile_size: int,
                  tile_overlap: float,
+                 binary_category: bool,
                  **kwargs):
         pass

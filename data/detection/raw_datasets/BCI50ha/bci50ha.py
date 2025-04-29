@@ -4,10 +4,9 @@ from pathlib import Path
 
 import geopandas as gpd
 from geodataset.aoi import AOIFromPackageConfig
-from geodataset.utils import create_coco_folds
 
-from dataset.detection.raw_datasets.base_dataset import BasePublicZipDataset
-from dataset.detection.tilerize import tilerize_no_overlap, combine_gdfs, tilerize_with_overlap
+from data.detection.raw_datasets.base_dataset import BasePublicZipDataset
+from data.detection.tilerize import tilerize_with_overlap
 
 
 parent_folder = Path(__file__).parent
@@ -19,14 +18,10 @@ class BCI50haDataset(BasePublicZipDataset):
     annotation_type = "mask"
     aois = {
         "BCI_50ha_2020_08_01_crownmap": {
-            "train": parent_folder / "20200801_aoi_train.gpkg",
-            "valid": parent_folder / "20200801_aoi_valid.gpkg",
-            "test": parent_folder / "20200801_aoi_test.gpkg"
+            "test": parent_folder / "aois" / "20200801_aoi_test.gpkg"
         },
         "BCI_50ha_2022_09_29_crownmap": {
-            "train": parent_folder / "20220929_aoi_train.gpkg",
-            "valid": parent_folder / "20220929_aoi_valid.gpkg",
-            "test": parent_folder / "20220929_aoi_test.gpkg"
+            "test": parent_folder / "aois" / "20220929_aoi_test.gpkg"
         }
     }
 
@@ -69,12 +64,12 @@ class BCI50haDataset(BasePublicZipDataset):
     def tilerize(self,
                  raw_path: str or Path,
                  output_path: str or Path,
-                 cross_validation: bool,
                  folds: set[str],
                  ground_resolution: float = None,
                  scale_factor: float = None,
                  tile_size: int = 1024,
                  tile_overlap: float = 0.5,
+                 binary_category: bool = True,
                  **kwargs):
 
         raw_path = Path(raw_path)
@@ -87,58 +82,32 @@ class BCI50haDataset(BasePublicZipDataset):
         assert raw_path.exists(), (f"Path {raw_path} does not exist."
                                    f" Make sure you called the download AND parse methods first.")
 
-        aois = self.aois
+        aois = self.aois.copy()
         for raster_name in aois:
+            # prepare aois
             for raster_aoi in aois[raster_name]:
                 aois[raster_name][raster_aoi] = gpd.read_file(f'{aois[raster_name][raster_aoi]}')
                 if raster_aoi not in folds:
                     del aois[raster_name][raster_aoi]
 
-            if cross_validation:
-                assert 'train' in folds and 'valid' in folds, "For cross-validation, 'train' and 'valid' folds must be passed."
-                # First, combining train and valid aois into a single one as we will tile them together
-                # and then split the COCO into cross validation folds.
-                if 'train' in aois[raster_name] and 'valid' in aois[raster_name]:
-                    aois[raster_name]['train'] = combine_gdfs(aois[raster_name]['train'], aois[raster_name]['valid'])
-                    del aois[raster_name]['valid']
-                elif 'valid' in aois[raster_name]:
-                    aois[raster_name]['train'] = aois[raster_name]['valid']
-                    del aois[raster_name]['valid']
-
-                aois_config = AOIFromPackageConfig(aois[raster_name])
-
-                labels = raw_path / f"{raster_name}_improved.gpkg"
-                if 'Latin' in gpd.read_file(labels).columns:
-                    main_label_category_column_name = 'Latin'
-                else:
-                    main_label_category_column_name = 'latin'
-
-                tilerize_with_overlap(
-                    raster_path=raw_path / f"{raster_name}_raw.tif",
-                    labels=labels,
-                    main_label_category_column_name=main_label_category_column_name,
-                    coco_categories_list=json.load(open(self.categories, 'rb'))['categories'],
-                    aois_config=aois_config,
-                    output_path=output_path
-                )
+            # tilerize
+            labels = raw_path / f"{raster_name}_improved.gpkg"
+            if 'Latin' in gpd.read_file(labels).columns:
+                main_label_category_column_name = 'Latin'
             else:
-                labels = raw_path / f"{raster_name}_improved.gpkg"
-                if 'Latin' in gpd.read_file(labels).columns:
-                    main_label_category_column_name = 'Latin'
-                else:
-                    main_label_category_column_name = 'latin'
+                main_label_category_column_name = 'latin'
 
-                aois_config = AOIFromPackageConfig(aois[raster_name])
+            aois_config = AOIFromPackageConfig(aois[raster_name])
 
-                tilerize_with_overlap(
-                    raster_path=raw_path / f"{raster_name}_raw.tif",
-                    labels=raw_path / f"{raster_name}_improved.gpkg",
-                    main_label_category_column_name=main_label_category_column_name,
-                    coco_categories_list=json.load(open(self.categories, 'rb'))['categories'],
-                    aois_config=aois_config,
-                    output_path=output_path,
-                    ground_resolution=ground_resolution,
-                    scale_factor=scale_factor,
-                    tile_size=tile_size,
-                    tile_overlap=tile_overlap
-                )
+            tilerize_with_overlap(
+                raster_path=raw_path / f"{raster_name}_raw.tif",
+                labels=raw_path / f"{raster_name}_improved.gpkg",
+                main_label_category_column_name=main_label_category_column_name if not binary_category else None,
+                coco_categories_list=json.load(open(self.categories, 'rb'))['categories'] if not binary_category else None,
+                aois_config=aois_config,
+                output_path=output_path,
+                ground_resolution=ground_resolution,
+                scale_factor=scale_factor,
+                tile_size=tile_size,
+                tile_overlap=tile_overlap
+            )

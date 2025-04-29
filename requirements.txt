@@ -1,4 +1,5 @@
 albumentations==1.4.0
+datasets>=3.5.0
 datasketches==5.0.2
 einops==0.7.0
 faster-coco-eval>=1.6.5
