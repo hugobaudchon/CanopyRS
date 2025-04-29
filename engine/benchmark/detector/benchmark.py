@@ -66,6 +66,7 @@ class DetectorBenchmarker:
                                        detector_config: DetectorConfig,
                                        dataset_names: list[str],
                                        nms_iou_thresholds: list[float],
+                                       nms_score_thresholds: list[float],
                                        eval_at_ground_resolution: float = 0.045,
                                        n_workers: int = 6):
 
@@ -104,7 +105,8 @@ class DetectorBenchmarker:
             tiles_roots=tiles_roots,
             ground_resolution=eval_at_ground_resolution,
             nms_iou_thresholds=nms_iou_thresholds,
-            nms_score_thresholds=[0.05],
+            nms_score_thresholds=nms_score_thresholds,
+            eval_iou_threshold=0.75,
             n_workers=n_workers
         )
 
@@ -112,12 +114,13 @@ class DetectorBenchmarker:
         aggregators_results_df.to_csv(csv_output_path, index=False)
         print(f"Optimal NMS IoU threshold search results saved to {csv_output_path}")
 
-        # Find optimal NMS IoU threshold based on highest AP metric:
+        # Find optimal NMS IoU threshold based on highest f1 metric:
         results_average = aggregators_results_df[aggregators_results_df['raster_name'] == 'average_over_rasters']
-        best_aggregator = results_average.sort_values('AP', ascending=False).iloc[0]
+        best_aggregator = results_average.sort_values('f1', ascending=False).iloc[0]
         best_aggregator_iou = best_aggregator['nms_iou_threshold']
+        best_aggregator_score_threshold = best_aggregator['nms_score_threshold']
 
-        return best_aggregator_iou
+        return best_aggregator_iou, best_aggregator_score_threshold
 
     def benchmark(self,
                   detector_config: DetectorConfig,
@@ -130,11 +133,6 @@ class DetectorBenchmarker:
         """
 
         datasets = self.get_preprocessed_datasets(dataset_names)
-
-        if aggregator_config:
-            if aggregator_config.score_threshold != 0.05:
-                aggregator_config.score_threshold = 0.05
-                print(f"Warning: Aggregator score threshold set to 0.05 for evaluation. Was {aggregator_config.score_threshold}.")
 
         evaluator = CocoEvaluator()
 
@@ -170,12 +168,13 @@ class DetectorBenchmarker:
                 dataset_truths_cocos.append(truths_coco)
 
                 if do_raster_level_eval:
-                    raster_metrics = evaluator.raster_level(
+                    raster_metrics = evaluator.raster_level_single_iou_threshold(
                         iou_type='bbox',
                         preds_gpkg_path=preds_aggregated_gpkg,
                         truth_gpkg_path=truths_gpkg,
                         aoi_gpkg_path=aoi_gpkg,
-                        ground_resolution=dataset.ground_resolution
+                        ground_resolution=dataset.ground_resolution,
+                        iou_threshold=0.75
                     )
                     raster_metrics['location'] = location
                     raster_metrics['product_name'] = product_name
@@ -201,9 +200,7 @@ class DetectorBenchmarker:
 
             # Compute weighted average of raster-level metrics for the dataset, weighted by the number of num_truths
             if dataset_raster_level_metrics:
-                metrics_to_average = ['AP', 'AP50', 'AP75', 'AP_small', 'AP_medium', 'AP_large',
-                                      'AR', 'AR50', 'AR75', 'AR_small', 'AR_medium', 'AR_large',
-                                      'F1', 'F1_50', 'F1_75', 'F1_small', 'F1_medium', 'F1_large']
+                metrics_to_average = ['precision', 'recall', 'f1']
 
                 merged_df = pd.DataFrame(dataset_raster_level_metrics)
                 weights = merged_df['num_truths']
