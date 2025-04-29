@@ -17,6 +17,7 @@ def eval_single_aggregator(
         aoi_gdf: str,
         nms_iou_threshold: float,
         nms_score_threshold: float,
+        eval_iou_threshold: float,
         ground_resolution: float
 ):
     try:
@@ -43,12 +44,13 @@ def eval_single_aggregator(
 
         # Evaluate the predictions
         evaluator = CocoEvaluator()
-        metrics = evaluator.raster_level(
+        metrics = evaluator.raster_level_single_iou_threshold(
             iou_type='bbox',
             preds_gpkg_path=str(aggregator_output_path),
             truth_gpkg_path=truth_gdf,
             aoi_gpkg_path=aoi_gdf,
-            ground_resolution=ground_resolution
+            ground_resolution=ground_resolution,
+            iou_threshold=eval_iou_threshold
         )
 
     except Exception as e:
@@ -65,9 +67,11 @@ def average_metrics_by_raster(results_df: pd.DataFrame):
 
     # Metrics to be averaged and summed:
     avg_metrics = [
-        "AP", "AP50", "AP75",
-        "AP_small", "AP_medium", "AP_large",
-        "AR", "AR50", "AR75", "AR_max", "AR_small", "AR_medium", "AR_large"
+        # "AP", "AP50", "AP75",
+        # "AP_small", "AP_medium", "AP_large",
+        # "AR", "AR50", "AR75", "AR_max", "AR_small", "AR_medium", "AR_large"
+
+        "precision", "recall", "f1",
     ]
     sum_metrics = ["num_images", "num_truths", "num_preds"]
 
@@ -92,25 +96,6 @@ def average_metrics_by_raster(results_df: pd.DataFrame):
             if metric in group.columns:
                 aggregated_record[metric] = group[metric].sum()
 
-        # Compute F1 metrics using the aggregated average values.
-        def compute_f1(ap, ar):
-            if (ap + ar) > 0:
-                return 2 * ap * ar / (ap + ar)
-            return 0
-
-        if "AP" in aggregated_record and "AR" in aggregated_record:
-            aggregated_record["F1"] = compute_f1(aggregated_record["AP"], aggregated_record["AR"])
-        if "AP50" in aggregated_record and "AR50" in aggregated_record:
-            aggregated_record["F1_50"] = compute_f1(aggregated_record["AP50"], aggregated_record["AR50"])
-        if "AP75" in aggregated_record and "AR75" in aggregated_record:
-            aggregated_record["F1_75"] = compute_f1(aggregated_record["AP75"], aggregated_record["AR75"])
-        if "AP_small" in aggregated_record and "AR_small" in aggregated_record:
-            aggregated_record["F1_small"] = compute_f1(aggregated_record["AP_small"], aggregated_record["AR_small"])
-        if "AP_medium" in aggregated_record and "AR_medium" in aggregated_record:
-            aggregated_record["F1_medium"] = compute_f1(aggregated_record["AP_medium"], aggregated_record["AR_medium"])
-        if "AP_large" in aggregated_record and "AR_large" in aggregated_record:
-            aggregated_record["F1_large"] = compute_f1(aggregated_record["AP_large"], aggregated_record["AR_large"])
-
         aggregated_rows.append(aggregated_record)
 
     # Create a DataFrame for the aggregated (averaged) rows.
@@ -130,6 +115,7 @@ def find_optimal_detector_aggregator(
         ground_resolution: float,
         nms_iou_thresholds: list[float],
         nms_score_thresholds: list[float],
+        eval_iou_threshold: float,
         n_workers: int
 ):
 
@@ -167,6 +153,7 @@ def find_optimal_detector_aggregator(
                 aoi_gdf=params["aoi_gdf"],
                 nms_iou_threshold=params["nms_iou_threshold"],
                 nms_score_threshold=params["nms_score_threshold"],
+                eval_iou_threshold=eval_iou_threshold,
                 ground_resolution=ground_resolution
             )
             future_to_params[future] = params

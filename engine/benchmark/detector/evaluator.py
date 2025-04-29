@@ -6,7 +6,7 @@ from shapely.affinity import affine_transform
 from geodataset.utils import get_utm_crs
 
 from faster_coco_eval.core.coco import COCO
-from faster_coco_eval.core.faster_eval_api import COCOeval      # speeds up raster level evaluation by 10-100x
+from faster_coco_eval.core.faster_eval_api import COCOeval_faster      # speeds up raster level evaluation by 10-100x
 
 
 class CocoEvaluator:
@@ -113,7 +113,7 @@ class CocoEvaluator:
         coco_dt_obj.createIndex()
 
         # Initialize and run COCOeval
-        twice_max_dets = len(truth_gdf) * 2       # We consider up to twice the number of ground truth objects as predictions to be evaluated
+        twice_max_dets = len(truth_gdf) * 2    # We consider up to twice the number of ground truth objects as predictions to be evaluated
         coco_evaluator = Summarize2COCOEval(
             cocoGt=coco_gt_obj,
             cocoDt=coco_dt_obj,
@@ -152,6 +152,125 @@ class CocoEvaluator:
         metrics['F1_small'] = 2 * metrics['AP_small'] * metrics['AR_small'] / (metrics['AP_small'] + metrics['AR_small'])
         metrics['F1_medium'] = 2 * metrics['AP_medium'] * metrics['AR_medium'] / (metrics['AP_medium'] + metrics['AR_medium'])
         metrics['F1_large'] = 2 * metrics['AP_large'] * metrics['AR_large'] / (metrics['AP_large'] + metrics['AR_large'])
+
+        return metrics
+
+    @staticmethod
+    def raster_level_single_iou_threshold(iou_type: str,
+                                          preds_gpkg_path: str,
+                                          truth_gpkg_path: str,
+                                          aoi_gpkg_path: str or None,
+                                          ground_resolution: float = 0.045,
+                                          iou_threshold: float = 0.5) -> dict:
+        """
+        Compute precision, recall, and F1 score at a given IoU threshold
+        between prediction and ground-truth GeoDataFrames.
+
+        iou_type: type of IoU to compute (e.g., 'bbox', 'segm').
+        preds_gpkg_path: path to GeoDataFrame with a 'geometry' column and a 'score', 'aggregator_score', 'detector_score' or 'segmentation_score' column (will be checked in that order).
+        truth_gpkg_path: path to GeoDataFrame with a 'geometry' column.
+        aoi_gpkg_path: path to GeoDataFrame with a 'geometry' column (optional).
+        iou_threshold: IoU threshold for a match (default: 0.5).
+        """
+
+        # Load the prediction and ground truth GeoDataFrames
+        infer_gdf = gpd.read_file(preds_gpkg_path)
+        truth_gdf = gpd.read_file(truth_gpkg_path)
+
+        # Apply IoU type on polygons
+        if iou_type == 'segm':
+            infer_gdf = infer_gdf
+            truth_gdf = truth_gdf
+        elif iou_type == 'bbox':
+            infer_gdf['geometry'] = infer_gdf.geometry.envelope
+            truth_gdf['geometry'] = truth_gdf.geometry.envelope
+        else:
+            raise ValueError(f"Unsupported IoU type: {iou_type}. Supported types are 'bbox' and 'segm'.")
+
+        common_crs = truth_gdf.crs
+        if not common_crs.is_projected:
+            bounds = truth_gdf.total_bounds
+            centroid_lon = (bounds[0] + bounds[2]) / 2.0
+            centroid_lat = (bounds[1] + bounds[3]) / 2.0
+            common_crs = get_utm_crs(centroid_lon, centroid_lat)
+
+        infer_gdf = infer_gdf.to_crs(common_crs)
+        truth_gdf = truth_gdf.to_crs(common_crs)
+
+        # Only keep the truth and inference geometries that are inside the AOI (40% overlap minimum)
+        if aoi_gpkg_path is not None:
+            aoi_gdf = gpd.read_file(aoi_gpkg_path).to_crs(common_crs)
+            aoi_union = aoi_gdf.geometry.unary_union
+            truth_gdf = filter_min_overlap(truth_gdf, aoi_union, min_frac=0.4)
+            infer_gdf = filter_min_overlap(infer_gdf, aoi_union, min_frac=0.4)
+            truth_gdf = gpd.overlay(truth_gdf, aoi_gdf, how='intersection')
+            infer_gdf = gpd.overlay(infer_gdf, aoi_gdf, how='intersection')
+        else:
+            warnings.warn("AOI GPKG path is None. No AOI filtering will be applied."
+                          " Please make sure the truth gpkg extent matches the prediction one or the metrics will be"
+                          " low if the truth gpkg extent is much larger than the prediction one (i.e if truth gpkg has"
+                          " train, valid and test folds sections, you only want to eval against valid or test areas).")
+
+        truth_gdf, infer_gdf = move_gdfs_to_ground_resolution(truth_gdf, infer_gdf, ground_resolution)
+
+        # Sort predictions by descending score
+        score_column_name = None
+        for score_col in ['score', 'aggregator_score', 'detector_score', 'segmentation_score']:
+            if score_col in infer_gdf.columns:
+                score_column_name = score_col
+                break
+
+        if score_column_name is None:
+            raise ValueError("No valid score column found in predictions GeoDataFrame. "
+                             "Please ensure it contains 'score', 'aggregator_score', 'detector_score' or 'segmentation_score'.")
+
+        infer_gdf = infer_gdf.sort_values(score_column_name, ascending=False).reset_index(drop=True)
+        truth_gdf = truth_gdf.reset_index(drop=True)
+
+        # Add a matched flag to ground truths
+        truth_gdf["matched"] = False
+        truth_sindex = truth_gdf.sindex
+
+        tp = 0  # True positives
+        fp = 0  # False positives
+
+        # Greedy match each prediction
+        for _, pred in infer_gdf.iterrows():
+            # Bounding-box preselection for potential matches
+            candidates = list(truth_sindex.intersection(pred.geometry.bounds))
+            best_iou = 0
+            best_idx = None
+
+            # Find best IoU among unmatched candidates
+            for idx in candidates:
+                if truth_gdf.at[idx, "matched"]:
+                    continue
+                truth_geom = truth_gdf.at[idx, "geometry"]
+                inter_area = pred.geometry.intersection(truth_geom).area
+                union_area = pred.geometry.union(truth_geom).area
+                iou = inter_area / union_area if union_area > 0 else 0
+                if iou > best_iou:
+                    best_iou = iou
+                    best_idx = idx
+
+            # Assign match or count as false positive
+            if best_iou >= iou_threshold:
+                tp += 1
+                truth_gdf.at[best_idx, "matched"] = True
+            else:
+                fp += 1
+
+        # False negatives: ground truths never matched
+        fn = (~truth_gdf["matched"]).sum()
+
+        # Calculate metrics
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+        metrics = {'precision': precision, 'recall': recall, 'f1': f1, 'tp': tp, 'fp': fp, 'fn': fn,
+                   'num_truths': len(truth_gdf), 'num_preds': len(infer_gdf), 'num_images': 1}
+        print(metrics)
 
         return metrics
 
@@ -288,12 +407,14 @@ def gdf_to_coco_single_image(gdf: gpd.GeoDataFrame, width: int, height: int, is_
 
 def filter_min_overlap(gdf, aoi_geom, min_frac=0.4):
     orig_areas = gdf.geometry.area
-    inter_areas = gdf.geometry.apply(lambda geom: geom.intersection(aoi_geom).area)
-    mask = (inter_areas / orig_areas) >= min_frac
-    return gdf[mask].copy()
+    inter_areas = gdf.geometry.intersection(aoi_geom).area
+    with np.errstate(divide='ignore', invalid='ignore'):
+        frac = inter_areas.div(orig_areas.replace({0: np.nan}))
+    mask = frac >= min_frac
+    return gdf[mask.fillna(False)].copy()
 
 
-class Summarize2COCOEval(COCOeval):
+class Summarize2COCOEval(COCOeval_faster):
     def summarize_custom(self):
         max_dets_index = len(self.params.maxDets) - 1
 
