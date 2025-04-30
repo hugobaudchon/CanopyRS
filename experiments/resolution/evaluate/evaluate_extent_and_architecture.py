@@ -3,11 +3,12 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 from geodataset.aoi import AOIFromPackageConfig
 from geodataset.utils import CocoNameConvention
 
 from data.detection.tilerize import tilerize_with_overlap
-from engine.benchmark.detector.detector.evaluator import CocoEvaluator
+from engine.benchmark.detector.evaluator import CocoEvaluator
 from engine.config_parsers import DetectorConfig, InferIOConfig, PipelineConfig, AggregatorConfig
 from engine.pipeline import Pipeline
 from experiments.resolution.evaluate.get_wandb import extract_tilerized_image_size_regex, wandb_runs_to_dataframe, extract_ground_resolution_regex
@@ -173,7 +174,7 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
                         ground_resolution=ground_resolution,
                         scale_factor=None,
                         tile_size=tile_size,
-                        tile_overlap=0.75
+                        tile_overlap=0.75 if fold == 'test' else 0.5
                     )
 
                     coco_path = coco_outputs[fold]
@@ -249,9 +250,9 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
         tiles_roots=best_model_tiles_paths,
         aois_gdfs=best_model_gpkg_aois,
         ground_resolution=0.045,            # Evaluating all models on the same resolution, 0.045m/pixel.
-        nms_iou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
-        nms_score_thresholds=[0.2], #[0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
-        n_workers=4
+        nms_iou_thresholds=[round(x, 2) for x in np.arange(0.05, 1.05, 0.05)],
+        nms_score_thresholds=[round(x, 2) for x in np.arange(0.05, 1.05, 0.05)],
+        n_workers=12
     )
 
     aggregators_results.to_csv(f"{output_folder}/aggregator_search_results_valid_fold.csv")
@@ -259,7 +260,7 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
 
     # Find the best aggregator based on a composite metric 'AP' or 'F1'
     aggregators_agg = aggregators_results[aggregators_results['raster_name'] == 'average_over_rasters']
-    best_aggregator = aggregators_agg.sort_values('AP', ascending=False).iloc[0]                            # TODO I currently have F1 to make sure model doesnt gets super high AP by using super high score threshold and doesnt get super high AR by setting score threshold very low
+    best_aggregator = aggregators_agg.sort_values('f1', ascending=False).iloc[0]                            # TODO I currently have F1 to make sure model doesnt gets super high AP by using super high score threshold and doesnt get super high AR by setting score threshold very low
     best_aggregator_config = AggregatorConfig(
         nms_algorithm='iou',
         nms_threshold=best_aggregator['nms_iou_threshold'],
@@ -311,12 +312,13 @@ def evaluate_extent_and_architecture(wandb_project: str, architecture: str, exte
                 max_dets=[1, 10, 100, max_det]
             )
 
-            raster_level_metrics = evaluator.raster_level(
+            raster_level_metrics = evaluator.raster_level_single_iou_threshold(
                 iou_type='bbox',
                 preds_gpkg_path=aggregator_output,
                 truth_gpkg_path=tilerized_product_paths['labels_gpkg_path'],
                 aoi_gpkg_path=tilerized_product_paths['aoi_gpkg_path'],
-                ground_resolution=0.045            # Evaluating all models on the same resolution, 0.045m/pixel.
+                ground_resolution=0.045,            # Evaluating all models on the same resolution, 0.045m/pixel.
+                iou_threshold=0.75
             )
 
             all_tile_level_metrics.append(
