@@ -283,7 +283,7 @@ class BCI50haDataset(BasePreprocessedDataset):
             },
             'bci_50ha_2022_09_29_crownmap_raw': {
                 'ground_truth_gpkg': 'BCI_50ha_2022_09_29_crownmap_improved.gpkg',
-                'aoi_gpkg': '20200801_aoi_test_without_holes.gpkg'
+                'aoi_gpkg': '20220929_aoi_test_without_holes.gpkg'
             }
         }
     }
