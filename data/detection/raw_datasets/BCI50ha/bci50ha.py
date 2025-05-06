@@ -18,10 +18,10 @@ class BCI50haDataset(BasePublicZipDataset):
     annotation_type = "mask"
     aois = {
         "BCI_50ha_2020_08_01_crownmap": {
-            "test": parent_folder / "aois" / "20200801_aoi_test.gpkg"
+            "test": parent_folder / "aois" / "20200801_aoi_test_without_holes.gpkg"
         },
         "BCI_50ha_2022_09_29_crownmap": {
-            "test": parent_folder / "aois" / "20220929_aoi_test.gpkg"
+            "test": parent_folder / "aois" / "20220929_aoi_test_without_holes.gpkg"
         }
     }
 
