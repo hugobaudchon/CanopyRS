@@ -63,7 +63,7 @@ class HFDatasetTools:
                         for x in tile_data['labels']
                     ],
                     'iscrowd': [x['iscrowd'] for x in tile_data['labels']],
-                    'is_rle_format': [x['is_rle_format'] for x in tile_data['labels']] if include_segmentations else None,
+                    # 'is_rle_format': [x['is_rle_format'] for x in tile_data['labels']] if include_segmentations else None,
                     'category': ['tree',] * len(tile_data['labels']),
                 }
                 del tile_data['labels']
@@ -219,7 +219,7 @@ class HFDatasetTools:
                             'segmentation': rec['annotations']['segmentation'][j] if rec['annotations']['segmentation'] else None,
                             'area': rec['annotations']['area'][j],
                             'iscrowd': rec['annotations']['iscrowd'][j],
-                            'is_rle_format': rec['annotations']['is_rle_format'][j] if rec['annotations']['is_rle_format'] else None,
+                            # 'is_rle_format': rec['annotations']['is_rle_format'][j] if rec['annotations']['is_rle_format'] else None,
                             'category_id': 1,  # Assuming a single category for all annotations
                             'image_id': tile_id
                         }
@@ -268,10 +268,10 @@ class HFDatasetTools:
 
 
 if __name__ == "__main__":
-    hf_dataset_name = "CanopyRSAdmin/OAM-TCD"
+    hf_dataset_name = "CanopyRSAdmin/BCI50ha"
 
-    include_segmentations = False
-    output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/oam_tcd'
+    include_segmentations = True
+    output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/bci50ha'
     root_paths = [
         # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_3555_0p5_0p045_None',
         # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_1777_0p5_0p045_None',
@@ -280,12 +280,12 @@ if __name__ == "__main__":
         # '/home/hugo/Documents/CanopyRS/data/tilerized/neon_trees/tilerized_400_0p5_None_1p0',
         # '/home/hugo/Documents/CanopyRS/data/tilerized/neon_trees/tilerized_1200_0p5_None_1p0'
 
-        # '/home/hugo/Documents/CanopyRS/data/tilerized/bci50ha/tilerized_1777_0p75_0p045_None'
+        '/home/hugo/Documents/CanopyRS/data/tilerized/bci50ha/tilerized_1777_0p75_0p045_None'
 
         # '/home/hugo/Documents/CanopyRS/data/tilerized/quebec_trees/tilerized_1666_0p5_0p03_None',
         # '/home/hugo/Documents/CanopyRS/data/tilerized/quebec_trees/tilerized_3333_0p5_0p03_None'
 
-        '/home/hugo/Documents/CanopyRS/data/tilerized/oam_tcd/tilerized_1024_0p5_None_1p0'
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/oam_tcd/tilerized_1024_0p5_None_1p0'
     ]
 
     HFDatasetTools.process_coco_datasets_for_huggingface(root_paths, include_segmentations, output_folder)

@@ -260,7 +260,7 @@ class BCI50haDataset(BasePreprocessedDataset):
 
     test_tile_size = 1777
     test_n_tiles = 2706
-    test_n_annotations = 75493
+    test_n_annotations = 75629
 
     tile_level_eval_maxDets = 400
 
@@ -279,11 +279,11 @@ class BCI50haDataset(BasePreprocessedDataset):
         'test': {
             'bci_50ha_2020_08_01_crownmap_raw': {
                 'ground_truth_gpkg': 'BCI_50ha_2020_08_01_crownmap_improved.gpkg',
-                'aoi_gpkg': '20200801_aoi_test.gpkg'
+                'aoi_gpkg': '20200801_aoi_test_without_holes.gpkg'
             },
             'bci_50ha_2022_09_29_crownmap_raw': {
                 'ground_truth_gpkg': 'BCI_50ha_2022_09_29_crownmap_improved.gpkg',
-                'aoi_gpkg': '20220929_aoi_test.gpkg'
+                'aoi_gpkg': '20200801_aoi_test_without_holes.gpkg'
             }
         }
     }
