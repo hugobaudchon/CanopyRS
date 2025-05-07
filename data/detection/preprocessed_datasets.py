@@ -435,7 +435,7 @@ class OamTcdDataset(BasePreprocessedDataset):
 class Detectree2Dataset(BasePreprocessedDataset):
     dataset_name = 'Detectree2'
     license = 'CC-BY-4.0'
-    ground_resolution = 0.045
+    ground_resolution = 0.1
     scale_factor = None
 
     train_tile_size = None
