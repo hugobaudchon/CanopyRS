@@ -268,10 +268,10 @@ class HFDatasetTools:
 
 
 if __name__ == "__main__":
-    hf_dataset_name = "CanopyRSAdmin/BCI50ha"
+    hf_dataset_name = "CanopyRSAdmin/Detectree2"
 
     include_segmentations = True
-    output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/bci50ha'
+    output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/detectree2'
     root_paths = [
         # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_3555_0p5_0p045_None',
         # '/home/hugo/Documents/CanopyRS/data/tilerized/selva_box/tilerized_1777_0p5_0p045_None',
@@ -280,12 +280,14 @@ if __name__ == "__main__":
         # '/home/hugo/Documents/CanopyRS/data/tilerized/neon_trees/tilerized_400_0p5_None_1p0',
         # '/home/hugo/Documents/CanopyRS/data/tilerized/neon_trees/tilerized_1200_0p5_None_1p0'
 
-        '/home/hugo/Documents/CanopyRS/data/tilerized/bci50ha/tilerized_1777_0p75_0p045_None'
+        # '/home/hugo/Documents/CanopyRS/data/tilerized/bci50ha/tilerized_1777_0p75_0p045_None'
 
         # '/home/hugo/Documents/CanopyRS/data/tilerized/quebec_trees/tilerized_1666_0p5_0p03_None',
         # '/home/hugo/Documents/CanopyRS/data/tilerized/quebec_trees/tilerized_3333_0p5_0p03_None'
 
         # '/home/hugo/Documents/CanopyRS/data/tilerized/oam_tcd/tilerized_1024_0p5_None_1p0'
+
+        '/home/hugo/Documents/CanopyRS/data/tilerized/detectree2/tilerized_1000_0p5_None_1p0'
     ]
 
     HFDatasetTools.process_coco_datasets_for_huggingface(root_paths, include_segmentations, output_folder)

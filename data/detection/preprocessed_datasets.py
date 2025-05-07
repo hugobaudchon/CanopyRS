@@ -429,3 +429,59 @@ class OamTcdDataset(BasePreprocessedDataset):
     raster_level_eval_inputs = {
         # nothing here
     }
+
+
+@register_dataset
+class Detectree2Dataset(BasePreprocessedDataset):
+    dataset_name = 'Detectree2'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.045
+    scale_factor = None
+
+    train_tile_size = None
+    train_n_tiles = None
+    train_n_annotations = None
+
+    valid_tile_size = 1000
+    valid_n_tiles = 331
+    valid_n_annotations = 4881
+
+    test_tile_size = 1000
+    test_n_tiles = 311
+    test_n_annotations = 9169
+
+    tile_level_eval_maxDets = 100
+
+    locations = [
+        'malaysia_detectree2'
+    ]
+
+    products_per_location = {
+        'malaysia_detectree2': [
+            'dan_2014_rgb_project_to_chm',
+            'sep_ma14_21_orthomosaic_20141023_reprojected_full_res',
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        'valid': {
+            'dan_2014_rgb_project_to_chm': {
+                'ground_truth_gpkg': 'Dan_2014_RGB_project_to_CHM_labels.gpkg',
+                'aoi_gpkg': 'detectree2_aoi_valid.gpkg'
+            },
+            'sep_ma14_21_orthomosaic_20141023_reprojected_full_res': {
+                'ground_truth_gpkg': 'Sep_MA14_21_orthomosaic_20141023_reprojected_full_res_labels.gpkg',
+                'aoi_gpkg': 'detectree2_aoi_valid.gpkg'
+            }
+        },
+        'test': {
+            'dan_2014_rgb_project_to_chm': {
+                'ground_truth_gpkg': 'Dan_2014_RGB_project_to_CHM_labels.gpkg',
+                'aoi_gpkg': 'detectree2_aoi_test.gpkg'
+            },
+            'sep_ma14_21_orthomosaic_20141023_reprojected_full_res': {
+                'ground_truth_gpkg': 'Sep_MA14_21_orthomosaic_20141023_reprojected_full_res_labels.gpkg',
+                'aoi_gpkg': 'detectree2_aoi_test.gpkg'
+            }
+        }
+    }
