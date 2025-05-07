@@ -66,11 +66,10 @@ class BasePreprocessedDataset(ABC):
         root_output_path = Path(root_output_path)
 
         # Verify the dataset structure
-        for fold in folds:
-            for location in self.locations:
-                for product in self.products_per_location[location]:
-                    assert (root_output_path / location / product).exists(), \
-                        f"Product {product} not found in {location} under {fold} fold."
+        for location in self.locations:
+            for product in self.products_per_location[location]:
+                assert (root_output_path / location / product).exists(), \
+                    f"Product {product} not found in {location}."
 
     def iter_fold(
             self,
@@ -129,6 +128,8 @@ class BasePreprocessedDataset(ABC):
                         self.raster_level_eval_inputs
                         and fold in self.raster_level_eval_inputs
                         and prod in self.raster_level_eval_inputs[fold]
+                        and "ground_truth_gpkg" in self.raster_level_eval_inputs[fold][prod]
+                        and "aoi_gpkg" in self.raster_level_eval_inputs[fold][prod]
                 ):
                     info = self.raster_level_eval_inputs[fold][prod]
                     gt_gpkg_path = hf_hub_download(
@@ -400,7 +401,28 @@ class NeonTreeEvaluationDataset(BasePreprocessedDataset):
     }
 
     raster_level_eval_inputs = {
-        # nothing here
+        'valid': {
+            '2018_bart_4_322000_4882000_image_crop': {},
+            '2018_harv_5_733000_4698000_image_crop': {},
+            '2018_jerc_4_742000_3451000_image_crop': {},
+            '2018_mlbs_3_541000_4140000_image_crop': {},
+            '2018_mlbs_3_541000_4140000_image_crop2': {},
+            '2018_niwo_2_450000_4426000_image_crop': {},
+            '2018_osbs_4_405000_3286000_image': {},
+            '2018_sjer_3_258000_4106000_image': {},
+            '2018_sjer_3_259000_4110000_image': {},
+            '2018_teak_3_315000_4094000_image_crop': {},
+            '2019_dela_5_423000_3601000_image_crop': {},
+            '2019_leno_5_383000_3523000_image_crop': {},
+            '2019_onaq_2_367000_4449000_image_crop': {},
+            '2019_osbs_5_405000_3287000_image_crop': {},
+            '2019_osbs_5_405000_3287000_image_crop2': {},
+            '2019_sjer_4_251000_4103000_image': {},
+            '2019_tool_3_403000_7617000_image': {}
+        },
+        'test': {
+            'NeonTreeEvaluation_Test': {}
+        }
     }
 
 
@@ -436,7 +458,12 @@ class OamTcdDataset(BasePreprocessedDataset):
     }
 
     raster_level_eval_inputs = {
-        # nothing here
+        'valid': {
+            'oam_tcd': {}
+        },
+        'test': {
+            'oam_tcd': {}
+        }
     }
 
 
