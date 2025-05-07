@@ -105,11 +105,20 @@ class BasePreprocessedDataset(ABC):
                 # 1) where are the tiles on disk?
                 tile_dir = root / loc / prod / "tiles" / fold
 
-                gt_coco_path = CocoNameConvention.create_name(
-                    product_name=prod,
-                    fold=fold,
-                    ground_resolution=self.ground_resolution
-                )
+                try:
+                    gt_coco_path = CocoNameConvention.create_name(
+                        product_name=prod,
+                        fold=fold,
+                        ground_resolution=self.ground_resolution
+                    )
+                    with (root / loc / prod / gt_coco_path).open("rb") as f:
+                        pass
+                except FileNotFoundError:
+                    gt_coco_path = CocoNameConvention.create_name(
+                        product_name=prod,
+                        fold=fold,
+                        scale_factor=self.scale_factor
+                    )
 
                 gt_coco_path = root / loc / prod / gt_coco_path
 
@@ -347,7 +356,7 @@ class NeonTreeEvaluationDataset(BasePreprocessedDataset):
     dataset_name = 'NeonTreeEvaluation'
     license = 'CC-BY-4.0'
     ground_resolution = 0.1
-    scale_factor = None
+    scale_factor = 1.0
 
     train_tile_size = 1200
     train_n_tiles = 912
@@ -400,7 +409,7 @@ class OamTcdDataset(BasePreprocessedDataset):
     dataset_name = 'OAM-TCD'
     license = 'CC-BY-4.0'
     ground_resolution = 0.1
-    scale_factor = None
+    scale_factor = 1.0
 
     train_tile_size = 2048
     train_n_tiles = 3024
@@ -436,7 +445,7 @@ class Detectree2Dataset(BasePreprocessedDataset):
     dataset_name = 'Detectree2'
     license = 'CC-BY-4.0'
     ground_resolution = 0.1
-    scale_factor = None
+    scale_factor = 1.0
 
     train_tile_size = None
     train_n_tiles = None
