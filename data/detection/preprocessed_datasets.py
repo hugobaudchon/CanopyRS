@@ -32,7 +32,7 @@ class BasePreprocessedDataset(ABC):
     products_per_location: dict[str, list[str]] = None
     raster_level_eval_inputs: dict[str, dict[str, dict[str, str]]] = None
 
-    def download_and_extract(self, root_output_path: str, folds: list[str], hf_root='CanopyRSAdmin'):
+    def download_and_extract(self, root_output_path: str, folds: list[str], hf_root='CanopyRS'):
         # Download the dataset from Hugging Face, and extract images and annotations from the parquet files
         HFDatasetTools.download_and_extract_huggingface_dataset(
             hf_dataset_name=f'{hf_root}/{self.dataset_name}',
@@ -75,7 +75,7 @@ class BasePreprocessedDataset(ABC):
             self,
             root_output_path: Union[str, Path],
             fold: str,
-            hf_root: str = "CanopyRSAdmin"
+            hf_root: str = "CanopyRS"
     ) -> Iterator[Tuple[
         str,  # location
         str,  # product_name
@@ -272,7 +272,7 @@ class BCI50haDataset(BasePreprocessedDataset):
     test_n_tiles = 2706
     test_n_annotations = 75629
 
-    tile_level_eval_maxDets = 400
+    tile_level_eval_maxDets = 100
 
     locations = [
         'panama_bci50ha'
