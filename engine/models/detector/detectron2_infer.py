@@ -82,7 +82,7 @@ class Detectron2DetectorWrapper(DetectorWrapperBase):
             for image in images:
                 # Convert from tensor (C, H, W) to numpy (H, W, C)
                 image = image.cpu().numpy().transpose(1, 2, 0)
-                # Your dataset normalizes images to [0, 1]; scale back to [0, 255]
+                # scale back to [0, 255]
                 image = (image * 255.0).astype(np.uint8)
 
                 # Save original dimensions.

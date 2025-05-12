@@ -268,7 +268,7 @@ class HFDatasetTools:
 
 
 if __name__ == "__main__":
-    hf_dataset_name = "CanopyRSAdmin/Detectree2"
+    hf_dataset_name = "CanopyRS/Detectree2"
 
     include_segmentations = True
     output_folder = '/home/hugo/Documents/CanopyRS/huggingface_datasets/detectree2'
