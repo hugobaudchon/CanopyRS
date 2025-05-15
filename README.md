@@ -52,14 +52,23 @@ This script accepts command-line arguments specifying the config to use and the 
 python infer.py -c <CONFIG_NAME> -i <INPUT_PATH> -o <OUTPUT_PATH>
 ```
 
+We provide different default config files depending on your GPU resources:
+
+| Config name                            | Description                                                                                                                                                                      |
+|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `default_detection_multi_NQOS_best`    | The best multi-dataset, multi-resolution DINO + Swin L-384 model from our paper, trained on 4 datasets including SelvaBox. Best quality, and memory footprint is at about 10 GB. |
+| `default_segmentation_multi_NQOS_best` | Same as `default_segmentation_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.           |
+| `default_detection_single_S_medium`    | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                    |
+| `default_detection_single_S_low`       | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                   |
+
 Example run for a single raster/orthomosaic (`-i`) with our default config:
 ```bash
-python infer.py -c default -i /path/to/raster.tif -o <OUTPUT_PATH>
+python infer.py -c default_detection_multi_NQOS_best -i /path/to/raster.tif -o <OUTPUT_PATH>
 ```
 
 Example run for a folder of tiles/images (`-t`) with our default config:
 ```bash
-python infer.py -c default -t /path/to/tiles/folder -o <OUTPUT_PATH>
+python infer.py -c default_detection_multi_NQOS_best -t /path/to/tiles/folder -o <OUTPUT_PATH>
 ```
 
 ### Data
@@ -83,7 +92,7 @@ python -m tools/download_datasets --datasets SelvaBox Detectree2 --output_root <
 
 After extraction, they will be in COCO format (the same as geodataset's tilerizers output).
 
-Your <DATA_ROOT> folder will contain one or more 'locations' folders, each containing individual 'rasters' folders, themsevles containing .json COCO annotations and tiles for minimum one fold (train, valid, test...).
+Your `<DATA_ROOT>` folder will contain one or more 'locations' folders, each containing individual 'rasters' folders, themsevles containing .json COCO annotations and tiles for minimum one fold (train, valid, test...).
 
 For our SelvaBox and Detectree2 datasets example, the structure should look like this:
 
@@ -104,7 +113,7 @@ For our SelvaBox and Detectree2 datasets example, the structure should look like
 │   ├── ...
 ├── malaysia_detectree2                (-> Malaysia location of Detectree2)
 │   ├── ...
-└── panama_aguasalud                  (-> Panama location of SelvaBox)
+└── panama_aguasalud                   (-> Panama location of SelvaBox)
 ```
 
 Each additional dataset will add one or more locations folders.
