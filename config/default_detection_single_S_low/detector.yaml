@@ -22,7 +22,7 @@ augmentation_train_crop_size_range:
 - 720
 - 880
 backbone_model_pretrained: true
-batch_size: 4
+batch_size: 2
 box_nms_thresh: 0.5
 box_predictions_per_image: 500
 box_score_thresh: 0.05
