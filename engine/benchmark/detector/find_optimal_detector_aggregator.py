@@ -21,6 +21,8 @@ def eval_single_aggregator(
         ground_resolution: float
 ):
     try:
+        print(f"Evaluating NMS IOU threshold: {nms_iou_threshold}, NMS score threshold: {nms_score_threshold}, output will be at {output_path}")
+
         output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_nmsscorethresh_{str(nms_score_threshold).replace('.', 'p')}"
         Path(output_path).mkdir(parents=True, exist_ok=True)
         aggregator_output_path = output_path / 'aggregator_output.gpkg'
@@ -62,15 +64,9 @@ def eval_single_aggregator(
 
 def average_metrics_by_raster(results_df: pd.DataFrame):
     grouping_cols = ['nms_iou_threshold', 'nms_score_threshold']
-    # Columns that we don't want to aggregate (identification columns)
-    ignore_cols = set(grouping_cols + ['raster_name', 'preds_coco_json', 'truth_gdf', 'tiles_root'])
 
     # Metrics to be averaged and summed:
     avg_metrics = [
-        # "AP", "AP50", "AP75",
-        # "AP_small", "AP_medium", "AP_large",
-        # "AR", "AR50", "AR75", "AR_max", "AR_small", "AR_medium", "AR_large"
-
         "precision", "recall", "f1",
     ]
     sum_metrics = ["num_images", "num_truths", "num_preds"]

@@ -36,9 +36,11 @@ class DetectorBenchmarker:
                              product_name: str,
                              product_tiles_path: str or Path,
                              detector_config: DetectorConfig,
-                             aggregator_config: AggregatorConfig or None):
+                             aggregator_config: AggregatorConfig or None,
+                             output_folder: str or Path = None):
 
-        output_folder = self.output_folder / self.fold_name / product_name
+        if output_folder is None:
+            output_folder = self.output_folder / self.fold_name / product_name
 
         io_config = InferIOConfig(
             input_imagery=None,
@@ -73,8 +75,11 @@ class DetectorBenchmarker:
         """
         Find the optimal NMS IoU threshold for the detector by evaluating different thresholds on the validation set.
         """
+        eval_iou_threshold = 0.75  # This is the IoU threshold used for RF1_75
 
         datasets = self.get_preprocessed_datasets(dataset_names)
+
+        print(f"Finding optimal NMS IoU threshold for datasets: {dataset_names}. Inferring rasters...")
 
         raster_names: list[str] = []
         preds_coco_jsons: list[str] = []
@@ -87,7 +92,8 @@ class DetectorBenchmarker:
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     detector_config=detector_config,
-                    aggregator_config=None
+                    aggregator_config=None,
+                    output_folder=self.output_folder / self.fold_name / 'tile_predictions' / product_name
                 )
 
                 raster_names.append(f"{location}/{product_name}")
@@ -96,8 +102,10 @@ class DetectorBenchmarker:
                 aois_gdfs.append(aoi_gpkg)
                 tiles_roots.append(str(tiles_path))
 
+        print(f"Datasets inferred. Starting NMS IoU threshold search...")
+        nms_search_output_folder = self.output_folder / self.fold_name / 'NMS_search'
         aggregators_results_df = find_optimal_detector_aggregator(
-            output_folder=str(self.output_folder / self.fold_name),
+            output_folder=str(nms_search_output_folder),
             raster_names=raster_names,
             preds_coco_jsons=preds_coco_jsons,
             truths_gdfs=truths_gdfs,
@@ -110,7 +118,7 @@ class DetectorBenchmarker:
             n_workers=n_workers
         )
 
-        csv_output_path = self.output_folder / self.fold_name / "optimal_nms_iou_threshold_search.csv"
+        csv_output_path = nms_search_output_folder / 'optimal_nms_iou_threshold_search.csv'
         aggregators_results_df.to_csv(csv_output_path, index=False)
         print(f"Optimal NMS IoU threshold search results saved to {csv_output_path}")
 
@@ -119,6 +127,8 @@ class DetectorBenchmarker:
         best_aggregator = results_average.sort_values('f1', ascending=False).iloc[0]
         best_aggregator_iou = best_aggregator['nms_iou_threshold']
         best_aggregator_score_threshold = best_aggregator['nms_score_threshold']
+
+        print(f"Best NMS IoU threshold: {best_aggregator_iou}, Best Score threshold: {best_aggregator_score_threshold}, with an RF1_{str(int(eval_iou_threshold * 100))} of {best_aggregator['f1']}")
 
         return best_aggregator_iou, best_aggregator_score_threshold
 
@@ -167,7 +177,7 @@ class DetectorBenchmarker:
                 dataset_preds_cocos.append(preds_coco_json)
                 dataset_truths_cocos.append(truths_coco)
 
-                if do_raster_level_eval:
+                if aggregator_config and do_raster_level_eval:
                     raster_metrics = evaluator.raster_level_single_iou_threshold(
                         iou_type='bbox',
                         preds_gpkg_path=preds_aggregated_gpkg,
@@ -188,6 +198,7 @@ class DetectorBenchmarker:
             merge_coco_jsons(dataset_truths_cocos, merged_truths_coco_path)
 
             # Evaluate the merged COCO JSON files
+            print(f"\nEvaluating COCO metrics for the whole dataset {dataset_name}...")
             dataset_tile_level_metrics = evaluator.tile_level(
                 iou_type='bbox',
                 preds_coco_path=str(merged_preds_coco_path),

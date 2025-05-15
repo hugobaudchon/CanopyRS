@@ -87,7 +87,9 @@ To download and extract datasets automatically and use it with our benchmark or 
 For example, to download SelvaBox and Detectree2 datasets, you can use the following command:
 
 ```bash
-python -m tools/download_datasets --datasets SelvaBox Detectree2 --output_root <DATA_ROOT>
+python -m tools.detection.download_datasets \
+  -d SelvaBox Detectree2 \
+  -o <DATA_ROOT>
 ```
 
 After extraction, they will be in COCO format (the same as geodataset's tilerizers output).
@@ -119,13 +121,54 @@ For our SelvaBox and Detectree2 datasets example, the structure should look like
 Each additional dataset will add one or more locations folders.
 
 ### Evaluation
-#### Simple tile-level evaluation
-Coming soon
 
-TODO: expliquer comment telecharger modeles / changer config default et expliquer comment la modifier si necessaire
+#### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
+To find the optimal NMS parameters for your model, i.e. `nms_iou_threshold` and `nms_score_threshold`,
+you can use the `find_optimal_raster_nms.py` tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
+Depending on how many Rasters there are in the datasets you select, it could take from a few tens of minutes to a few hours. If you have lots of CPU cores, we recommend to increase the number of workers.
 
-#### Benchmark for tile-level and raster-level
+You have to pass the path of a detection model config file, compatible with CanopyRS.
 
+For example to find NMS parameters for the `default_detection_multi_NQOS_best` default model (DINO+Swin L-384 trained on NQOS datasets) on the validation set of SelvaBox and Detectree2 datasets,
+you can use the following command (make sure to download the data first, see `Data` section):
+
+```bash
+python -m tools.detection.find_optimal_raster_nms \
+  -c config/default_detection_multi_NQOS_best/detector.yaml \
+  -d SelvaBox Detectree2 \
+  -r <DATA_ROOT> \
+  -o <OUTPUT_PATH> \
+  --n_workers 6
+```
+
+For more information on parameters, you can use the `--help` flag:
+```bash
+python -m tools.detection.find_optimal_raster_nms --help
+```
+
+#### Benchmarking
+To benchmark a model on the test or valid fold of some datasets, you can use the `benchmark.py` tool script. 
+
+
+This script will run the model on the desired fold and evaluate the results using the COCO evaluation metrics (mAP and mAR).
+
+If you provide `nms_threshold` and `score_threshold` parameters, it will also compute the $RF1_{75}$ metric by running an NMS at the raster level for datasets that have raster-level annotations.
+
+```bash
+python -m tools.detection.benchmark \
+  -c config/default_detection_multi_NQOS_best/detector.yaml \
+  -d SelvaBox Detectree2 \
+  -r <DATA_ROOT> \
+  -o <OUTPUT_PATH> \
+  --nms_threshold 0.7 \
+  --score_threshold 0.5
+```
+
+By default the evaluation is done on the test set. 
+For more information on parameters, you can use the `--help` flag:
+```bash
+python -m tools.detection.benchmark --help
+```
 ### Training
 
 Coming soon
