@@ -147,12 +147,13 @@ python -m tools.detection.find_optimal_raster_nms --help
 ```
 
 #### Benchmarking
-To benchmark a model on the test or valid fold of some datasets, you can use the `benchmark.py` tool script. 
+To benchmark a model on the test or valid fold of some datasets, you can use the `benchmark.py` tool script.
 
-
-This script will run the model on the desired fold and evaluate the results using the COCO evaluation metrics (mAP and mAR).
+This script will run the model on the desired fold and evaluate the results using COCO metrics (mAP and mAR).
 
 If you provide `nms_threshold` and `score_threshold` parameters, it will also compute the $RF1_{75}$ metric by running an NMS at the raster level for datasets that have raster-level annotations.
+For example, to benchmark the `default_detection_multi_NQOS_best` default model (DINO+Swin L-384 trained on NQOS datasets) on the test set of SelvaBox and Detectree2 datasets,
+you can use the following command (make sure to download the data first, see `Data` section):
 
 ```bash
 python -m tools.detection.benchmark \
