@@ -1,0 +1,3 @@
+model: 'deepforest'
+checkpoint_path: 'weecology/deepforest-tree'
+batch_size: 4
