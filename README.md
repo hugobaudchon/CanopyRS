@@ -49,30 +49,65 @@ The main entry point of the inference pipeline is `infer.py`.
 This script accepts command-line arguments specifying the config to use and the input and output paths:
 
 ```bash
-python infer.py -c <config_name> -i <input_path> -o <output_path>
+python infer.py -c <CONFIG_NAME> -i <INPUT_PATH> -o <OUTPUT_PATH>
 ```
 
-Example run for a single raster/orthomosaic (`-i`):
+Example run for a single raster/orthomosaic (`-i`) with our default config:
 ```bash
-python infer.py -c default -i /path/to/raster.tif -o /path/to/output/folder
+python infer.py -c default -i /path/to/raster.tif -o <OUTPUT_PATH>
 ```
 
-Example run for a folder of tiles/images (`-t`):
+Example run for a folder of tiles/images (`-t`) with our default config:
 ```bash
-python infer.py -c default -t /path/to/tiles/folder -o /path/to/output/folder
+python infer.py -c default -t /path/to/tiles/folder -o <OUTPUT_PATH>
 ```
 
 ### Data
 
-In order to train or evaluate models, you will need data. In addition to SelvaBox, we provide 5 other pre-processed datasets:
+In order to train or benchmark models, you will need data. In addition to SelvaBox, we provide 5 other pre-processed datasets:
 
-- **SelvaBox**: TODO
-- **Detectree2**: TODO
-- **NeonTreeEvaluation**: TODO
-- **OamTcd**: TODO
-- **BCI50ha**: TODO
-- **QuebecTrees**: TODO
-To download and extract datasets, you can use one of our tools TODO
+- **SelvaBox** (~31.5 GB): https://huggingface.co/datasets/CanopyRS/SelvaBox
+- **Detectree2** (~1.5 GB): https://huggingface.co/datasets/CanopyRS/Detectree2
+- **NeonTreeEvaluation** (~3.3 GB): https://huggingface.co/datasets/CanopyRS/NeonTreeEvaluation
+- **OAM-TCD** (~32.2 GB): https://huggingface.co/datasets/CanopyRS/OAM-TCD
+- **BCI50ha** (~27.0 GB): https://huggingface.co/datasets/CanopyRS/BCI50ha
+- **QuebecTrees** (~6.0 GB): https://huggingface.co/datasets/CanopyRS/QuebecTrees
+
+To download and extract datasets automatically and use it with our benchmark or training scripts, we provide a tool.
+
+For example, to download SelvaBox and Detectree2 datasets, you can use the following command:
+
+```bash
+python -m tools/download_datasets --datasets SelvaBox Detectree2 --output_root <DATA_ROOT>
+```
+
+After extraction, they will be in COCO format (the same as geodataset's tilerizers output).
+
+Your <DATA_ROOT> folder will contain one or more 'locations' folders, each containing individual 'rasters' folders, themsevles containing .json COCO annotations and tiles for minimum one fold (train, valid, test...).
+
+For our SelvaBox and Detectree2 datasets example, the structure should look like this:
+
+```
+<DATA_ROOT>
+├── brazil_zf2                         (-> Brazil location of SelvaBox)
+│   ├── 20240130_zf2quad_m3m_rgb       (-> one of the Brazil location rasters for SelvaBox)
+│   │   ├── tiles/
+│   │   │  ├── valid/
+│   │   │  │  ├── 20240130_zf2quad_m3m_rgb_tile_valid_1777_gr0p045_0_6216.tif
+│   │   │  │  ├── ...
+│   │   ├──  20240130_zf2quad_m3m_rgb_coco_gr0p045_valid.json
+│   │   └──  ...
+│   ├── 20240130_zf2tower_m3m_rgb
+│   ├── 20240130_zf2transectew_m3m_rgb
+│   └── 20240131_zf2campirana_m3m_rgb
+├── ecuador_tiputini                   (-> Ecuador location of SelvaBox)
+│   ├── ...
+├── malaysia_detectree2                (-> Malaysia location of Detectree2)
+│   ├── ...
+└── panama_aguasalud                  (-> Panama location of SelvaBox)
+```
+
+Each additional dataset will add one or more locations folders.
 
 ### Evaluation
 #### Simple tile-level evaluation
