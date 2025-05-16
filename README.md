@@ -2,10 +2,8 @@
 
 ![Project Title or Logo](assets/canopyrs_banner.png)
 
-Canopy Remote Sensing is a project and pipeline designed for processing geospatial orthomosaics,
-specifically for the purpose of detecting, segmenting and in the future classifying trees in a forest.
-The pipeline includes several components such as tiling, detection, aggregation, and segmentation,
-which can be chained one after the other depending on the application.
+Canopy Remote Sensing is a pipeline designed for processing geospatial orthomosaics to detect, segment, and (in the future) classify trees.
+The pipeline includes components for tiling, detecting, aggregating, and segmenting rasters. These components can be chained together based on the desired application.
 
 ## Installation
 
@@ -56,7 +54,7 @@ We provide different default config files depending on your GPU resources:
 
 | Config name                            | Description                                                                                                                                                                      |
 |----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `default_detection_multi_NQOS_best`    | The best multi-dataset, multi-resolution DINO + Swin L-384 model from our paper, trained on 4 datasets including SelvaBox. Best quality, and memory footprint is at about 10 GB. |
+| `default_detection_multi_NQOS_best`    | The best model from our paper, a DINO + Swin L-384 trained on a mixture of multi-resolution datasets including SelvaBox. Best quality, and memory footprint is at about 10 GB. |
 | `default_segmentation_multi_NQOS_best` | Same as `default_segmentation_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.           |
 | `default_detection_single_S_medium`    | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                    |
 | `default_detection_single_S_low`       | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                   |
