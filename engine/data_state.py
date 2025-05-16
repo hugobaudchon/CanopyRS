@@ -19,10 +19,6 @@ class DataState:
     infer_gdf_columns_to_pass: set = field(default_factory=set)
     infer_gdf_columns_to_delete_on_save: List = field(default_factory=list)
 
-    ground_truth_coco_path: str = None
-    ground_truth_gdf: gpd.GeoDataFrame = None
-    ground_truth_gdf_columns_to_pass: set = field(default_factory=set)
-
     side_processes: List = field(default_factory=list)
 
     component_output_folders: Dict = field(default_factory=dict)

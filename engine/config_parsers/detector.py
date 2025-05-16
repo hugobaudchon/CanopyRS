@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple, Union
 
 from engine.config_parsers.base import BaseConfig
 
@@ -20,6 +20,7 @@ class DetectorConfig(BaseConfig):
     data_root_path: str = None   # Parent folder of datasets
     train_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
     valid_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
+    test_dataset_names: List[str] = []     # Sub-folders names in root_path (parent folder)
     train_output_path: str = None
 
     # Training Params
@@ -27,7 +28,7 @@ class DetectorConfig(BaseConfig):
     seed: int = 42
     wandb_project: Optional[str] = None
 
-    augmentation_image_size: int = 1024     # Final image size for both training and evaluation  # TODO make it range [min_size, max_size], so that image is resized if under/over it
+    augmentation_image_size: Union[int, Tuple[int, int]] = 1024     # Final image size for both training and evaluation. If a tuple, the image will be resized randomly within the range for training (with prob augmentation_train_crop_prob), and will be resized deterministically for evaluation/infer.
 
     augmentation_early_conditional_image_size: Optional[int] = None
     augmentation_train_crop_size_range: List[int] = [784, 2048]  # TODO implement: add support for floats too, ex: [0.6, 1.0] would crop between 60% and 100% of the image size
