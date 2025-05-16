@@ -5,7 +5,7 @@ einops==0.7.0
 faster-coco-eval>=1.6.5
 GDAL>=3.0.0,<=3.8.0
 geopandas==1.0.1
-geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.4.0
+geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.4.1
 laspy==2.5.3
 numpy>=1.24.0,<2.0.0
 pandas>=2.2.0
