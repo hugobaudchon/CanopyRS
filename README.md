@@ -41,16 +41,16 @@ While default configuration files are provided in the `config` directory,
 you can also create your own configuration files by creating a new folder under `config/`, adding a `pipeline.yaml` script,
 and setup your desired list of component configuration files.
 
-## Usage
+A `pipeline` is made of multiple components, each with its own configuration file. A typical `pipeline.yaml` configuration will look like this:
 
-### Inference
-
-The main entry point of the inference pipeline is `infer.py`. 
-This script accepts command-line arguments specifying the config to use and the input and output paths:
-
-```bash
-python infer.py -c <CONFIG_NAME> -i <INPUT_PATH> -o <OUTPUT_PATH>
+```yaml
+components_configs:
+  - tilerizer: default_detection_multi_NQOS_best/tilerizer
+  - detector: default_detection_multi_NQOS_best/detector
+  - aggregator: default_detection_multi_NQOS_best/aggregator
 ```
+
+where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_detection_multi_NQOS_best/tilerizer` points to a `[config_name]/[component_name]` component.
 
 We provide different default config files depending on your GPU resources:
 
@@ -61,6 +61,15 @@ We provide different default config files depending on your GPU resources:
 | `default_detection_single_S_medium`    | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                    |
 | `default_detection_single_S_low`       | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                   |
 
+
+## Inference
+
+The main entry point of the inference pipeline is `infer.py`. 
+This script accepts command-line arguments specifying the config to use and the input and output paths:
+
+```bash
+python infer.py -c <CONFIG_NAME> -i <INPUT_PATH> -o <OUTPUT_PATH>
+```
 Example run for a single raster/orthomosaic (`-i`) with our default config:
 ```bash
 python infer.py -c default_detection_multi_NQOS_best -i /path/to/raster.tif -o <OUTPUT_PATH>
@@ -71,7 +80,7 @@ Example run for a folder of tiles/images (`-t`) with our default config:
 python infer.py -c default_detection_multi_NQOS_best -t /path/to/tiles/folder -o <OUTPUT_PATH>
 ```
 
-### Data
+## Data
 
 In order to train or benchmark models, you will need data. In addition to SelvaBox, we provide 5 other pre-processed datasets:
 
@@ -120,11 +129,11 @@ For our SelvaBox and Detectree2 datasets example, the structure should look like
 
 Each additional dataset will add one or more locations folders.
 
-### Evaluation
+## Evaluation
 
-#### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
+### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
 To find the optimal NMS parameters for your model, i.e. `nms_iou_threshold` and `nms_score_threshold`,
-you can use the `find_optimal_raster_nms.py` tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
+you can use the [`find_optimal_raster_nms.py`](tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
 Depending on how many Rasters there are in the datasets you select, it could take from a few tens of minutes to a few hours. If you have lots of CPU cores, we recommend to increase the number of workers.
 
 You have to pass the path of a detection model config file, compatible with CanopyRS.
@@ -146,12 +155,13 @@ For more information on parameters, you can use the `--help` flag:
 python -m tools.detection.find_optimal_raster_nms --help
 ```
 
-#### Benchmarking
-To benchmark a model on the test or valid fold of some datasets, you can use the `benchmark.py` tool script.
+### Benchmarking
+To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](tools/detection/benchmark.py) tool script.
 
-This script will run the model on the desired fold and evaluate the results using COCO metrics (mAP and mAR).
+This script will run the model and evaluate the results using COCO metrics (mAP and mAR).
 
 If you provide `nms_threshold` and `score_threshold` parameters, it will also compute the $RF1_{75}$ metric by running an NMS at the raster level for datasets that have raster-level annotations.
+
 For example, to benchmark the `default_detection_multi_NQOS_best` default model (DINO+Swin L-384 trained on NQOS datasets) on the test set of SelvaBox and Detectree2 datasets,
 you can use the following command (make sure to download the data first, see `Data` section):
 
@@ -170,6 +180,30 @@ For more information on parameters, you can use the `--help` flag:
 ```bash
 python -m tools.detection.benchmark --help
 ```
-### Training
+## Training
 
-Coming soon
+We provide a `train.py` script to train detector models on preprocessed datasets (you must download them first, see `Data`).
+
+Currently, our training pipeline requires [wandb](https://wandb.ai/site) to be installed and configured for logging purposes.
+
+Then, for example, if you want to train a model on the `SelvaBox` and `Detectree2` datasets, you will have to copy a `detector.yaml` config file, for example from [`config/default_detection_multi_NQOS_best`](config/default_detection_multi_NQOS_best/detector.yaml), and modify a few things:
+- `model`: the model type, either `dino_detrex` for detrex-based DINO models or `faster_rcnn_detectron2` for detectron2-based Faster R-CNN models.
+- `architecture`: the model architecture, either `dino-swin/dino_swin_large_384_5scale_36ep.py`, `dino-resnet/dino_r50_4scale_24ep.py` (for DINOs) or `COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml` (for Faster R-CNNs) are currently supported.
+- `checkpoint_path`: path to the pretrained model checkpoint. You can keep the pretrained checkpoint we provide in order to fine tune it, or replace it with one of [detrex](https://detrex.readthedocs.io/en/latest/tutorials/Model_Zoo.html) COCO checkpoints.
+- `data_root_path`: path to your dataset root folder (where the `SelvaBox` and `Detectree2` folders are, i.e. the <DATA_ROOT> folder in the `Data` section).
+- `train_output_path`: path to the output folder where the model checkpoints and logs will be saved.
+- `wandb_project`: name of the wandb project to log to (make sure to be [logged](https://wandb.ai/site)).
+- `train_dataset_names`: A list of the names of the `location` folders you want to train on. For example, `SelvaBox` has three locations, `brazil_zf2`, `ecuador_tiputini`, and `panama_aguasalud`. You can choose to train on all of them, or only on one or two of them. The same goes for `Detectree2` which has only one location, `malaysia_detectree2`.
+- `valid_dataset_names`: A list of the names of the `location` folders you want to validate on (see above for locations).
+
+You can also modify plenty of other parameters such as `batch_size`, `lr`...
+
+Then you can then run the training script with the following command:
+
+```bash
+python train.py \
+  -m detector \
+  -c config/default_detection_multi_NQOS_best/detector.yaml 
+```
+
+
