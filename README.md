@@ -190,11 +190,11 @@ Then, for example, if you want to train a model on the `SelvaBox` and `Detectree
 - `model`: the model type, either `dino_detrex` for detrex-based DINO models or `faster_rcnn_detectron2` for detectron2-based Faster R-CNN models.
 - `architecture`: the model architecture, either `dino-swin/dino_swin_large_384_5scale_36ep.py`, `dino-resnet/dino_r50_4scale_24ep.py` (for DINOs) or `COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml` (for Faster R-CNNs) are currently supported.
 - `checkpoint_path`: path to the pretrained model checkpoint. You can keep the pretrained checkpoint we provide in order to fine tune it, or replace it with one of [detrex](https://detrex.readthedocs.io/en/latest/tutorials/Model_Zoo.html) COCO checkpoints.
-- `data_root_path`: path to your dataset root folder (where the `SelvaBox` and `Detectree2` folders are, i.e. the <DATA_ROOT> folder in the `Data` section).
+- `data_root_path`: path to your dataset root folder (where the `SelvaBox` and `Detectree2` extracted datasets are, i.e. the <DATA_ROOT> folder in the `Data` section).
 - `train_output_path`: path to the output folder where the model checkpoints and logs will be saved.
 - `wandb_project`: name of the wandb project to log to (make sure to be [logged](https://wandb.ai/site)).
-- `train_dataset_names`: A list of the names of the `location` folders you want to train on. For example, `SelvaBox` has three locations, `brazil_zf2`, `ecuador_tiputini`, and `panama_aguasalud`. You can choose to train on all of them, or only on one or two of them. The same goes for `Detectree2` which has only one location, `malaysia_detectree2`.
-- `valid_dataset_names`: A list of the names of the `location` folders you want to validate on (see above for locations).
+- `train_dataset_names`: A list of the names of the `location` folders (children of `data_root_path` you defined above) you want to train on. For example, `SelvaBox` has three locations, `brazil_zf2`, `ecuador_tiputini`, and `panama_aguasalud`. You can choose to train on all of them, or only on one or two of them. The same goes for `Detectree2` which has only one location, `malaysia_detectree2`.
+- `valid_dataset_names`: A list of the names of the `location` folders (children of `data_root_path` you defined above) you want to validate on (see above for locations).
 
 You can also modify plenty of other parameters such as `batch_size`, `lr`...
 
