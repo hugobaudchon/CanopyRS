@@ -20,7 +20,7 @@ Install the required Python packages:
 ```bash
 conda create -n canopyrs python=3.10
 conda activate canopyrs
-conda install -c conda-forge gdal
+conda install -c conda-forge gdal=3.6.2
 pip install -r requirements.txt
 pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
 pip install git+https://github.com/IDEA-Research/detrex.git
@@ -55,7 +55,7 @@ We provide different default config files depending on your GPU resources:
 | Config name                            | Description                                                                                                                                                                      |
 |----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `default_detection_multi_NQOS_best`    | The best model from our paper, a DINO + Swin L-384 trained on a mixture of multi-resolution datasets including SelvaBox. Best quality, and memory footprint is at about 10 GB. |
-| `default_segmentation_multi_NQOS_best` | Same as `default_segmentation_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.           |
+| `default_segmentation_multi_NQOS_best` | Same as `default_detection_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.           |
 | `default_detection_single_S_medium`    | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                    |
 | `default_detection_single_S_low`       | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                   |
 
