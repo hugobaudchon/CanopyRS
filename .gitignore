@@ -5,6 +5,9 @@ jobs/
 experiments/dataset_statistics/*.png
 experiments/resolution/*/*.yaml
 
+# Slurm temp files
+*.out
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
