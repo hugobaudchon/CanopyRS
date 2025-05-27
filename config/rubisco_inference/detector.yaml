@@ -1,0 +1,6 @@
+model: 'faster_rcnn'
+architecture: 'resnet101'
+checkpoint_path: '/network/projects/forest_mssl/checkpoints/xprize/Detector_model_FINAL_1/detector_FINAL_dataset_resnet101_5.pt'
+batch_size: 32
+num_classes: 1
+box_predictions_per_image: 500
