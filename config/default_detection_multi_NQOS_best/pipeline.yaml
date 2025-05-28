@@ -1,0 +1,4 @@
+components_configs:
+  - tilerizer: default_detection_multi_NQOS_best/tilerizer
+  - detector: default_detection_multi_NQOS_best/detector
+  - aggregator: default_detection_multi_NQOS_best/aggregator

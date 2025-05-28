@@ -61,6 +61,7 @@ class AggregatorComponent(BaseComponent):
             nms_threshold=self.config.nms_threshold,
             nms_algorithm=self.config.nms_algorithm,
             best_geom_keep_area_ratio=0.5,
+            edge_band_buffer_percentage=self.config.edge_band_buffer_percentage,
             pre_aggregated_output_path=self.output_path / pre_aggregated_gpkg_name,
         )
         results_gdf = aggregator.polygons_gdf

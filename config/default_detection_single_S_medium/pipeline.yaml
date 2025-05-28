@@ -1,0 +1,4 @@
+components_configs:
+  - tilerizer: default_detection_single_S_medium/tilerizer
+  - detector: default_detection_single_S_medium/detector
+  - aggregator: default_detection_single_S_medium/aggregator

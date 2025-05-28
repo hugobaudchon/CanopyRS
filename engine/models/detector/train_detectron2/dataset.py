@@ -1,5 +1,4 @@
-from pathlib import Path
-from typing import List
+import uuid
 
 import numpy as np
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -89,8 +88,7 @@ def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
 
 def register_detection_dataset(
         fold: str,
-        root_path: str,
-        dataset_name: str,
+        root_path: str or list[str],
         force_binary_class: bool = True
 ):
     """
@@ -100,10 +98,8 @@ def register_detection_dataset(
     ----------
     fold: str
         The fold of the dataset to register
-    root_path: str
-        The root path of the dataset
-    dataset_name: str
-        The name of the dataset
+    root_path: str or list[str]
+        The list of root paths of the dataset
     force_binary_class: bool, optional
         Whether to force binary class
 
@@ -118,7 +114,7 @@ def register_detection_dataset(
 
     # Define your classes
     thing_classes = ["tree"]
-
+    dataset_name = f"{fold}_tree_custom_{uuid.uuid4().hex}"
     print(f"Registering as dataset '{dataset_name}'...")
     # Register the dataset
     DatasetCatalog.register(
@@ -133,73 +129,4 @@ def register_detection_dataset(
     )
     print(f"Dataset '{dataset_name}' registered.")
 
-
-def register_combined_datasets(dataset_names: list):
-    """
-    Combine multiple datasets into one.
-
-    Parameters
-    ----------
-    dataset_names: list
-        List of dataset names to combine
-
-    Returns
-    -------
-    str
-        The name of the combined dataset
-    """
-    combined_dataset_name = "_".join(dataset_names)
-    combined_dataset_dicts = []
-
-    for dataset_name in dataset_names:
-        combined_dataset_dicts.extend(DatasetCatalog.get(dataset_name))
-
-    DatasetCatalog.register(
-        combined_dataset_name,
-        lambda: combined_dataset_dicts
-    )
-
-    MetadataCatalog.get(combined_dataset_name).set(
-        thing_classes=MetadataCatalog.get(dataset_names[0]).thing_classes
-    )
-
-    return combined_dataset_name
-
-
-def register_multiple_detection_datasets(
-        root_path: str,
-        dataset_names: list,
-        fold: str,
-        force_binary_class: bool = True,
-        combine_datasets: bool = True
-) -> List[str]:
-    """
-    Register multiple custom datasets with train_detectron2.
-
-    Parameters
-    ----------
-    root_path: str
-        The root path of the datasets
-    dataset_names: list
-        List of dataset names
-    fold: str
-        The fold of the dataset to register (train, valid, train0, etc.)
-    force_binary_class: bool, optional
-        Whether to force binary class
-    """
-    d2_datasets_names = []
-    for dataset_name in dataset_names:
-        d2_name = f"{dataset_name}_{fold}"
-        register_detection_dataset(
-            fold=fold,
-            root_path=Path(root_path) / dataset_name,
-            dataset_name=d2_name,
-            force_binary_class=force_binary_class
-        )
-        d2_datasets_names.append(d2_name)
-
-    if combine_datasets and len(d2_datasets_names) > 1:
-        d2_combined_dataset_name = register_combined_datasets(d2_datasets_names)
-        return [d2_combined_dataset_name]
-    else:
-        return d2_datasets_names
+    return dataset_name

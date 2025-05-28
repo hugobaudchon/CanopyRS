@@ -3,12 +3,12 @@ from pathlib import Path
 import geopandas as gpd
 
 from geodataset.aoi import AOIConfig
-from geodataset.tilerize import RasterPolygonTilerizer, RasterTilerizer, LabeledRasterTilerizer, RasterPolygonTilerizer
+from geodataset.tilerize import RasterTilerizer, LabeledRasterTilerizer, RasterPolygonTilerizer
 
 from engine.components.base import BaseComponent
 from engine.config_parsers.tilerizer import TilerizerConfig
 from engine.data_state import DataState
-from engine.utils import ground_truth_aoi_name, infer_aoi_name
+from engine.utils import infer_aoi_name
 
 
 class TilerizerComponent(BaseComponent):
@@ -18,11 +18,9 @@ class TilerizerComponent(BaseComponent):
                  config: TilerizerConfig,
                  parent_output_path: str,
                  component_id: int,
-                 infer_aois_config: AOIConfig,
-                 ground_truth_aois_config: AOIConfig):
+                 infer_aois_config: AOIConfig):
         super().__init__(config, parent_output_path, component_id)
         self.infer_aois_config = infer_aois_config
-        self.ground_truth_aois_config = ground_truth_aois_config
 
     def __call__(self, data_state: DataState) -> DataState:
         if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
@@ -30,41 +28,13 @@ class TilerizerComponent(BaseComponent):
                 "infer_gdf must have a CRS."
                 " Please make sure you add an Aggregator in the pipeline before the Tilerizer."
             )
-        if data_state.ground_truth_gdf is not None and data_state.ground_truth_gdf.crs is None:
-            raise ValueError(
-                "ground_truth_gdf must have a CRS."
-                " Please input a valid ground truth GeoPackage."
-            )
 
         if self.config.other_labels_attributes_column_names is not None:
             data_state.infer_gdf_columns_to_pass.update(self.config.other_labels_attributes_column_names)
 
         if self.config.tile_type == 'tile':
-            if data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None:
-                # First, generating the ground truth COCO and tiles
-                tilerizer = self.get_labeled_tilerizer(
-                    data_state=data_state,
-                    labels_gdf=data_state.ground_truth_gdf,
-                    aois_config=self.ground_truth_aois_config,
-                    other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass)
-                )
-                ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
-                tiles_path = tilerizer.tiles_path
-                tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[ground_truth_aoi_name]]
-
-                # Then, generating the results COCO, based on the ground truth tiles
-                second_result = tilerizer.generate_additional_coco_dataset(
-                    labels_gdf=data_state.infer_gdf,
-                    aoi_name_mapping={ground_truth_aoi_name: infer_aoi_name},
-                    geopackage_layer_name=None,
-                    main_label_category_column_name=self.config.main_label_category_column_name,
-                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
-                )
-
-                infer_coco_path = second_result[infer_aoi_name]
-
-            elif data_state.infer_gdf is not None:
-                # No ground truth, so only generate results COCO and tiles
+            if data_state.infer_gdf is not None:
+                # Generate results COCO and tiles
                 tilerizer = self.get_labeled_tilerizer(
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
@@ -72,25 +42,9 @@ class TilerizerComponent(BaseComponent):
                     other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
 
-                ground_truth_coco_path = None
                 infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
                 tiles_path = tilerizer.tiles_path
                 tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[infer_aoi_name]]
-
-            elif data_state.ground_truth_gdf is not None:
-                # No results GeoDataFrame, so only generate ground truth COCO and tiles
-                tilerizer = self.get_labeled_tilerizer(
-                    data_state=data_state,
-                    labels_gdf=data_state.ground_truth_gdf,
-                    aois_config=self.ground_truth_aois_config,
-                    other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass)
-                )
-
-                ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
-                infer_coco_path = None
-                tiles_path = tilerizer.tiles_path
-                tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[ground_truth_aoi_name]]
-
             else:
                 # Tilerize without any labels
                 tilerizer = self.get_unlabeled_tilerizer(
@@ -100,59 +54,34 @@ class TilerizerComponent(BaseComponent):
 
                 tilerizer.generate_tiles()
                 infer_coco_path = None
-                ground_truth_coco_path = None
                 tiles_path = tilerizer.tiles_path
                 tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[infer_aoi_name]]
 
         elif self.config.tile_type == 'polygon':
-            if data_state.ground_truth_gdf is not None:
-                # Only ground truth data available
-                tilerizer = self.get_polygon_tilerizer(data_state=data_state,
-                                                       labels_gdf=data_state.ground_truth_gdf,
-                                                       aois_config=self.ground_truth_aois_config,
-                                                       other_labels_attributes_column_names=list(data_state.ground_truth_gdf_columns_to_pass))
-                ground_truth_coco_path = tilerizer.generate_coco_dataset()[ground_truth_aoi_name]
-                tiles_path = tilerizer.tiles_path
-                tiles_names = [tile.generate_name() for tile in tilerizer.aois_tiles[ground_truth_aoi_name]]
-
-            elif (data_state.infer_gdf is not None) or (data_state.infer_gdf is not None and data_state.ground_truth_gdf is not None):
-                # Only inference data available, if both available select inference mode
-                # Check if we need to set default category IDs
-                if self.config.main_label_category_column_name is not None and \
-                   self.config.main_label_category_column_name not in data_state.infer_gdf.columns:
-                    print(f"Warning: Missing category column '{self.config.main_label_category_column_name}' - adding default category 0")
-                    data_state.infer_gdf[self.config.main_label_category_column_name] = 0
-
-                # Format other labels attributes column names
-                if self.config.other_labels_attributes_column_names != []:
-                    for col_name in self.config.other_labels_attributes_column_names:
-                        data_state.infer_gdf_columns_to_pass.add(col_name)
-
+            if data_state.infer_gdf is not None:
                 tilerizer = self.get_polygon_tilerizer(
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
                     aois_config=self.infer_aois_config,
                     other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
                 )
-                ground_truth_coco_path = None
                 infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
                 tiles_path = tilerizer.tiles_folder_path
                 tiles_names = self._collect_polygon_tile_names(tilerizer, infer_aoi_name)
             else:
-                raise ValueError("Polygon tilerization requires either inference or ground truth data")
+                raise ValueError("Polygon tilerization requires either inference data")
 
         else:
             raise ValueError(f"Invalid tile type: {self.config.tile_type}. Expected 'tile' or 'polygon'.")
 
         self.config.to_yaml(self.output_path / "tilerizer_config.yaml")
 
-        return self.update_data_state(data_state, tiles_path, infer_coco_path, ground_truth_coco_path, tiles_names)
+        return self.update_data_state(data_state, tiles_path, infer_coco_path, tiles_names)
 
     def update_data_state(self,
                          data_state: DataState,
                          tiles_path: str,
                          infer_coco_path: str,
-                         ground_truth_coco_path: str,
                          tiles_names: list[str]) -> DataState:
         # Register the component folder
         data_state = self.register_outputs_base(data_state)
@@ -160,12 +89,9 @@ class TilerizerComponent(BaseComponent):
         # Register important output files (not all tiles)
         if infer_coco_path:
             data_state.register_output_file(self.name, self.component_id, 'infer_coco', Path(infer_coco_path))
-        if ground_truth_coco_path:
-            data_state.register_output_file(self.name, self.component_id, 'ground_truth_coco', Path(ground_truth_coco_path))
 
         data_state.tiles_path = tiles_path
         data_state.infer_coco_path = infer_coco_path
-        data_state.ground_truth_coco_path = ground_truth_coco_path
         data_state.tiles_names = tiles_names
 
         return data_state

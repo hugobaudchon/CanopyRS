@@ -48,7 +48,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 from detrex.modeling import ema
 from engine.models.detector.train_detectron2.augmentation import AugmentationAdder
-from engine.models.detector.train_detectron2.dataset import register_multiple_detection_datasets
+from engine.models.detector.train_detectron2.dataset import register_detection_dataset
 from engine.models.detector.train_detectron2.hook import WandbWriterHook
 from engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
 from engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
@@ -361,30 +361,26 @@ def get_base_detrex_model_cfg(config):
 
 def _train_detrex_process(config, model_name):
     print("Setting up datasets...")
-    d2_train_datasets_names = register_multiple_detection_datasets(
-        root_path=config.data_root_path,
-        dataset_names=config.train_dataset_names,
+    d2_train_datasets_name = register_detection_dataset(
+        root_path=[f"{config.data_root_path}/{path}" for path in config.train_dataset_names],
         fold="train",
-        force_binary_class=True if config.num_classes == 1 else False,
-        combine_datasets=True
+        force_binary_class=True if config.num_classes == 1 else False
     )
 
-    d2_valid_datasets_names = register_multiple_detection_datasets(
-        root_path=config.data_root_path,
-        dataset_names=config.valid_dataset_names,
+    d2_valid_datasets_name = register_detection_dataset(
+        root_path=[f"{config.data_root_path}/{path}" for path in config.valid_dataset_names],
         fold="valid",
-        force_binary_class=True if config.num_classes == 1 else False,
-        combine_datasets=True
+        force_binary_class=True if config.num_classes == 1 else False
     )
 
-    dataset_length = sum([len(DatasetCatalog.get(dataset_name)) for dataset_name in d2_train_datasets_names])
+    dataset_length = len(DatasetCatalog.get(d2_train_datasets_name))
     output_path = os.path.join(config.train_output_path, model_name)
     os.makedirs(output_path, exist_ok=True)
 
     cfg = get_base_detrex_model_cfg(config)
 
-    cfg.dataloader.train.dataset.names = d2_train_datasets_names[0]
-    cfg.dataloader.test.dataset.names = d2_valid_datasets_names[0]
+    cfg.dataloader.train.dataset.names = d2_train_datasets_name
+    cfg.dataloader.test.dataset.names = d2_valid_datasets_name
     cfg.dataloader.train.num_workers = config.dataloader_num_workers
     cfg.dataloader.test.num_workers = config.dataloader_num_workers
     cfg.dataloader.evaluator.output_dir = os.path.join(output_path, f"eval")
@@ -458,6 +454,44 @@ def setup_mila_cluster_ddp():
         rank=rank,
     )
     return rank, world_size
+
+
+def eval_detrex(config: DetectorConfig, fold_name: str):
+    print("Setting up validation/test datasets...")
+    d2_eval_datasets_name = register_detection_dataset(
+        root_path=config.data_root_path,
+        fold=fold_name,
+        force_binary_class=True if config.num_classes == 1 else False
+    )
+
+    now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    output_path = os.path.join(config.train_output_path, f"eval_{config.model}_{now}")
+    os.makedirs(output_path, exist_ok=True)
+
+    cfg = get_base_detrex_model_cfg(config)
+    cfg.dataloader.test.dataset.names = d2_eval_datasets_name
+    cfg.dataloader.test.num_workers = config.dataloader_num_workers
+    cfg.dataloader.evaluator.output_dir = os.path.join(output_path, "eval")
+
+    # Instantiate the model and move to device
+    model = instantiate(cfg.model)
+    model.to(cfg.train.device)
+    model = create_ddp_model(model)
+
+    # Build EMA if enabled
+    ema.may_build_model_ema(cfg, model)
+
+    # Load checkpoint
+    DetectionCheckpointer(model, **ema.may_get_ema_checkpointer(cfg, model)).load(cfg.train.init_checkpoint)
+
+    # If using EMA for eval, apply it here
+    if cfg.train.model_ema.enabled and cfg.train.model_ema.use_ema_weights_for_eval_only:
+        ema.apply_model_ema(model)
+
+    # Run evaluation
+    results = do_test(cfg, model, eval_only=True)
+    print("Evaluation results:")
+    print(results)
 
 
 def main(args):

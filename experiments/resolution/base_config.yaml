@@ -14,7 +14,7 @@ valid_dataset_names: null
 train_output_path: '/network/scratch/h/hugo.baudchon/training/detector'
 
 # Training Params
-#main_metric: 'mAP'
+main_metric: 'bbox/AP'
 lr: null
 wandb_project: null
 
@@ -46,7 +46,7 @@ eval_epoch_interval: 2
 backbone_model_pretrained: True
 scheduler_type: 'WarmupCosineLR'
 scheduler_epochs_steps: null
-scheduler_warmup_steps: 1000
+scheduler_warmup_steps: 5000
 scheduler_gamma: 0.1
 dataloader_num_workers: 4
 

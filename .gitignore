@@ -4,6 +4,7 @@ pretrained_models/
 jobs/
 experiments/dataset_statistics/*.png
 experiments/resolution/*/*.yaml
+output/*
 
 # Slurm temp files
 *.out
@@ -171,3 +172,4 @@ cython_debug/
 
 # Temp files
 *~
+/output/dino_r50_4scale_12ep/2021_09_02_sbl_z1_rgb_cog_valid_2021_09_02_sbl_z2_rgb_cog_valid_2021_09_02_sbl_z3_rgb_cog_valid_coco_format.json

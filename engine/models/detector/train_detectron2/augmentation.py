@@ -19,6 +19,24 @@ class RandomChoiceAugmentation(Augmentation):
         self.aug2 = aug2
         self.prob = prob
 
+    def get_transform(self, image):
+        if random() < self.prob:
+            return self.aug1.get_transform(image)
+        else:
+            return self.aug2.get_transform(image)
+
+
+class RandomChoiceAugmentationWithBox(Augmentation):
+    """
+    Randomly selects one of two augmentations based on a given probability.
+    With probability `prob`, applies aug1; otherwise, applies aug2.
+    """
+    def __init__(self, aug1: Augmentation, aug2: Augmentation, prob: float):
+        super().__init__()
+        self.aug1 = aug1
+        self.aug2 = aug2
+        self.prob = prob
+
     def get_transform(self, image, boxes=None):
         if random() < self.prob:
             return self.aug1.get_transform(image, boxes)
@@ -215,6 +233,52 @@ class ConditionalResize(Augmentation):
             return ResizeTransform(orig_h, orig_w, new_h, new_w)
 
 
+class DeterministicResizeWithinRange(Augmentation):
+    """
+    Deterministically resizes the image so that its smallest edge is at least min_size
+    and its largest edge is at most max_size. If the image already meets these criteria,
+    it is left unchanged.
+    """
+    def __init__(self, min_size, max_size):
+        """
+        Args:
+            min_size (int): Desired minimum size for the shortest edge.
+            max_size (int): Desired maximum size for the longest edge.
+        """
+        self.min_size = min_size
+        self.max_size = max_size
+
+    def get_transform(self, image):
+        h, w = image.shape[:2]
+        short_edge = min(h, w)
+        long_edge = max(h, w)
+
+        # Default to no scaling.
+        scale = 1.0
+
+        # If the image is too small.
+        if short_edge < self.min_size:
+            scale_up = self.min_size / short_edge
+            # Check if upscaling causes the long edge to exceed max_size.
+            if long_edge * scale_up <= self.max_size:
+                scale = scale_up
+            else:
+                # Upscaling would exceed max_size; instead, downscale to max_size.
+                scale = self.max_size / long_edge
+
+        # Else if the image is too large.
+        elif long_edge > self.max_size:
+            scale = self.max_size / long_edge
+
+        # If no scaling is necessary, return a no-op.
+        if scale == 1.0:
+            return NoOpTransform()
+
+        new_h = int(round(h * scale))
+        new_w = int(round(w * scale))
+        return ResizeTransform(h, w, new_h, new_w)
+
+
 class AugmentationAdder:
     @staticmethod
     def modify_detectron2_augmentation_config(config: DetectorConfig, cfg):
@@ -327,7 +391,7 @@ class AugmentationAdder:
 
     @staticmethod
     def _get_augmentation_list_train(
-            final_image_size: int,
+            final_image_size: int or tuple,
             early_conditional_image_size: int,
             flip_vertical: bool,
             flip_horizontal: bool,
@@ -428,6 +492,9 @@ class AugmentationAdder:
             min_intersection_ratio=crop_min_intersection_ratio
         )
         if crop_fallback_to_augmentation_image_size:
+            assert isinstance(final_image_size, int),\
+                (f"final_image_size should be a single int if crop_fallback_to_augmentation_image_size is enabled."
+                 f" Got {final_image_size}.")
             # Use our custom conditional random apply that falls back to a crop of final_image_size.
             # This is useful if for exemple we have 2048x2048 images for training,
             # but we only want to train on 1024x1024 and don't want to always apply cropping, which can distort
@@ -436,25 +503,40 @@ class AugmentationAdder:
                 crop_range=(final_image_size, final_image_size),
                 min_intersection_ratio=crop_min_intersection_ratio
             )
+            augs.append(RandomChoiceAugmentationWithBox(crop_aug, fallback_crop_aug, prob=crop_prob))
         else:
-            # Otherwise, use identity transform as fallback (no crop with prob 1-crop_prob).
-            fallback_crop_aug = NoOpTransform()
+            # Otherwise, regularly crop with crop_prob.
+            augs.append(RandomApply(crop_aug, prob=crop_prob))
 
-        augs.append(RandomChoiceAugmentation(crop_aug, fallback_crop_aug, prob=crop_prob))
-
-        # 10) Resize to final, fixed size
-        augs.append(
-            ResizeShortestEdge(
-                short_edge_length=[final_image_size],
-                max_size=final_image_size,
-                sample_style="choice"
+        # 10) Resize to final size or apply range-based resizing
+        if isinstance(final_image_size, int):
+            augs.append(
+                ResizeShortestEdge(
+                    short_edge_length=[final_image_size],
+                    max_size=final_image_size,
+                    sample_style="choice"
+                )
             )
-        )
+        else:
+            assert isinstance(final_image_size, (tuple, list))
+            assert len(final_image_size) == 2, "final_image_size should be a single int or a tuple of two ints."
+
+            # Random resize with crop_prob probability, else deterministic resize within range.
+            resize_shortest_edge = ResizeShortestEdge(
+                short_edge_length=final_image_size,
+                max_size=final_image_size[1],
+                sample_style="range"
+            )
+            deterministic_resize = DeterministicResizeWithinRange(
+                min_size=final_image_size[0],
+                max_size=final_image_size[1]
+            )
+            augs.append(RandomChoiceAugmentation(resize_shortest_edge, deterministic_resize, prob=crop_prob))
 
         return augs
 
     @staticmethod
-    def _get_augmentation_list_test(image_size: int):
+    def _get_augmentation_list_test(image_size: int or tuple[int]):
         """
         Build a list of Detectron2 augmentations for test-time based on the given parameters.
 
@@ -464,10 +546,19 @@ class AugmentationAdder:
         Returns:
             list[Augmentation]: a list of Detectron2-compatible augmentation objects.
         """
-        return [
-            ResizeShortestEdge(
-                short_edge_length=[image_size],
-                max_size=image_size,
-                sample_style="choice"
-            )
-        ]
+        if isinstance(image_size, int):
+            return [
+                ResizeShortestEdge(
+                    short_edge_length=[image_size],
+                    max_size=image_size,
+                    sample_style="choice"
+                )
+            ]
+        else:
+            assert len(image_size) == 2, "image_size should be a single int or a tuple of two ints."
+            return [
+                DeterministicResizeWithinRange(
+                    min_size=image_size[0],
+                    max_size=image_size[1]
+                )
+            ]
