@@ -1,4 +1,6 @@
+from typing import List
 import geopandas as gpd
+from shapely.geometry import Polygon
 
 from geodataset.dataset import UnlabeledRasterDataset
 
@@ -61,32 +63,61 @@ class DetectorComponent(BaseComponent):
                           results_gdf: gpd.GeoDataFrame,
                           columns_to_pass: set,
                           future_coco: tuple) -> DataState:
+        """Update data state with detector results"""
+        data_state = self.register_outputs_base(data_state)
         data_state.update_infer_gdf(results_gdf)
+
+        # Ensure detector_class and detector_score are passed
+        columns_to_pass.add('detector_class')
+        columns_to_pass.add('detector_score')
+        # object_id_column_name should already be in columns_to_pass by default if it's in the GDF
+        if object_id_column_name in results_gdf.columns:
+            columns_to_pass.add(object_id_column_name)
+
         data_state.infer_gdf_columns_to_pass = columns_to_pass
-        data_state.side_processes.append(future_coco)
+
+        if future_coco is not None:
+            data_state.side_processes.append(future_coco)
+
         return data_state
 
-    @staticmethod
-    def combine_as_gdf(tiles_paths, boxes, boxes_scores, classes) -> (gpd.GeoDataFrame, set):
-        gdf_items = []
-        for i in range(len(tiles_paths)):
-            for j in range(len(boxes[i])):
-                gdf_items.append({
-                    'tile_path': tiles_paths[i],
-                    'geometry': boxes[i][j],
-                    'detector_score': boxes_scores[i][j],
-                    'detector_class': classes[i][j]
+    def combine_as_gdf(self,
+                       tiles_paths: List[str],
+                       boxes: List[List[Polygon]],
+                       scores: List[List[float]],
+                       classes: List[List[int]]) -> gpd.GeoDataFrame:
+        """
+        Combines detector outputs into a GeoDataFrame.
+        Each row is a detected object with its geometry, score, class, and tile path.
+        """
+        all_polygons_data = []
+        current_object_id = 0  # Initialize a counter for unique object IDs
+
+        for i, tile_path in enumerate(tiles_paths):
+            tile_boxes = boxes[i]
+            tile_scores = scores[i]
+            tile_classes = classes[i]  # These will be '1' if detector_config.num_classes = 1
+
+            for box_geom, score, cls_id in zip(tile_boxes, tile_scores, tile_classes):
+                all_polygons_data.append({
+                    'geometry': box_geom,
+                    'tile_path': str(tile_path),
+                    'detector_score': score,
+                    'detector_class': cls_id,  # This will store the class ID from the detector
+                    object_id_column_name: current_object_id # Assign unique ID
                 })
+                current_object_id += 1
+        
+        if not all_polygons_data:
+            # Handle case with no detections
+            return gpd.GeoDataFrame(columns=['geometry', 'tile_path', 'detector_score', 'detector_class', object_id_column_name], crs=None) # Or appropriate CRS
 
-        gdf = gpd.GeoDataFrame(
-            data=gdf_items,
-            geometry='geometry',
-            crs=None
-        )
-
-        # Assigning a unique ID to each object detected
-        gdf[object_id_column_name] = range(len(gdf))
-
-        new_columns = {object_id_column_name, 'detector_score', 'detector_class'}
-
-        return gdf, new_columns
+        gdf = gpd.GeoDataFrame(all_polygons_data, crs=None)  # Set CRS appropriately if known, or handle later
+        
+        # Ensure geometry is valid
+        gdf['geometry'] = gdf['geometry'].buffer(0)
+        gdf = gdf[gdf.is_valid]
+        gdf = gdf[~gdf.is_empty]
+        
+        print(f"DetectorComponent: Generated GDF with {len(gdf)} detections.")
+        return gdf

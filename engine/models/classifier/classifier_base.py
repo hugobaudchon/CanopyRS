@@ -52,8 +52,8 @@ class ClassifierWrapperBase(ABC):
             List of prediction dictionaries
         """
         self.model.eval()
-        predictions = []
-        object_ids = []
+        all_predictions = []
+        all_object_ids = []
 
         with torch.no_grad():
             data_loader_with_progress = tqdm(data_loader,
@@ -61,13 +61,16 @@ class ClassifierWrapperBase(ABC):
                                              leave=True)
             for batch in data_loader_with_progress:
                 # Handle different types of batch outputs from the dataloader
-                if isinstance(batch, tuple):
-                    # If batch is a tuple, the first element contains the images
-                    images = batch[0]
-                    polygon_ids = batch[-1]
+                polygon_ids_batch = None
+                if isinstance(batch, tuple) and len(batch) == 3:
+                    # (images, labels_gt, polygon_ids)
+                    # GT labels are ignored during inference
+                    images, _, polygon_ids_batch = batch
+                elif isinstance(batch, tuple) and len(batch) == 2:
+                    # (images, labels_gt)
+                    images, _ = batch  # GT labels are ignored
                 else:
-                    # If batch is not a tuple, it's just images
-                    images = batch
+                    images = batch  # Just images
 
                 # Move images to the device
                 if isinstance(images, list):
@@ -76,10 +79,12 @@ class ClassifierWrapperBase(ABC):
                     images = images.to(self.device)
 
                 outputs = self.forward(images)
-                predictions.extend(outputs)
-                object_ids.extend(polygon_ids)
+                all_predictions.extend(outputs)
 
-        return predictions, object_ids
+                if polygon_ids_batch is not None:
+                    all_object_ids.extend(polygon_ids_batch)
+
+        return all_predictions, all_object_ids if all_object_ids else None
 
     def infer(self, infer_ds, collate_fn_classification):
         """
@@ -91,35 +96,40 @@ class ClassifierWrapperBase(ABC):
 
         Returns:
             A tuple of (tiles_paths, class_scores, class_predictions) or
-            (tiles_paths, class_scores, class_predictions, object_ids) if object IDs are available
+            (tiles_paths, class_scores, class_predictions, object_ids_from_dl) if object IDs are available
         """
-        # Check if dataset has object_ids attribute or method
-        has_object_ids = hasattr(infer_ds, 'include_polygon_id') or hasattr(infer_ds, 'include_polygon_id')
+        # Check if dataset is configured to include polygon_id AND actually provides them
+        has_object_ids = hasattr(infer_ds, 'include_polygon_id') and infer_ds.include_polygon_id
 
         infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
                               collate_fn=collate_fn_classification,
                               num_workers=3, persistent_workers=True)
 
         if has_object_ids:
-            predictions, object_ids = self._infer(infer_dl)
+            predictions, object_ids_from_dl = self._infer(infer_dl)
         else:
             predictions = self._infer(infer_dl)
+            object_ids_from_dl = None
 
         # Process results
-        class_scores = [result['scores'].cpu().numpy().tolist() for result in predictions]
-        class_predictions = [result['labels'].cpu().item() for result in predictions]
+        class_scores = [result['scores'].cpu().numpy().tolist()
+                        for result in predictions]
+        class_predictions = [result['labels'].cpu().item()
+                             for result in predictions]
 
         # Extract tile paths - use the correct attribute based on dataset implementation
-        if hasattr(infer_ds, 'tile_paths'):
-            tiles_paths = infer_ds.tile_paths
-        elif hasattr(infer_ds, 'tiles'):
+        if hasattr(infer_ds, 'tiles') and isinstance(infer_ds.tiles, dict):
             # Extract paths from the 'tiles' attribute (common in COCO datasets)
-            tiles_paths = [tile_info['path'] for _, tile_info in infer_ds.tiles.items()]
+            # The order from DataLoader should match the order of indices 0..N-1
+            tiles_paths = [tile_info['path']
+                           for _, tile_info in infer_ds.tiles.items()]
+        elif hasattr(infer_ds, 'tile_paths'):
+            tiles_paths = infer_ds.tile_paths
         else:
             raise AttributeError("Dataset does not have recognized tile paths attribute")
 
-        if has_object_ids:
-            return tiles_paths, class_scores, class_predictions, object_ids
+        if has_object_ids and object_ids_from_dl is not None:  # Double-check if object IDs are available
+            return tiles_paths, class_scores, class_predictions, object_ids_from_dl
 
         return tiles_paths, class_scores, class_predictions
 

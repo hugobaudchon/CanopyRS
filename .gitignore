@@ -170,6 +170,9 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
+# Mac stuffs
+.DS_Store
+
 # Temp files
 *~
 /output/dino_r50_4scale_12ep/2021_09_02_sbl_z1_rgb_cog_valid_2021_09_02_sbl_z2_rgb_cog_valid_2021_09_02_sbl_z3_rgb_cog_valid_coco_format.json

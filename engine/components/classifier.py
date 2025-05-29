@@ -1,3 +1,4 @@
+from typing import List, Any, Optional
 import geopandas as gpd
 from pathlib import Path
 import shapely
@@ -26,13 +27,34 @@ class ClassifierComponent(BaseComponent):
 
     def __call__(self, data_state: DataState) -> DataState:
         """Run classification on tiles"""
+
+        if not data_state.tiles_path or not data_state.infer_coco_path:
+            raise ValueError("ClassifierComponent requires tiles_path and infer_coco_path from a previous (polygon) tilerizer.")
+
         # Create dataset from tile paths
         infer_ds = ClassificationLabeledRasterCocoDataset(
             root_path=data_state.tiles_path,
             transform=None,
             fold=infer_aoi_name,
             include_polygon_id=True,
+            other_attributes_names_to_pass=[object_id_column_name]
         )
+
+        if len(infer_ds) == 0:
+            print("Classifier: No tiles found in the dataset for classification. Skipping.")
+            # Create an empty GDF for results or handle as appropriate
+            # Let's assume we might want to return the original GDF if no classification happens
+            if data_state.infer_gdf is not None:
+                # Ensure expected columns exist if we are to proceed without classification
+                for col in ['classifier_class', 'classifier_score', 'classifier_scores']:
+                    if col not in data_state.infer_gdf.columns:
+                        data_state.infer_gdf[col] = None if col != 'classifier_score' else 0.0
+                results_gdf = data_state.infer_gdf
+            else:
+                results_gdf = gpd.GeoDataFrame()  # Should not happen ideally
+
+            columns_to_pass = data_state.infer_gdf_columns_to_pass if data_state.infer_gdf is not None else set()
+            return self.update_data_state(data_state, results_gdf, columns_to_pass, None)
 
         # Run inference
         infer_result = self.classifier.infer(
@@ -43,23 +65,20 @@ class ClassifierComponent(BaseComponent):
         # Check if we got object IDs back (4 values instead of 3)
         if len(infer_result) == 4:
             tiles_paths, class_scores, class_predictions, object_ids = infer_result
-            print(f"Retrieved {len(object_ids)} object IDs from classifier")
+            print(f"Classifier: Inference complete. Received {len(object_ids)} object IDs with predictions.")
         else:
             tiles_paths, class_scores, class_predictions = infer_result
             object_ids = None
-            print("No object IDs returned from classifier")
+            print("Classifier: Inference complete. Object IDs were not returned by the model wrapper.")
 
         # Use the combine_as_gdf method for consistent handling
-        results_gdf, new_columns = self.combine_as_gdf(
-            data_state.infer_gdf, tiles_paths, class_scores, class_predictions, object_ids
-        )
+        results_gdf = self.combine_as_gdf(data_state, tiles_paths,
+                                          class_scores, class_predictions,
+                                          object_ids)
 
         # If no geometries were preserved from previous components, add tile centroids
         if all(geometry is None for geometry in results_gdf['geometry']):
             self._add_tile_centroids(results_gdf)
-
-        # Update columns to be passed forward
-        columns_to_pass = data_state.infer_gdf_columns_to_pass.union(new_columns)
 
         # Check if we're dealing with polygon tiles by examining the first tile name
         first_tile_path = Path(results_gdf['tile_path'].iloc[0])
@@ -188,10 +207,77 @@ class ClassifierComponent(BaseComponent):
         # based on its metadata or transform
         pass
 
-    @staticmethod
-    def combine_as_gdf(infer_gdf, tiles_paths, class_scores, class_predictions, object_ids=None) -> (gpd.GeoDataFrame, set):
-        """Convert classifier predictions to a GeoDataFrame"""
+    def combine_as_gdf(self,
+                       data_state: DataState,
+                       tiles_paths: List[str],
+                       class_scores: List[List[float]],
+                       class_predictions: List[int],
+                       object_ids: Optional[List[Any]]) -> gpd.GeoDataFrame:
+        """
+        Combines classifier outputs with the existing infer_gdf from data_state.
+        """
 
+        if object_ids is None or not object_ids:
+            print("Classifier: No object IDs provided to combine_as_gdf. Cannot map classification results to polygons.")
+            # Return the original GDF or handle error
+            if data_state.infer_gdf is not None:
+                # Add empty/default classifier columns if they don't exist
+                for col in ['classifier_class', 'classifier_score', 'classifier_scores']:
+                    if col not in data_state.infer_gdf.columns:
+                        data_state.infer_gdf[col] = None if col != 'classifier_score' else 0.0
+                return data_state.infer_gdf
+            return gpd.GeoDataFrame()
+        
+        if data_state.infer_gdf is None or data_state.infer_gdf.empty:
+            print("Classifier: data_state.infer_gdf is empty. Cannot merge classification results.")
+            # Potentially create a new GDF from results, but it would lack original geometries
+            # This should ideally not happen in the target pipeline.
+            return gpd.GeoDataFrame()
+
+        # Prepare classifier results for merging
+        classifier_data = {
+            object_id_column_name: object_ids,
+            'classifier_class': class_predictions,
+            'classifier_score': [scores[pred_idx] 
+                                 for scores, pred_idx in zip(class_scores, class_predictions)],
+            'classifier_scores': class_scores  # Store the full list of scores
+        }
+        results_df = gpd.GeoDataFrame(classifier_data)
+
+        original_infer_gdf = data_state.infer_gdf.copy()
+
+        # Defensive type casting (example, adjust if needed)
+        try:
+            if not original_infer_gdf[object_id_column_name].dtype == results_df[object_id_column_name].dtype:
+                print(f"Warning: Mismatch in dtype for '{object_id_column_name}'. Infer GDF: {original_infer_gdf[object_id_column_name].dtype}, Results: {results_df[object_id_column_name].dtype}. Attempting cast.")
+                # Attempt to cast results_df ID to match original_infer_gdf's ID type
+                results_df[object_id_column_name] = results_df[object_id_column_name].astype(original_infer_gdf[object_id_column_name].dtype)
+        except Exception as e:
+            print(f"Error during type casting for merge key '{object_id_column_name}': {e}. Merge might fail or be incorrect.")
+
+        merged_gdf = gpd.merge(original_infer_gdf, results_df, on=object_id_column_name, how='left')
+
+        # If merged_gdf is not a GeoDataFrame, convert it back
+        if not isinstance(merged_gdf, gpd.GeoDataFrame):
+            merged_gdf = gpd.GeoDataFrame(merged_gdf, geometry='geometry', crs=original_infer_gdf.crs)
+
+        print(f"Classifier: Merged classification results. Original GDF rows: {len(original_infer_gdf)}, Merged GDF rows: {len(merged_gdf)}")
+        
+        # Check for unmerged items (polygons in infer_gdf that didn't get a classification result)
+        if len(merged_gdf) < len(original_infer_gdf):
+            print(f"Warning: {len(original_infer_gdf) - len(merged_gdf)} polygons from infer_gdf were not found in classifier results during merge.")
+        
+        unclassified_rows = merged_gdf['classifier_class'].isnull().sum()
+        if unclassified_rows > 0:
+             print(f"Classifier: {unclassified_rows} polygons remain unclassified after merge (NaN in classifier_class).")
+             # Optionally fill NaNs if needed, e.g., with a default class or score
+             # merged_gdf['classifier_class'].fillna(-1, inplace=True) # Example: -1 for unclassified
+             # merged_gdf['classifier_score'].fillna(0.0, inplace=True)
+
+        return merged_gdf
+
+        # TODO: remove below after testing
+        """
         # If we have an existing GDF with geometries, preserve them
         if infer_gdf is not None:
             # Make a copy of the input GDF to preserve all columns and geometries
@@ -216,14 +302,14 @@ class ClassifierComponent(BaseComponent):
 
                 # Apply the mapping to the GDF
                 for i, row in results_gdf.iterrows():
-                    obj_id = row['canopyrs_object_id']
+                    obj_id = row[object_id_column_name]
                     if obj_id in id_to_classifier:
                         results_gdf.at[i, 'classifier_class'] = id_to_classifier[obj_id]['class']
                         results_gdf.at[i, 'classifier_score'] = id_to_classifier[obj_id]['score']
                         results_gdf.at[i, 'classifier_scores'] = id_to_classifier[obj_id]['scores']
 
                 # Count how many rows matched by object ID
-                matched_count = sum(1 for obj_id in results_gdf['canopyrs_object_id'] if obj_id in id_to_classifier)
+                matched_count = sum(1 for obj_id in results_gdf[object_id_column_name] if obj_id in id_to_classifier)
                 print(f"Matched {matched_count} out of {len(results_gdf)} rows using object IDs")
             else:
                 # Fall back to tile path matching if no object IDs are available
@@ -282,20 +368,32 @@ class ClassifierComponent(BaseComponent):
         new_columns = {'classifier_score', 'classifier_class', 'classifier_scores'}
 
         return results_gdf, new_columns
+        """
 
     def update_data_state(self,
-                         data_state: DataState,
-                         results_gdf: gpd.GeoDataFrame,
-                         columns_to_pass: set,
-                         future_coco: tuple) -> DataState:
+                          data_state: DataState,
+                          results_gdf: gpd.GeoDataFrame,
+                          columns_to_pass: set,
+                          future_coco: tuple) -> DataState:
         """Update data state with classification results"""
         # Register the component folder and outputs
         data_state = self.register_outputs_base(data_state)
 
-        # Debug information
-        print(f"Classifier results GDF columns: {results_gdf.columns.tolist()}")
-        print(f"Classifier results GDF shape: {results_gdf.shape}")
+        if not results_gdf.empty:
+            data_state.update_infer_gdf(results_gdf)
+        else:
+            print("Classifier: Results GDF is empty, data_state.infer_gdf not updated by classifier.")
 
+        # Ensure new classifier columns are passed
+        columns_to_pass.update({'classifier_class', 'classifier_score', 'classifier_scores'})
+        data_state.infer_gdf_columns_to_pass = columns_to_pass
+
+        # Debug information
+        # print(f"Classifier results GDF columns: {results_gdf.columns.tolist()}")
+        # print(f"Classifier results GDF shape: {results_gdf.shape}")
+
+        # TODO: delete this block after testing
+        """
         if data_state.infer_gdf is not None:
             print(f"Existing infer_gdf columns: {data_state.infer_gdf.columns.tolist()}")
             print(f"Existing infer_gdf shape: {data_state.infer_gdf.shape}")
@@ -337,10 +435,11 @@ class ClassifierComponent(BaseComponent):
         else:
             # If no existing GDF, use the classifier results directly
             data_state.infer_gdf = results_gdf
-
+        
         # Ensure these columns are passed forward in the pipeline
         columns_to_pass.update({'classifier_score', 'classifier_class', 'classifier_scores'})
         data_state.infer_gdf_columns_to_pass = columns_to_pass
+        """
 
         # Add COCO generation to side processes
         if future_coco is not None:
@@ -348,7 +447,10 @@ class ClassifierComponent(BaseComponent):
 
         # Save the GeoPackage directly for debugging
         gpkg_path = self.output_path / f"{self.name}_results.gpkg"
-        data_state.infer_gdf.to_file(gpkg_path, driver="GPKG")
-        print(f"Saved classifier results to: {gpkg_path}")
+        if not results_gdf.empty:
+            data_state.infer_gdf.to_file(gpkg_path, driver="GPKG")
+            print(f"Saved classifier results to: {gpkg_path}")
+        else:
+            print(f"ClassifierComponent: Results GDF is empty, skipping save to {gpkg_path}")
 
         return data_state

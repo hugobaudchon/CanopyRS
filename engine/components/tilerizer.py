@@ -21,8 +21,10 @@ class TilerizerComponent(BaseComponent):
                  infer_aois_config: AOIConfig):
         super().__init__(config, parent_output_path, component_id)
         self.infer_aois_config = infer_aois_config
+        self.raster = None  # Will be initialized in __call__
 
     def __call__(self, data_state: DataState) -> DataState:
+
         if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
             raise ValueError(
                 "infer_gdf must have a CRS."
