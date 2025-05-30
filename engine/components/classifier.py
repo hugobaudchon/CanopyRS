@@ -1,5 +1,6 @@
 from typing import List, Any, Optional
 import geopandas as gpd
+import pandas as pd
 from pathlib import Path
 import shapely
 from shapely import Polygon
@@ -72,9 +73,9 @@ class ClassifierComponent(BaseComponent):
             print("Classifier: Inference complete. Object IDs were not returned by the model wrapper.")
 
         # Use the combine_as_gdf method for consistent handling
-        results_gdf = self.combine_as_gdf(data_state, tiles_paths,
-                                          class_scores, class_predictions,
-                                          object_ids)
+        results_gdf, columns_to_pass = self.combine_as_gdf(data_state, tiles_paths,
+                                                           class_scores, class_predictions,
+                                                           object_ids)
 
         # If no geometries were preserved from previous components, add tile centroids
         if all(geometry is None for geometry in results_gdf['geometry']):
@@ -242,7 +243,7 @@ class ClassifierComponent(BaseComponent):
                                  for scores, pred_idx in zip(class_scores, class_predictions)],
             'classifier_scores': class_scores  # Store the full list of scores
         }
-        results_df = gpd.GeoDataFrame(classifier_data)
+        results_df = pd.DataFrame(classifier_data)
 
         original_infer_gdf = data_state.infer_gdf.copy()
 
@@ -255,7 +256,8 @@ class ClassifierComponent(BaseComponent):
         except Exception as e:
             print(f"Error during type casting for merge key '{object_id_column_name}': {e}. Merge might fail or be incorrect.")
 
-        merged_gdf = gpd.merge(original_infer_gdf, results_df, on=object_id_column_name, how='left')
+            
+        merged_gdf = original_infer_gdf.merge(results_df, on=object_id_column_name, how='left')
 
         # If merged_gdf is not a GeoDataFrame, convert it back
         if not isinstance(merged_gdf, gpd.GeoDataFrame):
@@ -274,7 +276,9 @@ class ClassifierComponent(BaseComponent):
              # merged_gdf['classifier_class'].fillna(-1, inplace=True) # Example: -1 for unclassified
              # merged_gdf['classifier_score'].fillna(0.0, inplace=True)
 
-        return merged_gdf
+        new_columns = {'classifier_score', 'classifier_class', 'classifier_scores'}
+
+        return merged_gdf, new_columns
 
         # TODO: remove below after testing
         """
