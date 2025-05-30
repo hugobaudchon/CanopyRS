@@ -118,6 +118,8 @@ class DetectorComponent(BaseComponent):
         gdf['geometry'] = gdf['geometry'].buffer(0)
         gdf = gdf[gdf.is_valid]
         gdf = gdf[~gdf.is_empty]
+
+        new_columns = {object_id_column_name, 'detector_score', 'detector_class'}
         
         print(f"DetectorComponent: Generated GDF with {len(gdf)} detections.")
-        return gdf
+        return gdf, new_columns
