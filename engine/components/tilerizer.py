@@ -143,6 +143,10 @@ class TilerizerComponent(BaseComponent):
         if data_state.imagery_path is None:
             raise ValueError("No imagery path specified in data_state. Cannot create tilerizer.")
 
+        if self.config.persistent_object_id_col not in other_labels_attributes_column_names:
+            # This ensures it's available for COCOGenerator if it exists in the GDF
+            other_labels_attributes_column_names.append(self.config.persistent_object_id_col)
+
         tilerizer = RasterPolygonTilerizer(
             raster_path=data_state.imagery_path,
             output_path=self.output_path,
@@ -156,6 +160,7 @@ class TilerizerComponent(BaseComponent):
             ground_resolution=self.config.ground_resolution,
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=other_labels_attributes_column_names,
+            persistent_object_id_col=self.config.persistent_object_id_col,
             coco_n_workers=self.config.coco_n_workers,
             temp_dir=self.temp_path
         )
