@@ -5,13 +5,13 @@ from pathlib import Path
 import shapely
 from shapely import Polygon
 
-from geodataset.dataset import ClassificationLabeledRasterCocoDataset
+from geodataset.dataset import UnlabeledRasterDataset
 
 from engine.components.base import BaseComponent
 from engine.config_parsers import ClassifierConfig
 from engine.data_state import DataState
 from engine.models.registry import CLASSIFIER_REGISTRY
-from engine.models.utils import collate_fn_classification
+from engine.models.utils import collate_fn_unlabeled_polygon_tiles
 from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name
 
 
@@ -33,12 +33,20 @@ class ClassifierComponent(BaseComponent):
             raise ValueError("ClassifierComponent requires tiles_path and infer_coco_path from a previous (polygon) tilerizer.")
 
         # Create dataset from tile paths
+        """
         infer_ds = ClassificationLabeledRasterCocoDataset(
             root_path=data_state.tiles_path,
             transform=None,
             fold=infer_aoi_name,
             include_polygon_id=True,
             other_attributes_names_to_pass=[object_id_column_name]
+        )
+        """
+        infer_ds = UnlabeledRasterDataset(
+            root_path=data_state.tiles_path,
+            transform=None,
+            fold=None,
+            include_polygon_id=True
         )
 
         if len(infer_ds) == 0:
@@ -60,7 +68,7 @@ class ClassifierComponent(BaseComponent):
         # Run inference
         infer_result = self.classifier.infer(
             infer_ds,
-            collate_fn_classification
+            collate_fn_unlabeled_polygon_tiles
         )
 
         # Check if we got object IDs back (4 values instead of 3)

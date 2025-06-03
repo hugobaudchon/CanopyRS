@@ -67,8 +67,11 @@ class ClassifierWrapperBase(ABC):
                     # GT labels are ignored during inference
                     images, _, polygon_ids_batch = batch
                 elif isinstance(batch, tuple) and len(batch) == 2:
-                    # (images, labels_gt)
-                    images, _ = batch  # GT labels are ignored
+                    # (images, labels_gt) or (images, polygon_ids)
+                    images, second_item = batch
+                    if all(isinstance(item, (int, str, type(None))) for item in second_item): # Check if it looks like IDs
+                        polygon_ids_batch = second_item
+                    # else: it's labels_gt, polygon_ids_batch remains None
                 else:
                     images = batch  # Just images
 
