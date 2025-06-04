@@ -1,3 +1,4 @@
+from typing import Optional
 from pathlib import Path
 
 import geopandas as gpd
@@ -18,7 +19,7 @@ class TilerizerComponent(BaseComponent):
                  config: TilerizerConfig,
                  parent_output_path: str,
                  component_id: int,
-                 infer_aois_config: AOIConfig):
+                 infer_aois_config: Optional[AOIConfig] = None):
         super().__init__(config, parent_output_path, component_id)
         self.infer_aois_config = infer_aois_config
         self.raster = None  # Will be initialized in __call__
