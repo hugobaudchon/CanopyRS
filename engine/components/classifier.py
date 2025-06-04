@@ -2,8 +2,6 @@ from typing import List, Any, Optional
 import geopandas as gpd
 import pandas as pd
 from pathlib import Path
-import shapely
-from shapely import Polygon
 
 from geodataset.dataset import UnlabeledRasterDataset
 
@@ -12,7 +10,7 @@ from engine.config_parsers import ClassifierConfig
 from engine.data_state import DataState
 from engine.models.registry import CLASSIFIER_REGISTRY
 from engine.models.utils import collate_fn_unlabeled_polygon_tiles
-from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name
+from engine.utils import generate_future_coco, object_id_column_name
 
 
 class ClassifierComponent(BaseComponent):
@@ -33,15 +31,6 @@ class ClassifierComponent(BaseComponent):
             raise ValueError("ClassifierComponent requires tiles_path and infer_coco_path from a previous (polygon) tilerizer.")
 
         # Create dataset from tile paths
-        """
-        infer_ds = ClassificationLabeledRasterCocoDataset(
-            root_path=data_state.tiles_path,
-            transform=None,
-            fold=infer_aoi_name,
-            include_polygon_id=True,
-            other_attributes_names_to_pass=[object_id_column_name]
-        )
-        """
         infer_ds = UnlabeledRasterDataset(
             root_path=data_state.tiles_path,
             transform=None,
@@ -288,100 +277,6 @@ class ClassifierComponent(BaseComponent):
 
         return merged_gdf, new_columns
 
-        # TODO: remove below after testing
-        """
-        # If we have an existing GDF with geometries, preserve them
-        if infer_gdf is not None:
-            # Make a copy of the input GDF to preserve all columns and geometries
-            results_gdf = infer_gdf.copy()
-
-            # Add classifier results columns
-            results_gdf['classifier_class'] = None
-            results_gdf['classifier_score'] = 0.0
-            results_gdf['classifier_scores'] = None
-
-            if object_ids is not None:
-                print(f"Using object IDs for direct mapping of classifier results")
-
-                # Create a mapping from object ID to classifier results
-                id_to_classifier = {}
-                for i, obj_id in enumerate(object_ids):
-                    id_to_classifier[obj_id] = {
-                        'class': class_predictions[i],
-                        'score': max(class_scores[i]) if class_scores[i] else 0.0,
-                        'scores': class_scores[i]
-                    }
-
-                # Apply the mapping to the GDF
-                for i, row in results_gdf.iterrows():
-                    obj_id = row[object_id_column_name]
-                    if obj_id in id_to_classifier:
-                        results_gdf.at[i, 'classifier_class'] = id_to_classifier[obj_id]['class']
-                        results_gdf.at[i, 'classifier_score'] = id_to_classifier[obj_id]['score']
-                        results_gdf.at[i, 'classifier_scores'] = id_to_classifier[obj_id]['scores']
-
-                # Count how many rows matched by object ID
-                matched_count = sum(1 for obj_id in results_gdf[object_id_column_name] if obj_id in id_to_classifier)
-                print(f"Matched {matched_count} out of {len(results_gdf)} rows using object IDs")
-            else:
-                # Fall back to tile path matching if no object IDs are available
-                print("No object IDs available. Falling back to tile path matching.")
-
-                # Create a mapping from tile path to classifier results
-                tile_to_classifier = {}
-                for i, tile_path in enumerate(tiles_paths):
-                    tile_to_classifier[tile_path] = {
-                        'class': class_predictions[i],
-                        'score': max(class_scores[i]) if class_scores[i] else 0.0,
-                        'scores': class_scores[i]
-                    }
-
-                # Find paths that work in both datasets
-                common_paths = set(results_gdf['tile_path']) & set(tile_to_classifier.keys())
-                if common_paths:
-                    print(f"Found {len(common_paths)} common tile paths for matching.")
-                    for i, row in results_gdf.iterrows():
-                        tile_path = row['tile_path']
-                        if tile_path in tile_to_classifier:
-                            results_gdf.at[i, 'classifier_class'] = tile_to_classifier[tile_path]['class']
-                            results_gdf.at[i, 'classifier_score'] = tile_to_classifier[tile_path]['score']
-                            results_gdf.at[i, 'classifier_scores'] = tile_to_classifier[tile_path]['scores']
-                else:
-                    print("No common paths found. Unable to match classifier results.")
-
-        else:
-            # If we have no existing GDF, create a new one
-            print("No existing GDF found. Creating new GDF with classifier results.")
-            gdf_items = []
-            for i, tile_path in enumerate(tiles_paths):
-                # Get object ID if available
-                obj_id = object_ids[i] if object_ids is not None else i
-
-                gdf_items.append({
-                    'tile_path': tile_path,
-                    'geometry': shapely.Polygon([(0, 0), (0, 1), (1, 1), (1, 0)]),  # Placeholder
-                    'classifier_score': max(class_scores[i]) if class_scores[i] else 0.0,
-                    'classifier_class': class_predictions[i],
-                    'classifier_scores': class_scores[i],
-                    object_id_column_name: obj_id
-                })
-
-            # Create GeoDataFrame
-            results_gdf = gpd.GeoDataFrame(
-                data=gdf_items,
-                geometry='geometry',
-                crs=None
-            )
-
-        # Report on classifier results
-        classifier_count = results_gdf['classifier_class'].notnull().sum()
-        print(f"Added classifier results to {classifier_count} out of {len(results_gdf)} rows")
-
-        new_columns = {'classifier_score', 'classifier_class', 'classifier_scores'}
-
-        return results_gdf, new_columns
-        """
-
     def update_data_state(self,
                           data_state: DataState,
                           results_gdf: gpd.GeoDataFrame,
@@ -399,59 +294,6 @@ class ClassifierComponent(BaseComponent):
         # Ensure new classifier columns are passed
         columns_to_pass.update({'classifier_class', 'classifier_score', 'classifier_scores'})
         data_state.infer_gdf_columns_to_pass = columns_to_pass
-
-        # Debug information
-        # print(f"Classifier results GDF columns: {results_gdf.columns.tolist()}")
-        # print(f"Classifier results GDF shape: {results_gdf.shape}")
-
-        # TODO: delete this block after testing
-        """
-        if data_state.infer_gdf is not None:
-            print(f"Existing infer_gdf columns: {data_state.infer_gdf.columns.tolist()}")
-            print(f"Existing infer_gdf shape: {data_state.infer_gdf.shape}")
-
-            # Add classifier columns to the existing GDF
-            merged_gdf = data_state.infer_gdf.copy()
-
-            # Ensure object_id_column_name exists in both GDFs
-            if object_id_column_name not in merged_gdf.columns:
-                merged_gdf[object_id_column_name] = range(len(merged_gdf))
-
-            # First, create the new columns with default values
-            merged_gdf['classifier_class'] = None
-            merged_gdf['classifier_score'] = 0.0
-            # For classifier_scores (which is a list), use a Python object column
-            merged_gdf['classifier_scores'] = None
-
-            # Create a mapping of tile_path + object_id to classifier results
-            classifier_results = {}
-            for _, row in results_gdf.iterrows():
-                key = (row['tile_path'], row[object_id_column_name])
-                classifier_results[key] = {
-                    'classifier_class': row['classifier_class'],
-                    'classifier_score': row['classifier_score'],
-                    'classifier_scores': row['classifier_scores']
-                }
-
-            # Apply classifier results to the merged GDF row by row
-            for i, row in merged_gdf.iterrows():
-                key = (row['tile_path'], row[object_id_column_name])
-                if key in classifier_results:
-                    # Set each column individually to avoid the list issue
-                    merged_gdf.at[i, 'classifier_class'] = classifier_results[key]['classifier_class']
-                    merged_gdf.at[i, 'classifier_score'] = classifier_results[key]['classifier_score'] 
-                    merged_gdf.at[i, 'classifier_scores'] = classifier_results[key]['classifier_scores']
-
-            # Update the data state with the merged GDF
-            data_state.infer_gdf = merged_gdf
-        else:
-            # If no existing GDF, use the classifier results directly
-            data_state.infer_gdf = results_gdf
-        
-        # Ensure these columns are passed forward in the pipeline
-        columns_to_pass.update({'classifier_score', 'classifier_class', 'classifier_scores'})
-        data_state.infer_gdf_columns_to_pass = columns_to_pass
-        """
 
         # Add COCO generation to side processes
         if future_coco is not None:
