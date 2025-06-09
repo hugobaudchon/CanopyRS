@@ -230,4 +230,12 @@ python train.py \
   -c config/default_detection_multi_NQOS_best/detector.yaml 
 ```
 
+[//]: # (citation section)
+## 📚 Citation
+If you use CanopyRS or SelvaBox in your research, please cite our paper:
 
+```bibtex
+To be added
+```
+
+If you use other datasets, please cite them directly as well.
