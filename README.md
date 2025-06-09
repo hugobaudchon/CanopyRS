@@ -16,7 +16,7 @@
 Canopy RS (Remote Sensing) is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes.
 The pipeline includes components for tiling, detecting, aggregating, and segmenting trees in orthomosaics. These components can be chained together based on the desired application.
 
-## Installation
+## 🛠️ Installation
 
 ### Requirements
 
@@ -45,7 +45,7 @@ pip install git+https://github.com/IDEA-Research/detrex.git
 
 ⚠️ You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
 
-## Configuration
+## ⚙️ Configuration
 
 Each component is configurable via YAML configuration files.
 
@@ -82,11 +82,11 @@ We provide different default config files depending on your GPU resources:
 | Detection (Instance)       | `default_detection_single_S_medium`      | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                                                                          |
 | Detection (Instance)       | `default_detection_single_S_low`         | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                                                                         |
 | Segmentation (Instance)    | `default_segmentation_multi_NQOS_best`   | Same as `default_detection_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.                                                  |
-| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_S` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for smaller trees (up to ~15m), by using a lower score threshold before NMS, and tiles with smaller ground-extent and higher GSD (4cm/px).                  |
-| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_L` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for larger trees (up to ~60m), by using a lower score threshold before NMS, and tiles with larger ground-extent and lower GSD (7cm/px).                     |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_S` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for smaller trees (up to ~15m), by using a lower score threshold before NMS, and tiles with smaller spatial extent and higher GSD (4cm/px).                 |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_L` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for larger trees (up to ~60m), by using a lower score threshold before NMS, and tiles with larger spatial extent and lower GSD (7cm/px).                    |
 
 
-## Inference
+## 🚀 Inference
 
 The main entry point of the inference pipeline is `infer.py`. 
 This script accepts command-line arguments specifying the config to use and the input and output paths:
@@ -104,7 +104,7 @@ Example run for a folder of tiles/images (`-t`) with our default config:
 python infer.py -c default_detection_multi_NQOS_best -t /path/to/tiles/folder -o <OUTPUT_PATH>
 ```
 
-## Data
+## 🌳 Data
 
 In order to train or benchmark models, you will need data. In addition to SelvaBox, we provide 5 other pre-processed datasets:
 
@@ -153,7 +153,7 @@ For our SelvaBox and Detectree2 datasets example, the structure should look like
 
 Each additional dataset will add one or more locations folders.
 
-## Evaluation
+## 📊 Evaluation
 
 ### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
 To find the optimal NMS parameters for your model, i.e. `nms_iou_threshold` and `nms_score_threshold`,
@@ -204,7 +204,7 @@ For more information on parameters, you can use the `--help` flag:
 ```bash
 python -m tools.detection.benchmark --help
 ```
-## Training
+## 🧠 Training
 
 We provide a `train.py` script to train detector models on preprocessed datasets (you must download them first, see `Data`).
 
