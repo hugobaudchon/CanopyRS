@@ -18,9 +18,8 @@ The pipeline includes components for tiling, detecting, aggregating, and segment
 
 ### Requirements
 
-For most use cases, Cuda 12.1 (12.3 was tested too) is required.
-If you do not have it installed, you can refer to the [NVIDIA Cuda installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html) for your operating system.
-Please note that currently the pipeline only supports Linux systems (it was developed and tested on Ubuntu 22.04).
+- Linux system (this repository was developed and tested on Ubuntu 22.04).
+- Cuda 12.1. Version 12.3 was tested and works too, but others may not as requirements between libraries are quite strict. You can install Cuda by following the [NVIDIA Cuda installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html).
 
 ### Setup
 
@@ -31,9 +30,9 @@ git clone https://github.com/hugobaudchon/CanopyRS.git
 cd CanopyRS
 ```
 
-Install the required Python packages in a python 3.10 conda environment:
+Install the required Python packages in a python 3.10 conda environment. You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible.
+`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
 
-#### Linux
 ```bash
 conda create -n canopyrs python=3.10
 conda activate canopyrs
