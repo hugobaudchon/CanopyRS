@@ -32,7 +32,7 @@ git clone https://github.com/hugobaudchon/CanopyRS.git
 cd CanopyRS
 ```
 
-Install the required Python packages in a python 3.10 conda environment.
+Install the required Python packages in a python 3.10 conda environment:
 
 ```bash
 conda create -n canopyrs python=3.10
@@ -222,7 +222,7 @@ Then, for example, if you want to train a model on the `SelvaBox` and `Detectree
 
 You can also modify plenty of other parameters such as `batch_size`, `lr`...
 
-Then you can then run the training script with the following command:
+Finally, you can run the training script with the following command:
 
 ```bash
 python train.py \
