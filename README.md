@@ -7,8 +7,10 @@
 [//]: # (    <img src="https://img.shields.io/github/actions/workflow/status/hugobaudchon/CanopyRS/ci.yml?branch=main&label=CI" alt="CI status">)
 [//]: # (  </a>)
   <img src="https://img.shields.io/badge/python-3.10-blue" alt="Python 3.10">
+  <img src="https://img.shields.io/badge/CUDA-12.1-green" alt="CUDA 12.1">
   <img src="https://img.shields.io/badge/license-Apashe 2.0-green" alt="License: Apashe-2.0">
   <img src="https://img.shields.io/badge/docs-latest-brightgreen" alt="Docs">
+  <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Platform: Linux">
 </p>
 
 Canopy RS (Remote Sensing) is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes.
@@ -41,13 +43,7 @@ pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
 pip install git+https://github.com/IDEA-Research/detrex.git
 ```
 
-⚠️ You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible.
-`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
-
-[//]: # ()
-[//]: # (#### Windows)
-
-[//]: # (Coming soon)
+⚠️ You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
 
 ## Configuration
 
