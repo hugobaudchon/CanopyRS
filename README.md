@@ -238,4 +238,4 @@ If you use CanopyRS or SelvaBox in your research, please cite our paper:
 To be added
 ```
 
-If you use other datasets, please cite them directly as well.
+If you use other datasets that we have preprocessed, please also cite the original authors of those datasets directly.
