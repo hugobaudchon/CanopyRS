@@ -8,7 +8,7 @@
 [//]: # (  </a>)
   <img src="https://img.shields.io/badge/python-3.10-blue" alt="Python 3.10">
   <img src="https://img.shields.io/badge/CUDA-12.1-green" alt="CUDA 12.1">
-  <img src="https://img.shields.io/badge/license-Apashe 2.0-green" alt="License: Apashe-2.0">
+  <img src="https://img.shields.io/badge/license-Apache 2.0-green" alt="License: Apache-2.0">
   <img src="https://img.shields.io/badge/docs-latest-brightgreen" alt="Docs">
   <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Platform: Linux">
 </p>
