@@ -1,11 +1,28 @@
 <h1 align="center">CanopyRS</h1>
 
-![Project Title or Logo](assets/canopyrs_banner.png)
+<p align="center">
+<img src="assets/canopyrs_banner2.png" alt="CanopyRS banner" /><br/>
 
-Canopy Remote Sensing is a pipeline designed for processing geospatial orthomosaics to detect, segment, and (in the future) classify trees.
-The pipeline includes components for tiling, detecting, aggregating, and segmenting rasters. These components can be chained together based on the desired application.
+[//]: # (  <a href="https://github.com/hugobaudchon/CanopyRS/actions">)
+[//]: # (    <img src="https://img.shields.io/github/actions/workflow/status/hugobaudchon/CanopyRS/ci.yml?branch=main&label=CI" alt="CI status">)
+[//]: # (  </a>)
+  <img src="https://img.shields.io/badge/python-3.10-blue" alt="Python 3.10">
+  <img src="https://img.shields.io/badge/license-Apashe 2.0-green" alt="License: Apashe-2.0">
+  <img src="https://img.shields.io/badge/docs-latest-brightgreen" alt="Docs">
+</p>
+
+Canopy RS (Remote Sensing) is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes.
+The pipeline includes components for tiling, detecting, aggregating, and segmenting trees in orthomosaics. These components can be chained together based on the desired application.
 
 ## Installation
+
+### Requirements
+
+For most use cases, Cuda 12.1 (12.3 was tested too) is required.
+If you do not have it installed, you can refer to the [NVIDIA Cuda installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html) for your operating system.
+Please note that currently the pipeline only supports Linux systems (it was developed and tested on Ubuntu 22.04).
+
+### Setup
 
 Clone the repository to your local machine:
 
@@ -14,7 +31,7 @@ git clone https://github.com/hugobaudchon/CanopyRS.git
 cd CanopyRS
 ```
 
-Install the required Python packages:
+Install the required Python packages in a python 3.10 conda environment:
 
 #### Linux
 ```bash
@@ -39,27 +56,37 @@ While default configuration files are provided in the `config` directory,
 you can also create your own configuration files by creating a new folder under `config/`, adding a `pipeline.yaml` script,
 and setup your desired list of component configuration files.
 
-A `pipeline` is made of multiple components, each with its own configuration file. A typical `pipeline.yaml` configuration will look like this:
+A `pipeline` is made of multiple components, each with its own configuration. A typical `pipeline.yaml` configuration will look like this:
 
 ```yaml
 components_configs:
-  - tilerizer: default_detection_multi_NQOS_best/tilerizer
-  - detector: default_detection_multi_NQOS_best/detector
-  - aggregator: default_detection_multi_NQOS_best/aggregator
+  - tilerizer:
+      tile_type: tile
+      tile_size: 1777
+      tile_overlap: 0.75
+      ground_resolution: 0.045
+  - detector: default_components/detector_multi_NQOS_best
+  - aggregator:
+      nms_algorithm: 'iou'
+      score_threshold: 0.5
+      nms_threshold: 0.7
+      edge_band_buffer_percentage: 0.05
 ```
 
-where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_detection_multi_NQOS_best/tilerizer` points to a `[config_name]/[component_name]` component.
+where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_components/detector_multi_NQOS_best` points to a `[config_subfolder_name]/[component_name]` .yaml config in `config/`.
 
+
+### Base configs
 We provide different default config files depending on your GPU resources:
 
-| Config name                              | Description                                                                                                                                                                           |
-|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `default_detection_multi_NQOS_best`      | The best model from our paper, a DINO + Swin L-384 trained on a mixture of multi-resolution datasets including SelvaBox. Best quality, and memory footprint is at about 10 GB.        |
-| `default_segmentation_multi_NQOS_best`   | Same as `default_detection_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB. |
-| `default_segmentation_multi_NQOS_best_S` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for smaller trees (up to ~15m).                      |
-| `default_segmentation_multi_NQOS_best_L` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for larger trees (up to ~60m).                     |
-| `default_detection_single_S_medium`      | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                         |
-| `default_detection_single_S_low`         | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                        |
+| Task                       | Config name                              | Description                                                                                                                                                                                                                            |
+|----------------------------|------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Detection (Instance)       | `default_detection_multi_NQOS_best`      | The best model from our paper, a DINO + Swin L-384 trained on a mixture of multi-resolution datasets including SelvaBox. NMS hyper-parameters found using the $RF1_{75}$ metric. Best quality, and memory footprint is at about 10 GB. |
+| Detection (Instance)       | `default_detection_single_S_medium`      | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                                                                          |
+| Detection (Instance)       | `default_detection_single_S_low`         | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                                                                         |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best`   | Same as `default_detection_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.                                                  |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_S` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for smaller trees (up to ~15m), by using a lower score threshold before NMS, and tiles with smaller ground-extent and higher GSD (4cm/px).                  |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_L` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for larger trees (up to ~60m), by using a lower score threshold before NMS, and tiles with larger ground-extent and lower GSD (7cm/px).                     |
 
 
 ## Inference
