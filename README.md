@@ -94,12 +94,12 @@ This script accepts command-line arguments specifying the config to use and the 
 ```bash
 python infer.py -c <CONFIG_NAME> -i <INPUT_PATH> -o <OUTPUT_PATH>
 ```
-Example run for a single raster/orthomosaic (`-i`) with our default config:
+Example run for a single raster/orthomosaic (`-i`) with a default config:
 ```bash
 python infer.py -c default_detection_multi_NQOS_best -i /path/to/raster.tif -o <OUTPUT_PATH>
 ```
 
-Example run for a folder of tiles/images (`-t`) with our default config:
+Example run for a folder of geo-referenced .tif images (`-t`) with a default config:
 ```bash
 python infer.py -c default_detection_multi_NQOS_best -t /path/to/tiles/folder -o <OUTPUT_PATH>
 ```
