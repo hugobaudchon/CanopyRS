@@ -1,4 +1,4 @@
-<h1 align="center">CanopyRS</h1>
+<h1 align="center">CanopyRS🌴</h1>
 
 <p align="center">
 <img src="assets/canopyrs_banner2.png" alt="CanopyRS banner" /><br/>
@@ -30,8 +30,7 @@ git clone https://github.com/hugobaudchon/CanopyRS.git
 cd CanopyRS
 ```
 
-Install the required Python packages in a python 3.10 conda environment. You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible.
-`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
+Install the required Python packages in a python 3.10 conda environment.
 
 ```bash
 conda create -n canopyrs python=3.10
@@ -41,6 +40,9 @@ pip install -r requirements.txt
 pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
 pip install git+https://github.com/IDEA-Research/detrex.git
 ```
+
+⚠️ You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible.
+`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
 
 [//]: # ()
 [//]: # (#### Windows)
