@@ -38,7 +38,7 @@ Install the required Python packages in a python 3.10 conda environment:
 conda create -n canopyrs python=3.10
 conda activate canopyrs
 conda install -c conda-forge gdal=3.6.2
-pip install -r requirements.txt
+pip install -e .
 pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
 pip install git+https://github.com/IDEA-Research/detrex.git
 ```
