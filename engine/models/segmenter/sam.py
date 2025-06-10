@@ -10,6 +10,7 @@ from transformers import SamModel, SamProcessor
 from engine.config_parsers import SegmenterConfig
 from engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 from engine.utils import object_id_column_name
+from engine.models.registry import SEGMENTER_REGISTRY
 
 
 def collate_fn_image_box(data_batch):
@@ -18,6 +19,8 @@ def collate_fn_image_box(data_batch):
     boxes_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
     return image_batch, boxes_batch, boxes_object_ids
 
+
+@SEGMENTER_REGISTRY.register('sam')
 class SamPredictorWrapper(SegmenterWrapperBase):
     MODEL_TYPE_MAPPING = {
         'b': "facebook/sam-vit-base",

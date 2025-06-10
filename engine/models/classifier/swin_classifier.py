@@ -5,7 +5,10 @@ import torchvision.models as models
 
 from engine.config_parsers import ClassifierConfig
 from engine.models.classifier.classifier_base import TorchTrainerClassifierWrapperBase
+from engine.models.registry import CLASSIFIER_REGISTRY
 
+
+@CLASSIFIER_REGISTRY.register('swin')
 class SwinClassifier(TorchTrainerClassifierWrapperBase):
     """Swin Transformer-based classifier implementation using PyTorch's native models"""
 

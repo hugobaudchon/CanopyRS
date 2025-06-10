@@ -4,8 +4,10 @@ import torch
 
 from engine.config_parsers import DetectorConfig
 from engine.models.detector.detector_base import DetectorWrapperBase
+from engine.models.registry import DETECTOR_REGISTRY
 
 
+@DETECTOR_REGISTRY.register('deepforest')
 class DeepForestWrapper(DetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
         super().__init__(config)
