@@ -1,4 +1,0 @@
-nms_algorithm: 'iou'
-score_threshold: 0.4
-nms_threshold: 0.2
-scores_weights: {'detector_score': 1.0}

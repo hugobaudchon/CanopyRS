@@ -86,6 +86,7 @@ def process_masks(queue,
                 current_list.extend(results[tile_idx])
                 output_dict[tile_idx] = current_list
 
+
 class SegmenterWrapperBase(ABC):
     REQUIRES_BOX_PROMPT = None
 
