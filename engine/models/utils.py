@@ -77,6 +77,36 @@ def collate_fn_classification(batch):
         return images, labels
 
 
+def collate_fn_unlabeled_polygon_tiles(batch):
+    """
+    Collate function for UnlabeledRasterDataset when include_polygon_id is True.
+    It handles batches where items can be (image, polygon_id) or just image.
+    """
+    if isinstance(batch[0], tuple):  # Indicates (image, polygon_id)
+        images = [item[0] for item in batch]
+        polygon_ids = [item[1] for item in batch]
+
+        # Stack images
+        if isinstance(images[0], np.ndarray):
+            images_tensor = torch.tensor(np.array(images), dtype=torch.float32)
+        else:
+            images_tensor = torch.stack(images)
+        
+        # The ClassifierWrapperBase._infer expects a 3-tuple (images, labels_gt, polygon_ids_batch)
+        # or a 2-tuple (images, labels_gt) or (images, polygon_ids_batch) or just images.
+        # To fit the (images, _, polygon_ids_batch) pattern, we can pass None for labels_gt.
+        return images_tensor, None, polygon_ids  # Returning (images, None_for_gt_labels, polygon_ids)
+    else:  # Indicates just images
+        # This case should ideally not be mixed with the (image, polygon_id) case
+        # in the same DataLoader if polygon_ids are expected by the wrapper.
+        # However, if it occurs, we pass it through.
+        if isinstance(batch[0], np.ndarray):
+            images_tensor = torch.tensor(np.array(batch), dtype=torch.float32)
+        else: # Assuming torch.Tensor
+            images_tensor = torch.stack(batch)
+        return images_tensor # Returning just images
+
+
 def collate_fn_images(batch):
     """
     Pad all images in the batch to (C, H_max, W_max) and stack.

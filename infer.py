@@ -23,7 +23,7 @@ from engine.pipeline import Pipeline
 
 
 def pipeline_main(args):
-    config_path = get_config_path(f'{args.config}/pipeline')
+    config_path = get_config_path(f'{args.config}')
     config = PipelineConfig.from_yaml(config_path)
 
     if args.io_config_path and (args.imagery_path or args.output_path):
