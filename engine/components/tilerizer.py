@@ -72,7 +72,7 @@ class TilerizerComponent(BaseComponent):
                 tiles_path = tilerizer.tiles_folder_path
                 tiles_names = self._collect_polygon_tile_names(tilerizer, infer_aoi_name)
             else:
-                raise ValueError("Polygon tilerization requires either inference data")
+                raise ValueError("Polygon tilerization requires detection/segmentation inference data.")
 
         else:
             raise ValueError(f"Invalid tile type: {self.config.tile_type}. Expected 'tile' or 'polygon'.")

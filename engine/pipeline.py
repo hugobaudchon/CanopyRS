@@ -7,7 +7,6 @@ from engine.components.detector import DetectorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
 from engine.components.classifier import ClassifierComponent
-from engine.components.rubisco_db_writer import RubiscoDbWriterConfig
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
@@ -63,16 +62,8 @@ class Pipeline:
             return AggregatorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'segmenter':
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
-        # elif isinstance(component_config, EmbedderConfig):
-        #     return build_embedder()
-        # elif isinstance(component_config, ClassifierConfig):
-        #     return build_classifier()
-        # elif isinstance(component_config, ClustererConfig):
-        #     return build_clusterer()
         elif component_type == 'classifier':
             return ClassifierComponent(component_config, self.io_config.output_folder, component_id)
-        elif component_type == 'rubisco_db_writer':
-            return RubiscoDbWriterConfig(component_config, self.io_config.output_folder, component_id)
         else:
             raise ValueError(f'Invalid component {component_config}')
 
