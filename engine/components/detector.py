@@ -26,8 +26,8 @@ class DetectorComponent(BaseComponent):
         # Find the tiles
         infer_ds = UnlabeledRasterDataset(
             root_path=data_state.tiles_path,
-            transform=None, # transform=None because the detector class will apply its own transform
-            fold=None   # load all tiles (they could have either groundtruth or infer aois)
+            transform=None,  # transform=None because the detector class will apply its own transform
+            fold=None  # load all tiles (they could have either groundtruth or infer aois)
         )
 
         # Run inference

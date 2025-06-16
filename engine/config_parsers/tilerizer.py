@@ -4,6 +4,7 @@ from typing import Optional, List
 from engine.config_parsers.base import BaseConfig
 from engine.utils import object_id_column_name
 
+
 class TilerizerConfig(BaseConfig):
     tile_type: str = 'tile'
     tile_size: int = 1024

@@ -74,9 +74,17 @@ def generate_future_coco(
 
     print('Starting side process for generating COCO file...')
 
-    product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
-        Path(gdf[tiles_paths_column].iloc[0]).name
-    )
+    try:
+        product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
+            Path(gdf[tiles_paths_column].iloc[0]).name
+        )
+    except ValueError:
+        # input is probably images not tiled with geodataset
+        product_name = 'images'
+        scale_factor = 1.0
+        ground_resolution = None
+        aoi = infer_aoi_name
+
     coco_output_name = CocoNameConvention().create_name(
         product_name=product_name,
         fold=aoi,
