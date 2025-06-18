@@ -19,15 +19,6 @@ class RubiscoDbWriterComponent(BaseComponent):
             print("RubiscoDbWriter is disabled. Set 'enabled: true' in the configuration to enable it.")
             return data_state
 
-        # Debug: Print all available component output files
-        print("DEBUG: Available component output files:")
-        for key, files in data_state.component_output_files.items():
-            print(f"  {key}: {files}")
-
-        # Strategy: 
-        # 1. If classifier is enabled, use classifier output (contains both boxes and masks with proper classes)
-        # 2. Otherwise, fall back to aggregator outputs
-
         final_predictions_gpkg = None
 
         # First, check if we have classifier outputs (preferred)
@@ -49,13 +40,12 @@ class RubiscoDbWriterComponent(BaseComponent):
         if final_predictions_gpkg is None:
             # Keep track of aggregator ids to identify first (detector) and second (segmenter) aggregators
             aggregator_ids = []
-
             for key, files in data_state.component_output_files.items():
                 if 'aggregator' in key and 'gpkg' in files:
                     component_id = int(key.split('_')[0])
                     aggregator_ids.append((component_id, files['gpkg']))
 
-            # Sort by component ID 
+            # Sort by component ID
             aggregator_ids.sort()
 
             # Use the latest aggregator output, or first if only one exists
@@ -66,7 +56,6 @@ class RubiscoDbWriterComponent(BaseComponent):
             else:
                 print("No classifier or aggregator GPKG file found. Database writing skipped.")
                 return data_state
-
 
         # Verify the file exists
         if not Path(final_predictions_gpkg).exists():
