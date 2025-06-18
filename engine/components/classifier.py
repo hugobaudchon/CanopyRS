@@ -286,25 +286,18 @@ class ClassifierComponent(BaseComponent):
         # Register the component folder and outputs
         data_state = self.register_outputs_base(data_state)
 
-        if not results_gdf.empty:
-            data_state.update_infer_gdf(results_gdf)
-        else:
-            print("Classifier: Results GDF is empty, data_state.infer_gdf not updated by classifier.")
-
-        # Ensure new classifier columns are passed
-        columns_to_pass.update({'classifier_class', 'classifier_score', 'classifier_scores'})
-        data_state.infer_gdf_columns_to_pass = columns_to_pass
-
-        # Add COCO generation to side processes
-        if future_coco is not None:
-            data_state.side_processes.append(future_coco)
-
-        # Save the GeoPackage directly for debugging
         gpkg_path = self.output_path / f"{self.name}_results.gpkg"
         if not results_gdf.empty:
-            data_state.infer_gdf.to_file(gpkg_path, driver="GPKG")
-            print(f"Saved classifier results to: {gpkg_path}")
+            data_state.register_output_file(self.name, self.component_id, 'gpkg', gpkg_path)
+            data_state.update_infer_gdf(results_gdf)
+            # If necessary: Save the GeoPackage directly for debugging
+            # data_state.infer_gdf.to_file(gpkg_path, driver="GPKG")
+            # print(f"Saved classifier results to: {gpkg_path}")
+
         else:
-            print(f"ClassifierComponent: Results GDF is empty, skipping save to {gpkg_path}")
+            print("Classifier: Results GDF is empty, data_state.infer_gdf not updated by classifier.")
+        data_state.infer_gdf_columns_to_pass = columns_to_pass
+        if future_coco is not None:
+            data_state.side_processes.append(future_coco)
 
         return data_state
