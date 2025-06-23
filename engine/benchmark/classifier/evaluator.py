@@ -44,7 +44,6 @@ class ClassifierCocoEvaluator:
         self._align_coco_datasets_by_name(truth_coco, preds_coco)
 
         results = {}
-        import ipdb;ipdb.set_trace()
         # Always evaluate segmentation (primary metric for classification)
         print("Evaluating segmentation IoU...")
         segm_metrics = self._evaluate_single_iou_type(truth_coco, preds_coco, 'segm', max_dets)
@@ -212,6 +211,61 @@ class ClassifierCocoEvaluator:
 
         preds_coco.dataset['annotations'] = new_preds_annotations
         preds_coco.createIndex()
+
+    def _evaluate_single_iou_type(self, truth_coco: COCO, preds_coco: COCO, 
+                                  iou_type: str, max_dets: list[int]) -> dict:
+        """Evaluate a single IoU type (segm or bbox)"""
+
+        # Create fresh COCO objects to avoid interference between evaluations
+        truth_coco_copy = COCO()
+        truth_coco_copy.dataset = truth_coco.dataset.copy()
+        truth_coco_copy.createIndex()
+
+        preds_coco_copy = COCO()
+        preds_coco_copy.dataset = preds_coco.dataset.copy()
+        preds_coco_copy.createIndex()
+
+        # Set up and run COCO evaluation
+        coco_evaluator = Summarize2COCOEval(
+            cocoGt=truth_coco_copy,
+            cocoDt=preds_coco_copy,
+            iouType=iou_type
+        )
+        coco_evaluator.params.maxDets = max_dets
+        coco_evaluator.evaluate()
+        coco_evaluator.accumulate()
+
+        # Get metrics as a dictionary and add debug info
+        metrics = coco_evaluator.summarize_to_dict()
+        num_images = len(truth_coco_copy.dataset.get('images', []))
+        num_truths = len(truth_coco_copy.dataset.get('annotations', []))
+        num_preds = len(preds_coco_copy.dataset.get('annotations', []))
+
+        metrics['num_images'] = num_images
+        metrics['num_truths'] = num_truths
+        metrics['num_preds'] = num_preds
+        metrics['iou_type'] = iou_type
+
+        # Add mIoU computation
+        if hasattr(coco_evaluator, 'eval') and coco_evaluator.eval:
+            miou = self._compute_miou(coco_evaluator.eval)
+            metrics['mIoU'] = miou
+
+        return metrics
+
+    def _compute_miou(self, eval_result):
+        """Compute mean IoU from COCO evaluation results"""
+        try:
+            # Extract IoU values from evaluation results
+            iou_scores = np.array([*eval_result.get('matched').values()])
+            if iou_scores is not None and isinstance(iou_scores, np.ndarray):
+                # Filter valid IoU values (> 0, typically <= 1)
+                valid_ious = iou_scores[(iou_scores > 0) & (iou_scores <= 1)]
+                if len(valid_ious) > 0:
+                    return float(np.mean(valid_ious))
+            return 0.0
+        except:
+            return 0.0
 
 
 class Summarize2COCOEval(COCOeval_faster):
