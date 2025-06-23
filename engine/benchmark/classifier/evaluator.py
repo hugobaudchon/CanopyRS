@@ -1,5 +1,8 @@
 # engine/benchmark/classifier/evaluator.py
 import warnings
+import json
+import tempfile
+from pathlib import Path
 import numpy as np
 from faster_coco_eval.core.coco import COCO
 from faster_coco_eval.core.faster_eval_api import COCOeval_faster
@@ -11,13 +14,26 @@ class ClassifierCocoEvaluator:
     def tile_level(self,
                    preds_coco_path: str,
                    truth_coco_path: str,
-                   max_dets: list[int] = (1, 10, 100)) -> dict:
+                   max_dets: list[int] = (1, 10, 100),
+                   evaluate_bbox: bool = False) -> dict:
         """
         Tile-level evaluation for instance segmentation with classes.
-        Uses 'segm' IoU type for polygon/mask evaluation.
+
+        Args:
+            preds_coco_path: Path to predictions COCO file
+            truth_coco_path: Path to ground truth COCO file  
+            max_dets: Maximum detections to consider
+            evaluate_bbox: If True, also evaluate bbox IoU and return both metrics
+
+        Returns:
+            dict: Metrics dictionary. If evaluate_bbox=True, contains both 'segm' and 'bbox' keys
         """
+        # Preprocess predictions to fix score field names
+        processed_preds_path = self._preprocess_predictions_coco(preds_coco_path)
+
+        # Load COCO files
         truth_coco = COCO(str(truth_coco_path))
-        preds_coco = COCO(str(preds_coco_path))
+        preds_coco = COCO(str(processed_preds_path))
 
         # Remove scores from ground truth annotations (if any)
         for ann in truth_coco.dataset['annotations']:
@@ -27,11 +43,45 @@ class ClassifierCocoEvaluator:
         # Align predictions to truth based on file name
         self._align_coco_datasets_by_name(truth_coco, preds_coco)
 
-        # Set up and run COCO evaluation for segmentation
+        results = {}
+        import ipdb;ipdb.set_trace()
+        # Always evaluate segmentation (primary metric for classification)
+        print("Evaluating segmentation IoU...")
+        segm_metrics = self._evaluate_single_iou_type(truth_coco, preds_coco, 'segm', max_dets)
+        results['segm'] = segm_metrics
+
+        # Optionally evaluate bbox
+        if evaluate_bbox:
+            print("Evaluating bbox IoU...")
+            bbox_metrics = self._evaluate_single_iou_type(truth_coco, preds_coco, 'bbox', max_dets)
+            results['bbox'] = bbox_metrics
+
+        # Clean up temporary file
+        if processed_preds_path != preds_coco_path:
+            Path(processed_preds_path).unlink()
+
+        # Return segm metrics directly if only evaluating segmentation
+        # Return both if evaluating both
+        return results if evaluate_bbox else segm_metrics
+
+    def _evaluate_single_iou_type(self, truth_coco: COCO, preds_coco: COCO, 
+                                  iou_type: str, max_dets: list[int]) -> dict:
+        """Evaluate a single IoU type (segm or bbox)"""
+
+        # Create fresh COCO objects to avoid interference between evaluations
+        truth_coco_copy = COCO()
+        truth_coco_copy.dataset = truth_coco.dataset.copy()
+        truth_coco_copy.createIndex()
+
+        preds_coco_copy = COCO()
+        preds_coco_copy.dataset = preds_coco.dataset.copy()
+        preds_coco_copy.createIndex()
+
+        # Set up and run COCO evaluation
         coco_evaluator = Summarize2COCOEval(
-            cocoGt=truth_coco,
-            cocoDt=preds_coco,
-            iouType='segm'  # Use segmentation IoU instead of bbox
+            cocoGt=truth_coco_copy,
+            cocoDt=preds_coco_copy,
+            iouType=iou_type
         )
         coco_evaluator.params.maxDets = max_dets
         coco_evaluator.evaluate()
@@ -39,27 +89,106 @@ class ClassifierCocoEvaluator:
 
         # Get metrics as a dictionary and add debug info
         metrics = coco_evaluator.summarize_to_dict()
-        num_images = len(truth_coco.dataset.get('images', []))
-        num_truths = len(truth_coco.dataset.get('annotations', []))
-        num_preds = len(preds_coco.dataset.get('annotations', []))
+        num_images = len(truth_coco_copy.dataset.get('images', []))
+        num_truths = len(truth_coco_copy.dataset.get('annotations', []))
+        num_preds = len(preds_coco_copy.dataset.get('annotations', []))
 
         metrics['num_images'] = num_images
         metrics['num_truths'] = num_truths
         metrics['num_preds'] = num_preds
+        metrics['iou_type'] = iou_type
 
         return metrics
+
+    def _preprocess_predictions_coco(self, preds_coco_path: str) -> str:
+        """
+        Preprocess predictions COCO file to standardize score field names.
+        The COCO evaluation expects 'score' but pipelines may generate different names.
+
+        Returns path to processed file (may be the same as input if no changes needed).
+        """
+        # Load the original predictions file
+        with open(preds_coco_path, 'r') as f:
+            coco_data = json.load(f)
+
+        # Check if we need to fix score fields
+        score_field_candidates = [
+            'classifier_score', 
+            'aggregator_score', 
+            'detector_score', 
+            'segmentation_score',
+            'prediction_score'
+        ]
+
+        # Check what score fields exist in annotations
+        existing_score_fields = set()
+        for ann in coco_data.get('annotations', []):
+            # Check if score already exists at top level
+            if 'score' in ann:
+                existing_score_fields.add('score')
+
+            # Check in other_attributes
+            other_attrs = ann.get('other_attributes', {})
+            for field in score_field_candidates:
+                if field in other_attrs:
+                    existing_score_fields.add(field)
+
+        # If 'score' already exists and is the only score field, no fix needed
+        if 'score' in existing_score_fields and len(existing_score_fields) == 1:
+            print("Predictions already have 'score' field, no preprocessing needed")
+            return preds_coco_path
+
+        # Determine which field to use as score
+        score_field_to_use = None
+        if 'classifier_score' in existing_score_fields:
+            score_field_to_use = 'classifier_score'
+        elif 'aggregator_score' in existing_score_fields:
+            score_field_to_use = 'aggregator_score'
+        elif 'detector_score' in existing_score_fields:
+            score_field_to_use = 'detector_score'
+        elif existing_score_fields:
+            # Remove 'score' from candidates if it exists
+            candidates = existing_score_fields - {'score'}
+            if candidates:
+                score_field_to_use = list(candidates)[0]
+
+        if score_field_to_use is None:
+            print("WARNING: No score fields found in predictions.")
+            return preds_coco_path
+
+        print(f"Converting '{score_field_to_use}' to 'score' in predictions")
+
+        # Fix the annotations
+        for ann in coco_data.get('annotations', []):
+            other_attrs = ann.get('other_attributes', {})
+            # If score field is in other_attributes, move to top level
+            if score_field_to_use in other_attrs:
+                ann['score'] = other_attrs[score_field_to_use]
+            # If score field is already at top level
+            elif score_field_to_use in ann:
+                ann['score'] = ann[score_field_to_use]
+
+        # Create a temporary file with the fixed data
+        temp_file = tempfile.NamedTemporaryFile(
+            mode='w', 
+            suffix='_fixed_predictions.json', 
+            delete=False
+        )
+
+        with temp_file as f:
+            json.dump(coco_data, f, indent=2)
+
+        return temp_file.name
 
     def _align_coco_datasets_by_name(self, truth_coco: COCO, preds_coco: COCO) -> None:
         """
         Align the predictions COCO dataset to follow the order of the truth COCO dataset,
-        matching based on the image 'file_name'. For any truth image missing in preds,
-        insert a dummy image (with no annotations) so that the image IDs match.
-        This function updates the preds_coco in-place.
+        matching based on the image 'file_name'.
         """
         preds_by_name = {img['file_name']: img for img in preds_coco.dataset.get('images', [])}
         id_mapping = {}
         new_preds_images = []
-        
+
         for truth_img in truth_coco.dataset.get('images', []):
             file_name = truth_img['file_name']
             truth_id = truth_img['id']
@@ -71,7 +200,7 @@ class ClassifierCocoEvaluator:
                 new_preds_images.append(new_img)
             else:
                 new_preds_images.append(truth_img.copy())
-        
+
         preds_coco.dataset['images'] = new_preds_images
 
         new_preds_annotations = []
@@ -80,7 +209,7 @@ class ClassifierCocoEvaluator:
             if orig_img_id in id_mapping:
                 ann['image_id'] = id_mapping[orig_img_id]
                 new_preds_annotations.append(ann)
-        
+
         preds_coco.dataset['annotations'] = new_preds_annotations
         preds_coco.createIndex()
 
@@ -119,27 +248,20 @@ class Summarize2COCOEval(COCOeval_faster):
             stats = np.zeros((15,))
             stats_strings = ['' for _ in range(15)]
 
-            # AP metrics
             stats[0], stats_strings[0] = _summarize(1, maxDets=self.params.maxDets[max_dets_index])
             stats[1], stats_strings[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
             stats[2], stats_strings[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
             stats[3], stats_strings[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
             stats[4], stats_strings[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
             stats[5], stats_strings[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
-
-            # AR metrics
             stats[6], stats_strings[6] = _summarize(0, maxDets=self.params.maxDets[0])
             stats[7], stats_strings[7] = _summarize(0, maxDets=self.params.maxDets[1])
             stats[8], stats_strings[8] = _summarize(0, maxDets=self.params.maxDets[2])
             stats[9], stats_strings[9] = (_summarize(0, maxDets=self.params.maxDets[3])
                                           if len(self.params.maxDets) > 3
                                           else _summarize(0, maxDets=self.params.maxDets[2]))
-
-            # AR at specific IoU thresholds
             stats[10], stats_strings[10] = _summarize(0, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
             stats[11], stats_strings[11] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
-
-            # AR for different object sizes
             stats[12], stats_strings[12] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
             stats[13], stats_strings[13] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
             stats[14], stats_strings[14] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
@@ -148,13 +270,7 @@ class Summarize2COCOEval(COCOeval_faster):
         if not self.eval:
             raise Exception('Please run accumulate() first')
         
-        iouType = self.params.iouType
-        if iouType in ['segm', 'bbox']:
-            summarize = _summarizeDets
-        else:
-            raise Exception('Unknown iouType: {}'.format(iouType))
-        
-        self.stats, stats_strings = summarize()
+        self.stats, stats_strings = _summarizeDets()
         return stats_strings
 
     def summarize_to_dict(self):
