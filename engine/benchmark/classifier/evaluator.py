@@ -117,7 +117,7 @@ class ClassifierCocoEvaluator:
         Args:
             preds_coco_path: Path to predictions COCO file
             score_combination: Dict with score combination settings
-        
+
         Returns:
             Path to processed file (may be the same as input if no changes needed).
         """
@@ -170,69 +170,69 @@ class ClassifierCocoEvaluator:
         temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='_fixed_predictions.json', delete=False)
         with temp_file as f:
             json.dump(coco_data, f, indent=2)
-        
+
         return temp_file.name
-    
+
     def _combine_scores(self, coco_data: Dict, score_combination: Dict):
-    """Combine multiple scores using specified weights and method"""
-    weights = score_combination['weights']
-    method = score_combination.get('method', 'weighted_arithmetic_mean')
-    
-    # Validate weights sum to 1
-    weight_sum = sum(weights.values())
-    if abs(weight_sum - 1.0) > 1e-6:
-        print(f"WARNING: Weights sum to {weight_sum:.3f}, normalizing to 1.0")
-        weights = {k: v/weight_sum for k, v in weights.items()}
-    
-    for ann in coco_data.get('annotations', []):
-        other_attrs = ann.get('other_attributes', {})
-        scores_to_combine = {}
-        
-        # Collect available scores
-        for score_name, weight in weights.items():
-            if score_name in other_attrs:
-                scores_to_combine[score_name] = other_attrs[score_name]
-            elif score_name in ann:
-                scores_to_combine[score_name] = ann[score_name]
-        
-        if scores_to_combine:
-            if method == 'weighted_arithmetic_mean':
-                combined_score = self._weighted_arithmetic_mean(scores_to_combine, weights)
-            elif method == 'weighted_geometric_mean':
-                combined_score = self._weighted_geometric_mean(scores_to_combine, weights)
+        """Combine multiple scores using specified weights and method"""
+        weights = score_combination['weights']
+        method = score_combination.get('method', 'weighted_arithmetic_mean')
+
+        # Validate weights sum to 1
+        weight_sum = sum(weights.values())
+        if abs(weight_sum - 1.0) > 1e-6:
+            print(f"WARNING: Weights sum to {weight_sum:.3f}, normalizing to 1.0")
+            weights = {k: v/weight_sum for k, v in weights.items()}
+
+        for ann in coco_data.get('annotations', []):
+            other_attrs = ann.get('other_attributes', {})
+            scores_to_combine = {}
+
+            # Collect available scores
+            for score_name, weight in weights.items():
+                if score_name in other_attrs:
+                    scores_to_combine[score_name] = other_attrs[score_name]
+                elif score_name in ann:
+                    scores_to_combine[score_name] = ann[score_name]
+
+            if scores_to_combine:
+                if method == 'weighted_arithmetic_mean':
+                    combined_score = self._weighted_arithmetic_mean(scores_to_combine, weights)
+                elif method == 'weighted_geometric_mean':
+                    combined_score = self._weighted_geometric_mean(scores_to_combine, weights)
+                else:
+                    raise ValueError(f"Unknown score combination method: {method}")
+
+                ann['score'] = combined_score
             else:
-                raise ValueError(f"Unknown score combination method: {method}")
-            
-            ann['score'] = combined_score
-        else:
-            print(f"WARNING: No scores found to combine for annotation {ann.get('id', 'unknown')}")
+                print(f"WARNING: No scores found to combine for annotation {ann.get('id', 'unknown')}")
 
     def _weighted_arithmetic_mean(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
         """Compute weighted arithmetic mean of scores"""
         total_score = 0.0
         total_weight = 0.0
-        
+
         for score_name, score_value in scores.items():
             if score_name in weights:
                 weight = weights[score_name]
                 total_score += score_value * weight
                 total_weight += weight
-        
+
         return total_score / total_weight if total_weight > 0 else 0.0
 
     def _weighted_geometric_mean(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
         """Compute weighted geometric mean of scores"""
         import math
-        
+
         log_sum = 0.0
         total_weight = 0.0
-        
+
         for score_name, score_value in scores.items():
             if score_name in weights and score_value > 0:
                 weight = weights[score_name]
                 log_sum += weight * math.log(score_value)
                 total_weight += weight
-        
+
         return math.exp(log_sum / total_weight) if total_weight > 0 else 0.0
 
     def _select_primary_score_field(self, existing_score_fields: set) -> Optional[str]:
