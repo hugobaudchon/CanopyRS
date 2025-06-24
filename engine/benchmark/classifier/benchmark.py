@@ -8,16 +8,6 @@ from engine.config_parsers import ClassifierConfig, PipelineConfig, InferIOConfi
 from engine.pipeline import Pipeline
 from engine.utils import merge_coco_jsons
 
-"""
-# Define your canonical class list here or import from a central place
-CANONICAL_COCO_CATEGORIES = [
-    # {"id": 1, "name": "class1", "supercategory": "object"},
-    # {"id": 2, "name": "class2", "supercategory": "object"},
-    # Add all your classes here
-]
-if not CANONICAL_COCO_CATEGORIES:
-    print("WARNING: CANONICAL_COCO_CATEGORIES is not defined in benchmark.py. Evaluation might fail or use arbitrary category IDs.")
-"""
 
 class ClassifierBenchmarker:
     def __init__(self,

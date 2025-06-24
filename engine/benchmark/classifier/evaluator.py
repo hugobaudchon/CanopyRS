@@ -15,7 +15,8 @@ class ClassifierCocoEvaluator:
                    preds_coco_path: str,
                    truth_coco_path: str,
                    max_dets: list[int] = (1, 10, 100),
-                   evaluate_bbox: bool = False) -> dict:
+                   evaluate_bbox: bool = False,
+                   score_combination: Optional[Dict] = None) -> dict:
         """
         Tile-level evaluation for instance segmentation with classes.
 
@@ -24,12 +25,20 @@ class ClassifierCocoEvaluator:
             truth_coco_path: Path to ground truth COCO file  
             max_dets: Maximum detections to consider
             evaluate_bbox: If True, also evaluate bbox IoU and return both metrics
+            score_combination: Dict with 'weights' and 'method' for combining scores
+                            Example: {
+                                'weights': {'detector_score': 0.5, 'classifier_score': 0.3, 'segmentation_score': 0.2},
+                                'method': 'weighted_arithmetic_mean'  # or 'weighted_geometric_mean'
+                            }
 
         Returns:
             dict: Metrics dictionary. If evaluate_bbox=True, contains both 'segm' and 'bbox' keys
         """
         # Preprocess predictions to fix score field names
-        processed_preds_path = self._preprocess_predictions_coco(preds_coco_path)
+        processed_preds_path = self._preprocess_predictions_coco(
+            preds_coco_path,
+            score_combination=score_combination
+        )
 
         # Load COCO files
         truth_coco = COCO(str(truth_coco_path))
@@ -99,12 +108,18 @@ class ClassifierCocoEvaluator:
 
         return metrics
 
-    def _preprocess_predictions_coco(self, preds_coco_path: str) -> str:
+    def _preprocess_predictions_coco(self, preds_coco_path: str, 
+                                     score_combination: Optional[Dict] = None) -> str:
         """
         Preprocess predictions COCO file to standardize score field names.
-        The COCO evaluation expects 'score' but pipelines may generate different names.
+        Can also combine multiple scores using weighted averaging.
 
-        Returns path to processed file (may be the same as input if no changes needed).
+        Args:
+            preds_coco_path: Path to predictions COCO file
+            score_combination: Dict with score combination settings
+        
+        Returns:
+            Path to processed file (may be the same as input if no changes needed).
         """
         # Load the original predictions file
         with open(preds_coco_path, 'r') as f:
@@ -112,9 +127,9 @@ class ClassifierCocoEvaluator:
 
         # Check if we need to fix score fields
         score_field_candidates = [
-            'classifier_score', 
-            'aggregator_score', 
-            'detector_score', 
+            'classifier_score',
+            'aggregator_score',
+            'detector_score',
             'segmentation_score',
             'prediction_score'
         ]
@@ -132,52 +147,115 @@ class ClassifierCocoEvaluator:
                 if field in other_attrs:
                     existing_score_fields.add(field)
 
-        # If 'score' already exists and is the only score field, no fix needed
-        if 'score' in existing_score_fields and len(existing_score_fields) == 1:
+        # Handle score combination if specified
+        if score_combination and 'weights' in score_combination:
+            print(f"Combining scores using {score_combination.get('method', 'weighted_arithmetic_mean')}")
+            self._combine_scores(coco_data, score_combination)
+            print("Score combination completed")
+
+        # Handle single score field selection (existing logic)
+        elif not ('score' in existing_score_fields and len(existing_score_fields) == 1):
+            score_field_to_use = self._select_primary_score_field(existing_score_fields)
+            if score_field_to_use:
+                print(f"Converting '{score_field_to_use}' to 'score' in predictions")
+                self._move_score_to_top_level(coco_data, score_field_to_use)
+            else:
+                print("WARNING: No score fields found in predictions.")
+                return preds_coco_path
+        else:
             print("Predictions already have 'score' field, no preprocessing needed")
             return preds_coco_path
 
-        # Determine which field to use as score
-        score_field_to_use = None
-        if 'classifier_score' in existing_score_fields:
-            score_field_to_use = 'classifier_score'
-        elif 'aggregator_score' in existing_score_fields:
-            score_field_to_use = 'aggregator_score'
-        elif 'detector_score' in existing_score_fields:
-            score_field_to_use = 'detector_score'
-        elif existing_score_fields:
-            # Remove 'score' from candidates if it exists
-            candidates = existing_score_fields - {'score'}
-            if candidates:
-                score_field_to_use = list(candidates)[0]
-
-        if score_field_to_use is None:
-            print("WARNING: No score fields found in predictions.")
-            return preds_coco_path
-
-        print(f"Converting '{score_field_to_use}' to 'score' in predictions")
-
-        # Fix the annotations
-        for ann in coco_data.get('annotations', []):
-            other_attrs = ann.get('other_attributes', {})
-            # If score field is in other_attributes, move to top level
-            if score_field_to_use in other_attrs:
-                ann['score'] = other_attrs[score_field_to_use]
-            # If score field is already at top level
-            elif score_field_to_use in ann:
-                ann['score'] = ann[score_field_to_use]
-
-        # Create a temporary file with the fixed data
-        temp_file = tempfile.NamedTemporaryFile(
-            mode='w', 
-            suffix='_fixed_predictions.json', 
-            delete=False
-        )
-
+        # Create temporary file with processed data
+        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='_fixed_predictions.json', delete=False)
         with temp_file as f:
             json.dump(coco_data, f, indent=2)
-
+        
         return temp_file.name
+    
+    def _combine_scores(self, coco_data: Dict, score_combination: Dict):
+    """Combine multiple scores using specified weights and method"""
+    weights = score_combination['weights']
+    method = score_combination.get('method', 'weighted_arithmetic_mean')
+    
+    # Validate weights sum to 1
+    weight_sum = sum(weights.values())
+    if abs(weight_sum - 1.0) > 1e-6:
+        print(f"WARNING: Weights sum to {weight_sum:.3f}, normalizing to 1.0")
+        weights = {k: v/weight_sum for k, v in weights.items()}
+    
+    for ann in coco_data.get('annotations', []):
+        other_attrs = ann.get('other_attributes', {})
+        scores_to_combine = {}
+        
+        # Collect available scores
+        for score_name, weight in weights.items():
+            if score_name in other_attrs:
+                scores_to_combine[score_name] = other_attrs[score_name]
+            elif score_name in ann:
+                scores_to_combine[score_name] = ann[score_name]
+        
+        if scores_to_combine:
+            if method == 'weighted_arithmetic_mean':
+                combined_score = self._weighted_arithmetic_mean(scores_to_combine, weights)
+            elif method == 'weighted_geometric_mean':
+                combined_score = self._weighted_geometric_mean(scores_to_combine, weights)
+            else:
+                raise ValueError(f"Unknown score combination method: {method}")
+            
+            ann['score'] = combined_score
+        else:
+            print(f"WARNING: No scores found to combine for annotation {ann.get('id', 'unknown')}")
+
+    def _weighted_arithmetic_mean(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
+        """Compute weighted arithmetic mean of scores"""
+        total_score = 0.0
+        total_weight = 0.0
+        
+        for score_name, score_value in scores.items():
+            if score_name in weights:
+                weight = weights[score_name]
+                total_score += score_value * weight
+                total_weight += weight
+        
+        return total_score / total_weight if total_weight > 0 else 0.0
+
+    def _weighted_geometric_mean(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
+        """Compute weighted geometric mean of scores"""
+        import math
+        
+        log_sum = 0.0
+        total_weight = 0.0
+        
+        for score_name, score_value in scores.items():
+            if score_name in weights and score_value > 0:
+                weight = weights[score_name]
+                log_sum += weight * math.log(score_value)
+                total_weight += weight
+        
+        return math.exp(log_sum / total_weight) if total_weight > 0 else 0.0
+
+    def _select_primary_score_field(self, existing_score_fields: set) -> Optional[str]:
+        """Select primary score field when no combination is specified"""
+        if 'classifier_score' in existing_score_fields:
+            return 'classifier_score'
+        elif 'aggregator_score' in existing_score_fields:
+            return 'aggregator_score'
+        elif 'detector_score' in existing_score_fields:
+            return 'detector_score'
+        elif existing_score_fields:
+            candidates = existing_score_fields - {'score'}
+            return list(candidates)[0] if candidates else None
+        return None
+
+    def _move_score_to_top_level(self, coco_data: Dict, score_field_to_use: str):
+        """Move selected score field to top level of annotations"""
+        for ann in coco_data.get('annotations', []):
+            other_attrs = ann.get('other_attributes', {})
+            if score_field_to_use in other_attrs:
+                ann['score'] = other_attrs[score_field_to_use]
+            elif score_field_to_use in ann:
+                ann['score'] = ann[score_field_to_use]
 
     def _align_coco_datasets_by_name(self, truth_coco: COCO, preds_coco: COCO) -> None:
         """
