@@ -9,15 +9,8 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 from engine.config_parsers import SegmenterConfig
 from engine.models.segmenter.segmenter_base import SegmenterWrapperBase
-from engine.utils import object_id_column_name
 from engine.models.registry import SEGMENTER_REGISTRY
-
-
-def collate_fn_image_box(data_batch):
-    image_batch = [data[0] for data in data_batch]
-    boxes_batch = [np.array(data[1]['boxes']) for data in data_batch]
-    boxes_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
-    return image_batch, boxes_batch, boxes_object_ids
+from engine.models.utils import collate_fn_infer_image_box
 
 
 @SEGMENTER_REGISTRY.register('sam2')
@@ -76,4 +69,4 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
                     )
 
     def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
-        return self._infer_on_dataset(dataset, collate_fn_image_box)
+        return self._infer_on_dataset(dataset, collate_fn_infer_image_box)

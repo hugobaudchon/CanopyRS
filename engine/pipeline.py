@@ -10,7 +10,8 @@ from engine.components.classifier import ClassifierComponent
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
-from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, green_print, get_component_folder_name
+from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, green_print, get_component_folder_name, \
+    object_id_column_name, tile_path_column_name
 
 
 class Pipeline:
@@ -34,6 +35,11 @@ class Pipeline:
             aoi_type=self.io_config.aoi_type,
             aois={infer_aoi_name: self.io_config.aoi}
         )
+
+        # If an infer_gdf from a previous pipeline run is provided, make sure to pass the special columns if present
+        for special_column_name in [object_id_column_name, tile_path_column_name]:
+            if self.data_state.infer_gdf is not None and special_column_name in self.data_state.infer_gdf.columns:
+                self.data_state.infer_gdf_columns_to_pass.update([special_column_name])
 
         green_print("Pipeline initialized")
 

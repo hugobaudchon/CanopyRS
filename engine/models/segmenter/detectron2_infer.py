@@ -17,10 +17,7 @@ from engine.models.detector.train_detectron2.train_detrex import get_base_detrex
 from engine.models.segmenter.detectree2 import setup_detectree2_cfg
 from engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 from engine.models.registry import SEGMENTER_REGISTRY
-
-
-def collate_fn(image_batch):
-    return image_batch
+from engine.models.utils import collate_fn_trivial
 
 
 @SEGMENTER_REGISTRY.register('detectree2')
@@ -129,5 +126,5 @@ class Detectron2SegmenterWrapper(SegmenterWrapperBase):
                 _ = self.queue_masks(masks, image_size, scores, tile_idx, n_masks_processed, queue)
 
     def infer_on_dataset(self, dataset: UnlabeledRasterDataset):
-        return self._infer_on_dataset(dataset, collate_fn)
+        return self._infer_on_dataset(dataset, collate_fn_trivial)
 

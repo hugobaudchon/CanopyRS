@@ -22,9 +22,11 @@ class TilerizerComponent(BaseComponent):
                  infer_aois_config: Optional[AOIConfig] = None):
         super().__init__(config, parent_output_path, component_id)
         self.infer_aois_config = infer_aois_config
-        self.raster = None  # Will be initialized in __call__
 
     def __call__(self, data_state: DataState) -> DataState:
+
+        if data_state.imagery_path is None:
+            raise ValueError("No imagery_path specified in data_state. Cannot create tilerizer.")
 
         if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
             raise ValueError(
@@ -66,7 +68,7 @@ class TilerizerComponent(BaseComponent):
                     data_state=data_state,
                     labels_gdf=data_state.infer_gdf,
                     aois_config=self.infer_aois_config,
-                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass)
+                    other_labels_attributes_column_names=list(data_state.infer_gdf_columns_to_pass.union(self.config.other_labels_attributes_column_names))
                 )
                 infer_coco_path = tilerizer.generate_coco_dataset()[infer_aoi_name]
                 tiles_path = tilerizer.tiles_folder_path
@@ -104,6 +106,7 @@ class TilerizerComponent(BaseComponent):
                               labels_gdf: gpd.GeoDataFrame,
                               aois_config: AOIConfig,
                               other_labels_attributes_column_names: list[str]):
+
         tilerizer = LabeledRasterTilerizer(
             raster_path=data_state.imagery_path,
             labels_path=None,
@@ -124,7 +127,10 @@ class TilerizerComponent(BaseComponent):
 
         return tilerizer
 
-    def get_unlabeled_tilerizer(self, data_state: DataState, aois_config: AOIConfig):
+    def get_unlabeled_tilerizer(self,
+                                data_state: DataState,
+                                aois_config: AOIConfig):
+
         tilerizer = RasterTilerizer(
             raster_path=data_state.imagery_path,
             output_path=self.output_path,
@@ -139,14 +145,11 @@ class TilerizerComponent(BaseComponent):
 
         return tilerizer
 
-    def get_polygon_tilerizer(self, data_state: DataState, labels_gdf: gpd.GeoDataFrame, aois_config: AOIConfig, other_labels_attributes_column_names: list[str]):
-        """Creates a polygon tilerizer"""
-        if data_state.imagery_path is None:
-            raise ValueError("No imagery path specified in data_state. Cannot create tilerizer.")
-
-        if self.config.persistent_object_id_col not in other_labels_attributes_column_names:
-            # This ensures it's available for COCOGenerator if it exists in the GDF
-            other_labels_attributes_column_names.append(self.config.persistent_object_id_col)
+    def get_polygon_tilerizer(self,
+                              data_state: DataState,
+                              labels_gdf: gpd.GeoDataFrame,
+                              aois_config: AOIConfig,
+                              other_labels_attributes_column_names: list[str]):
 
         tilerizer = RasterPolygonTilerizer(
             raster_path=data_state.imagery_path,
@@ -161,7 +164,6 @@ class TilerizerComponent(BaseComponent):
             ground_resolution=self.config.ground_resolution,
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=other_labels_attributes_column_names,
-            persistent_object_id_col=self.config.persistent_object_id_col,
             coco_n_workers=self.config.coco_n_workers,
             temp_dir=self.temp_path
         )

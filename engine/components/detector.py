@@ -9,7 +9,7 @@ from engine.config_parsers import DetectorConfig
 from engine.data_state import DataState
 from engine.models.registry import DETECTOR_REGISTRY
 from engine.models.utils import collate_fn_images
-from engine.utils import generate_future_coco, object_id_column_name
+from engine.utils import generate_future_coco, object_id_column_name, tile_path_column_name
 
 
 class DetectorComponent(BaseComponent):
@@ -27,7 +27,7 @@ class DetectorComponent(BaseComponent):
         infer_ds = UnlabeledRasterDataset(
             root_path=data_state.tiles_path,
             transform=None,  # transform=None because the detector class will apply its own transform
-            fold=None  # load all tiles (they could have either groundtruth or infer aois)
+            fold=None  # load all tiles
         )
 
         # Run inference
@@ -45,7 +45,7 @@ class DetectorComponent(BaseComponent):
             component_id=self.component_id,
             description="Detector inference",
             gdf=results_gdf,
-            tiles_paths_column='tile_path',
+            tiles_paths_column=tile_path_column_name,
             polygons_column='geometry',
             scores_column='detector_score',
             categories_column='detector_class',
@@ -101,7 +101,7 @@ class DetectorComponent(BaseComponent):
             for box_geom, score, cls_id in zip(tile_boxes, tile_scores, tile_classes):
                 all_polygons_data.append({
                     'geometry': box_geom,
-                    'tile_path': str(tile_path),
+                    tile_path_column_name: str(tile_path),
                     'detector_score': score,
                     'detector_class': cls_id,  # This will store the class ID from the detector
                     object_id_column_name: current_object_id # Assign unique ID
@@ -110,7 +110,7 @@ class DetectorComponent(BaseComponent):
         
         if not all_polygons_data:
             # Handle case with no detections
-            return gpd.GeoDataFrame(columns=['geometry', 'tile_path', 'detector_score', 'detector_class', object_id_column_name], crs=None) # Or appropriate CRS
+            return gpd.GeoDataFrame(columns=['geometry', tile_path_column_name, 'detector_score', 'detector_class', object_id_column_name], crs=None) # Or appropriate CRS
 
         gdf = gpd.GeoDataFrame(all_polygons_data, crs=None)  # Set CRS appropriately if known, or handle later
         

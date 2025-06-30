@@ -8,8 +8,8 @@ from geodataset.aoi import AOIGeneratorConfig, AOIFromPackageConfig
 from geodataset.utils import COCOGenerator, TileNameConvention, CocoNameConvention
 
 infer_aoi_name = 'infer'
-ground_truth_aoi_name = 'groundtruth'
 object_id_column_name = 'canopyrs_object_id'
+tile_path_column_name = 'tile_path'
 
 
 def get_component_folder_name(component_id: int, component_name: str) -> str:
@@ -18,6 +18,21 @@ def get_component_folder_name(component_id: int, component_name: str) -> str:
 
 
 executor = ProcessPoolExecutor(max_workers=1)
+
+
+def parse_product_name(tile_path: str):
+    try:
+        product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
+            Path(tile_path).name
+        )
+    except ValueError:
+        # input is probably images not tiled with geodataset
+        product_name = 'images'
+        scale_factor = 1.0
+        ground_resolution = None
+        aoi = infer_aoi_name
+
+    return product_name, scale_factor, ground_resolution, aoi
 
 
 def generate_future_coco(
@@ -74,16 +89,7 @@ def generate_future_coco(
 
     print('Starting side process for generating COCO file...')
 
-    try:
-        product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
-            Path(gdf[tiles_paths_column].iloc[0]).name
-        )
-    except ValueError:
-        # input is probably images not tiled with geodataset
-        product_name = 'images'
-        scale_factor = 1.0
-        ground_resolution = None
-        aoi = infer_aoi_name
+    product_name, scale_factor, ground_resolution, aoi = parse_product_name(gdf[tiles_paths_column].iloc[0])
 
     coco_output_name = CocoNameConvention().create_name(
         product_name=product_name,
