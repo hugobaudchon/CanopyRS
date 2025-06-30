@@ -8,7 +8,7 @@ from geodataset.utils import GeoPackageNameConvention, TileNameConvention
 from engine.components.base import BaseComponent
 from engine.config_parsers import AggregatorConfig
 from engine.data_state import DataState
-from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name
+from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name, tile_path_column_name
 
 
 class AggregatorComponent(BaseComponent):
@@ -29,7 +29,7 @@ class AggregatorComponent(BaseComponent):
             scores_weights.append(self.config.segmenter_score_weight)
 
         # Determine naming for the aggregated output (using the first tile’s name).
-        tiles_path = data_state.infer_gdf['tile_path'].unique().tolist()
+        tiles_path = data_state.infer_gdf[tile_path_column_name].unique().tolist()
         product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
             Path(tiles_path[0]).name
         )
@@ -50,7 +50,7 @@ class AggregatorComponent(BaseComponent):
         aggregator = Aggregator.from_gdf(
             output_path=self.output_path / gpkg_name,
             gdf=data_state.infer_gdf,
-            tiles_paths_column='tile_path',
+            tiles_paths_column=tile_path_column_name,
             polygons_column='geometry',
             scores_column=available_scores if available_scores else None,
             other_attributes_columns=list(data_state.infer_gdf_columns_to_pass),
@@ -75,7 +75,7 @@ class AggregatorComponent(BaseComponent):
             component_id=self.component_id,
             description="Aggregator inference",
             gdf=results_gdf,
-            tiles_paths_column='tile_path',
+            tiles_paths_column=tile_path_column_name,
             polygons_column='geometry',
             scores_column='aggregator_score',
             categories_column='segmenter_class' if 'segmenter_class' in results_gdf.columns

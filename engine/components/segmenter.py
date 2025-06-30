@@ -8,7 +8,7 @@ from engine.components.base import BaseComponent
 from engine.config_parsers import SegmenterConfig
 from engine.data_state import DataState
 from engine.models.registry import SEGMENTER_REGISTRY
-from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name
+from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name, tile_path_column_name
 
 
 class SegmenterComponent(BaseComponent):
@@ -64,7 +64,7 @@ class SegmenterComponent(BaseComponent):
             component_id=self.component_id,
             description="Segmenter inference",
             gdf=results_gdf,
-            tiles_paths_column='tile_path',
+            tiles_paths_column=tile_path_column_name,
             polygons_column='geometry',
             scores_column='segmenter_score',
             categories_column=None,
@@ -95,7 +95,7 @@ class SegmenterComponent(BaseComponent):
         for i in range(len(tiles_paths)):
             for j in range(len(masks[i])):
                 pred_data = {
-                    'tile_path': tiles_paths[i],
+                    tile_path_column_name: tiles_paths[i],
                     'geometry': masks[i][j],
                     'segmenter_score': masks_scores[i][j],
                     # 'segmenter_class': masks_classes[i][j]    # currently not supported but will be in future

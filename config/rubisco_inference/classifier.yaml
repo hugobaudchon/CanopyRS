@@ -1,6 +1,0 @@
-model: 'resnet'
-architecture: 'resnet50'
-batch_size: 256
-pretrained: true
-checkpoint_path: '/network/scratch/a/arthur.ouaknine/logs/classification/quebec_trees_plantations/resnet50/resnet50/exalted-dust-9/checkpoints/checkpoint_iter_00071000.pt'
-num_classes: 19

@@ -5,7 +5,10 @@ from typing import Dict, List, Union
 
 from engine.config_parsers import ClassifierConfig
 from engine.models.classifier.classifier_base import TorchTrainerClassifierWrapperBase
+from engine.models.registry import CLASSIFIER_REGISTRY
 
+
+@CLASSIFIER_REGISTRY.register('resnet')
 class ResNetClassifier(TorchTrainerClassifierWrapperBase):
     """ResNet-based classifier implementation"""
 

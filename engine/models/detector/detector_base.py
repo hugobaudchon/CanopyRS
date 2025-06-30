@@ -5,15 +5,11 @@ from pathlib import Path
 
 import torch
 import torchmetrics
-from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset
+from geodataset.dataset import UnlabeledRasterDataset
 from huggingface_hub import hf_hub_download
 from shapely import box
-from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import albumentations as A
-
-from engine.models.utils import WarmupStepLR
 
 warnings.filterwarnings(
     "ignore",

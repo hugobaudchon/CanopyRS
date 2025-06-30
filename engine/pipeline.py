@@ -7,11 +7,11 @@ from engine.components.detector import DetectorComponent
 from engine.components.segmenter import SegmenterComponent
 from engine.components.tilerizer import TilerizerComponent
 from engine.components.classifier import ClassifierComponent
-from engine.components.rubisco_db_writer import RubiscoDbWriterConfig
 
 from engine.config_parsers import PipelineConfig, InferIOConfig
 from engine.data_state import DataState
-from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, green_print, get_component_folder_name
+from engine.utils import parse_tilerizer_aoi_config, infer_aoi_name, green_print, get_component_folder_name, \
+    object_id_column_name, tile_path_column_name
 
 
 class Pipeline:
@@ -35,6 +35,11 @@ class Pipeline:
             aoi_type=self.io_config.aoi_type,
             aois={infer_aoi_name: self.io_config.aoi}
         )
+
+        # If an infer_gdf from a previous pipeline run is provided, make sure to pass the special columns if present
+        for special_column_name in [object_id_column_name, tile_path_column_name]:
+            if self.data_state.infer_gdf is not None and special_column_name in self.data_state.infer_gdf.columns:
+                self.data_state.infer_gdf_columns_to_pass.update([special_column_name])
 
         green_print("Pipeline initialized")
 
@@ -63,16 +68,8 @@ class Pipeline:
             return AggregatorComponent(component_config, self.io_config.output_folder, component_id)
         elif component_type == 'segmenter':
             return SegmenterComponent(component_config, self.io_config.output_folder, component_id)
-        # elif isinstance(component_config, EmbedderConfig):
-        #     return build_embedder()
-        # elif isinstance(component_config, ClassifierConfig):
-        #     return build_classifier()
-        # elif isinstance(component_config, ClustererConfig):
-        #     return build_clusterer()
         elif component_type == 'classifier':
             return ClassifierComponent(component_config, self.io_config.output_folder, component_id)
-        elif component_type == 'rubisco_db_writer':
-            return RubiscoDbWriterConfig(component_config, self.io_config.output_folder, component_id)
         else:
             raise ValueError(f'Invalid component {component_config}')
 
