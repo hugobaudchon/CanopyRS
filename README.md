@@ -11,7 +11,6 @@
   <img src="https://img.shields.io/badge/license-Apache 2.0-green" alt="License: Apache-2.0">
   <img src="https://img.shields.io/badge/docs-latest-brightgreen" alt="Docs">
   <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Platform: Linux">
-
   <a href="https://arxiv.org/abs/2507.00170">
     <img src="https://img.shields.io/badge/arXiv-2507.0017-red.svg" alt="Read the paper">
   </a>
