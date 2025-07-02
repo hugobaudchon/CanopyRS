@@ -73,18 +73,17 @@ components_configs:
 where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_components/detector_multi_NQOS_best` points to a `[config_subfolder_name]/[component_name]` .yaml config in `config/`.
 
 
-### Base configs
-We provide different default config files depending on your GPU resources:
+### Default configs
+We provide different default config files depending on your GPU resources. You can find these config files in the `config/` folder—feel free to copy & adapt them to optimize inference on your data.
 
-| Task                       | Config name                              | Description                                                                                                                                                                                                                            |
-|----------------------------|------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Detection (Instance)       | `default_detection_multi_NQOS_best`      | The best model from our paper, a DINO + Swin L-384 trained on a mixture of multi-resolution datasets including SelvaBox. NMS hyper-parameters found using the $RF1_{75}$ metric. Best quality, and memory footprint is at about 10 GB. |
-| Detection (Instance)       | `default_detection_single_S_medium`      | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                                                                          |
-| Detection (Instance)       | `default_detection_single_S_low`         | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                                                                         |
-| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best`   | Same as `default_detection_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.                                                  |
-| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_S` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for smaller trees (up to ~15m), by using a lower score threshold before NMS, and tiles with smaller spatial extent and higher GSD (4cm/px).                 |
-| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_L` | Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for larger trees (up to ~60m), by using a lower score threshold before NMS, and tiles with larger spatial extent and lower GSD (7cm/px).                    |
-
+| Task                       | Config name                              | Description                                                                                                                                                                                                                              |
+|----------------------------|------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Detection (Instance)       | `default_detection_multi_NQOS_best`      | The best model from our paper, a DINO + Swin L-384 trained on a mixture of multi-resolution datasets including SelvaBox. NMS hyper-parameters found using the $RF1_{75}$ metric. Best quality, and memory footprint is at about 10 GB.   |
+| Detection (Instance)       | `default_detection_single_S_medium`      | A single resolution (6 cm/px) DINO + ResNet-50 model. Medium quality but faster and much lower memory footprint compared to models with Swin L-384 backbones.                                                                            |
+| Detection (Instance)       | `default_detection_single_S_low`         | A single resolution (10 cm/px) Faster R-CNN + ResNet-50 model. Worse quality, but even faster and even lower memory footprint.                                                                                                           |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best`   | Same as `default_detection_multi_NQOS_best`, but with SAM2 chained after the detection model to provide instance segmentations. Best quality, and memory footprint is at about 10 GB.                                                    |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_S` | **(Recommended)** Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for smaller trees (up to ~15m), by using a lower score threshold before NMS, and tiles with smaller spatial extent and higher GSD (4cm/px). |
+| Segmentation (Instance)    | `default_segmentation_multi_NQOS_best_L` | **(Recommended)** Same as `default_segmentation_multi_NQOS_best`, but inference is optimized for larger trees (up to ~60m), by using a lower score threshold before NMS, and tiles with larger spatial extent and lower GSD (7cm/px).                      |
 
 ## 🚀 Inference
 
@@ -232,10 +231,18 @@ python train.py \
 
 [//]: # (citation section)
 ## 📚 Citation
-If you use CanopyRS or SelvaBox in your research, please cite our paper:
+If you use CanopyRS or SelvaBox in your research, please cite our paper (arXiv preprint):
 
 ```bibtex
-To be added
+@misc{baudchon2025selvaboxhighresolutiondatasettropical,
+      title={SelvaBox: A high-resolution dataset for tropical tree crown detection}, 
+      author={Hugo Baudchon and Arthur Ouaknine and Martin Weiss and Mélisande Teng and Thomas R. Walla and Antoine Caron-Guay and Christopher Pal and Etienne Laliberté},
+      year={2025},
+      eprint={2507.00170},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2507.00170}, 
+}
 ```
 
 If you use other datasets that we have preprocessed, please also cite the original authors of those datasets directly.
