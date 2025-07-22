@@ -8,13 +8,14 @@ from config import predefined_configs, config_folder_path
 
 
 def get_config_path(config_name: str):
-    if config_name.split('/')[0] in predefined_configs:
+    if config_name in predefined_configs:
+        config_path = Path(config_folder_path) / config_name / 'pipeline.yaml'
+    elif config_name.split('/')[0] in predefined_configs:
         config_path = Path(config_folder_path) / f'{config_name}.yaml'
     elif Path(config_name).is_file() and config_name.endswith('.yaml'):
         config_path = Path(config_name)
     else:
         raise ValueError("Invalid config path.")
-
     return config_path
 
 

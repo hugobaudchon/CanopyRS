@@ -4,6 +4,12 @@ import numpy as np
 import torch
 from torch.optim.lr_scheduler import StepLR
 
+from engine.utils import object_id_column_name
+
+
+def collate_fn_trivial(image_batch):
+    return image_batch
+
 
 def collate_fn_segmentation(batch):
     if type(batch[0][0]) is np.ndarray:
@@ -45,66 +51,18 @@ def collate_fn_detection(batch):
     return data, labels
 
 
-def collate_fn_classification(batch):
-    """
-    Collate function for classification datasets that may include polygon IDs
-    """
-    # Check if batch items include polygon IDs
-    if len(batch[0]) == 3:  # (image, class, polygon_id)
-        images = [item[0] for item in batch]
-        labels = [item[1] for item in batch]
-        polygon_ids = [item[2] for item in batch]
-        
-        # Convert images to tensor
-        if isinstance(images[0], np.ndarray):
-            images = np.array(images)
-            images = torch.tensor(images, dtype=torch.float32)
-        else:
-            images = torch.stack(images)
-            
-        return images, labels, polygon_ids
-    else:  # (image, class)
-        images = [item[0] for item in batch]
-        labels = [item[1] for item in batch]
-        
-        # Convert images to tensor
-        if isinstance(images[0], np.ndarray):
-            images = np.array(images)
-            images = torch.tensor(images, dtype=torch.float32)
-        else:
-            images = torch.stack(images)
-            
-        return images, labels
+def collate_fn_infer_image_box(data_batch):
+    image_batch = [data[0] for data in data_batch]
+    boxes_batch = [np.array(data[1]['boxes']) for data in data_batch]
+    boxes_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
+    return image_batch, boxes_batch, boxes_object_ids
 
 
-def collate_fn_unlabeled_polygon_tiles(batch):
-    """
-    Collate function for UnlabeledRasterDataset when include_polygon_id is True.
-    It handles batches where items can be (image, polygon_id) or just image.
-    """
-    if isinstance(batch[0], tuple):  # Indicates (image, polygon_id)
-        images = [item[0] for item in batch]
-        polygon_ids = [item[1] for item in batch]
-
-        # Stack images
-        if isinstance(images[0], np.ndarray):
-            images_tensor = torch.tensor(np.array(images), dtype=torch.float32)
-        else:
-            images_tensor = torch.stack(images)
-        
-        # The ClassifierWrapperBase._infer expects a 3-tuple (images, labels_gt, polygon_ids_batch)
-        # or a 2-tuple (images, labels_gt) or (images, polygon_ids_batch) or just images.
-        # To fit the (images, _, polygon_ids_batch) pattern, we can pass None for labels_gt.
-        return images_tensor, None, polygon_ids  # Returning (images, None_for_gt_labels, polygon_ids)
-    else:  # Indicates just images
-        # This case should ideally not be mixed with the (image, polygon_id) case
-        # in the same DataLoader if polygon_ids are expected by the wrapper.
-        # However, if it occurs, we pass it through.
-        if isinstance(batch[0], np.ndarray):
-            images_tensor = torch.tensor(np.array(batch), dtype=torch.float32)
-        else: # Assuming torch.Tensor
-            images_tensor = torch.stack(batch)
-        return images_tensor # Returning just images
+def collate_fn_infer_image_masks(data_batch):
+    image_batch = [data[0] for data in data_batch]
+    masks_batch = [np.array(data[1]['masks']) for data in data_batch]
+    masks_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
+    return image_batch, masks_batch, masks_object_ids
 
 
 def collate_fn_images(batch):

@@ -1,5 +1,0 @@
-tile_type: polygon
-tile_size: 256
-use_variable_tile_size: false
-ground_resolution: 0.02
-coco_n_workers: 1

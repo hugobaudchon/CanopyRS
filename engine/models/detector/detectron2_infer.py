@@ -17,6 +17,7 @@ from engine.models.detector.train_detectron2.augmentation import AugmentationAdd
 from engine.models.detector.train_detectron2.train_detectron2 import get_base_detectron2_model_cfg
 from engine.models.detector.train_detectron2.train_detrex import get_base_detrex_model_cfg
 from engine.models.segmenter.detectree2 import setup_detectree2_cfg
+from engine.models.registry import DETECTOR_REGISTRY
 
 warnings.filterwarnings(
     "ignore",
@@ -26,6 +27,7 @@ detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
 
+@DETECTOR_REGISTRY.register('dino_detrex', 'faster_rcnn_detectron2', 'detectree2')
 class Detectron2DetectorWrapper(DetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
         super().__init__(config)

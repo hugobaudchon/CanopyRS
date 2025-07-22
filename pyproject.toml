@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "CanopyRS"
+dynamic = ["version"]
+description = "Canopy RS is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Hugo Baudchon", email = "hugo.baudchon@umontreal.ca"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "datasets>=3.5.0",
+    "faster-coco-eval>=1.6.5",
+    "GDAL>=3.0.0,<=3.8.0",
+    "geopandas==1.0.1",
+    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.5.0",
+    "numpy>=1.24.0,<2.0.0",
+    "pandas>=2.2.0",
+    "psutil==5.9.3",
+    "pycocotools>=2.0.7",
+    "pytorch-metric-learning>=2.3.0",
+    "PyYAML>=6.0.1",
+    "rasterio==1.3.7",
+    "segment-anything-py==1.0.1",
+    "sam2==0.4.1",
+    "shapely==2.0.1",
+    "tensorboard==2.17.0",
+    "tensorboardX==2.6.2.2",
+    "torch==2.3.1",
+    "torchvision==0.18.1",
+    "torchmetrics==1.3.0.post0",
+    "tqdm>=4.65.0",
+    "transformers>=4.47.1",
+    "wandb>=0.19"
+]
+
+[project.urls]
+Homepage = "https://github.com/hugobaudchon/CanopyRS"
+Repository = "https://github.com/hugobaudchon/CanopyRS"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+
+[tool.setuptools_scm]
+write_to = "_version.py"

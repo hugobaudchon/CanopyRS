@@ -4,6 +4,7 @@ from typing import List, Tuple, Dict, Any
 
 import numpy as np
 import torch
+from geodataset.dataset import InstanceSegmentationLabeledRasterCocoDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from pathlib import Path
@@ -41,7 +42,7 @@ class ClassifierWrapperBase(ABC):
         """
         pass
 
-    def _infer(self, data_loader: DataLoader) -> List[Dict[str, torch.Tensor]]:
+    def _infer(self, data_loader: DataLoader) -> Tuple[List[Dict[str, torch.Tensor]], List]:
         """
         Run inference on a full dataset.
 
@@ -66,6 +67,8 @@ class ClassifierWrapperBase(ABC):
                     # (images, labels_gt, polygon_ids)
                     # GT labels are ignored during inference
                     images, _, polygon_ids_batch = batch
+                    if isinstance(polygon_ids_batch[0], list):  # Flatten if needed
+                        polygon_ids_batch = [item[0] for item in polygon_ids_batch]
                 elif isinstance(batch, tuple) and len(batch) == 2:
                     # (images, labels_gt) or (images, polygon_ids)
                     images, second_item = batch
@@ -75,21 +78,23 @@ class ClassifierWrapperBase(ABC):
                 else:
                     images = batch  # Just images
 
-                # Move images to the device
-                if isinstance(images, list):
-                    images = [img.to(self.device) for img in images]
-                else:
-                    images = images.to(self.device)
+                if type(images) is not torch.Tensor:
+                    # Convert images to tensor if they are not already
+                    if isinstance(images, list):
+                        images = torch.tensor(np.array(images), dtype=torch.float32)
+                    else:
+                        images = torch.stack(images)
+
+                images = images.to(self.device)
 
                 outputs = self.forward(images)
                 all_predictions.extend(outputs)
 
-                if polygon_ids_batch is not None:
-                    all_object_ids.extend(polygon_ids_batch)
+                all_object_ids.extend(polygon_ids_batch)
 
-        return all_predictions, all_object_ids if all_object_ids else None
+        return all_predictions, all_object_ids
 
-    def infer(self, infer_ds, collate_fn_classification):
+    def infer(self, infer_ds: InstanceSegmentationLabeledRasterCocoDataset, collate_fn_classification):
         """
         Run inference on a dataset and return predictions along with object IDs when available.
 
@@ -101,18 +106,12 @@ class ClassifierWrapperBase(ABC):
             A tuple of (tiles_paths, class_scores, class_predictions) or
             (tiles_paths, class_scores, class_predictions, object_ids_from_dl) if object IDs are available
         """
-        # Check if dataset is configured to include polygon_id AND actually provides them
-        has_object_ids = hasattr(infer_ds, 'include_polygon_id') and infer_ds.include_polygon_id
 
         infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
                               collate_fn=collate_fn_classification,
                               num_workers=3, persistent_workers=True)
 
-        if has_object_ids:
-            predictions, object_ids_from_dl = self._infer(infer_dl)
-        else:
-            predictions = self._infer(infer_dl)
-            object_ids_from_dl = None
+        predictions, object_ids_from_dl = self._infer(infer_dl)
 
         # Process results
         class_scores = [result['scores'].cpu().numpy().tolist()
@@ -122,19 +121,13 @@ class ClassifierWrapperBase(ABC):
 
         # Extract tile paths - use the correct attribute based on dataset implementation
         if hasattr(infer_ds, 'tiles') and isinstance(infer_ds.tiles, dict):
-            # Extract paths from the 'tiles' attribute (common in COCO datasets)
-            # The order from DataLoader should match the order of indices 0..N-1
-            tiles_paths = [tile_info['path']
-                           for _, tile_info in infer_ds.tiles.items()]
+            tiles_paths = [infer_ds.tiles[i]['path'] for i in range(len(infer_ds.tiles))]
         elif hasattr(infer_ds, 'tile_paths'):
             tiles_paths = infer_ds.tile_paths
         else:
             raise AttributeError("Dataset does not have recognized tile paths attribute")
 
-        if has_object_ids and object_ids_from_dl is not None:  # Double-check if object IDs are available
-            return tiles_paths, class_scores, class_predictions, object_ids_from_dl
-
-        return tiles_paths, class_scores, class_predictions
+        return tiles_paths, class_scores, class_predictions, object_ids_from_dl
 
 
 class TorchTrainerClassifierWrapperBase(ClassifierWrapperBase):
@@ -158,7 +151,7 @@ class TorchTrainerClassifierWrapperBase(ClassifierWrapperBase):
             return
 
         checkpoint_path = Path(checkpoint_path)
-        if 'huggingface.co' in checkpoint_path.parts:
+        if 'huggingface.co' in checkpoint_path.parts:   # TODO merge this with the one in DetectorWrapperBase as a single function
             # Handle HuggingFace model loading
             if "huggingface.co" not in checkpoint_path.as_posix():
                 raise ValueError("The provided Path does not contain a valid Hugging Face URL.")
@@ -223,6 +216,7 @@ class TorchTrainerClassifierWrapperBase(ClassifierWrapperBase):
         f1_score = f1_metric(all_preds, all_targets)
 
         return {"f1": f1_score}, all_preds, all_targets
+
 
 def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):
     # Structure the OrderedDict keys to match requirements
