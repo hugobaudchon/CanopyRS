@@ -2,6 +2,7 @@ from typing import Optional
 from pathlib import Path
 
 import geopandas as gpd
+import rasterio
 
 from geodataset.aoi import AOIConfig
 from geodataset.tilerize import RasterTilerizer, LabeledRasterTilerizer, RasterPolygonTilerizer
@@ -28,11 +29,7 @@ class TilerizerComponent(BaseComponent):
         if data_state.imagery_path is None:
             raise ValueError("No imagery_path specified in data_state. Cannot create tilerizer.")
 
-        if data_state.infer_gdf is not None and data_state.infer_gdf.crs is None:
-            raise ValueError(
-                "infer_gdf must have a CRS."
-                " Please make sure you add an Aggregator in the pipeline before the Tilerizer."
-            )
+        self._check_crs_match(data_state)
 
         if self.config.other_labels_attributes_column_names is not None:
             data_state.infer_gdf_columns_to_pass.update(self.config.other_labels_attributes_column_names)
@@ -182,3 +179,25 @@ class TilerizerComponent(BaseComponent):
             tile_names = [tile_path.name for tile_path in aoi_tiles_path.glob("*.tif")]
     
         return tile_names
+
+    def _check_crs_match(self, data_state: DataState):
+        """Checks if the CRS of the raster and the GeoDataFrame match."""
+        raster_crs = None
+        try:
+            with rasterio.open(data_state.imagery_path) as src:
+                raster_crs = src.crs
+        except Exception as e:
+            raise RuntimeError(f"Failed to open raster file at '{data_state.imagery_path}': {e}")
+
+        gdf_crs = data_state.infer_gdf.crs if data_state.infer_gdf is not None else None
+
+        if (raster_crs is not None and gdf_crs is None):
+            raise ValueError(
+                "The raster has a CRS but the infer_gdf does not. "
+                "Please ensure the GeoDataFrame is projected accordingly, by using an Aggregator component before the Tilerizer."
+            )
+        elif (raster_crs is None and gdf_crs is not None):
+            raise ValueError(
+                "The raster has no CRS, but the infer_gdf does. "
+                "This is ambiguous, as the raster is in a pixel coordinate system whereas the GeoDataFrame is in a geographic coordinate system."
+            )
