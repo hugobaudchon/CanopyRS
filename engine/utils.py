@@ -89,11 +89,11 @@ def generate_future_coco(
 
     print('Starting side process for generating COCO file...')
 
-    product_name, scale_factor, ground_resolution, aoi = parse_product_name(gdf[tiles_paths_column].iloc[0])
+    product_name, scale_factor, ground_resolution, _ = parse_product_name(gdf[tiles_paths_column].iloc[0])
 
     coco_output_name = CocoNameConvention().create_name(
         product_name=product_name,
-        fold=aoi,
+        fold=infer_aoi_name,
         scale_factor=scale_factor,
         ground_resolution=ground_resolution
     )
