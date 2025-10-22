@@ -182,6 +182,9 @@ class TilerizerComponent(BaseComponent):
 
     def _check_crs_match(self, data_state: DataState):
         """Checks if the CRS of the raster and the GeoDataFrame match."""
+        if data_state.infer_gdf is None:
+            return  # No GeoDataFrame to check against, continue
+
         raster_crs = None
         try:
             with rasterio.open(data_state.imagery_path) as src:
@@ -189,7 +192,7 @@ class TilerizerComponent(BaseComponent):
         except Exception as e:
             raise RuntimeError(f"Failed to open raster file at '{data_state.imagery_path}': {e}")
 
-        gdf_crs = data_state.infer_gdf.crs if data_state.infer_gdf is not None else None
+        gdf_crs = data_state.infer_gdf.crs
 
         if (raster_crs is not None and gdf_crs is None):
             raise ValueError(
