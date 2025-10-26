@@ -44,7 +44,7 @@ Repository = "https://github.com/hugobaudchon/CanopyRS"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["*"]
+include = ["canopyrs*"]
 
 [tool.setuptools_scm]
 write_to = "_version.py"
