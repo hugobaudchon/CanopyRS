@@ -17,7 +17,7 @@ def auto_import_models():
                 if py_file.name != '__init__.py':
                     module_name = py_file.stem
                     try:
-                        importlib.import_module(f'engine.models.{model_dir}.{module_name}')
+                        importlib.import_module(f'canopyrs.engine.models.{model_dir}.{module_name}')
                     except ImportError as e:
                         print(f"Failed to import engine.models.{model_dir}.{module_name}: {e}")
 
