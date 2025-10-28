@@ -17,9 +17,6 @@ def get_component_folder_name(component_id: int, component_name: str) -> str:
     return component_folder
 
 
-executor = ProcessPoolExecutor(max_workers=1)
-
-
 def parse_product_name(tile_path: str):
     try:
         product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
@@ -37,6 +34,7 @@ def parse_product_name(tile_path: str):
 
 def generate_future_coco(
     future_key: str,
+    executor: ProcessPoolExecutor,
     component_name: str,
     component_id: int,
     description: str,
@@ -229,9 +227,10 @@ def init_spawn_method():
     """
     import multiprocessing
     try:
-        multiprocessing.set_start_method('spawn')
-    except RuntimeError:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError as e:
         # The start method was already set
+        print(f"Error while setting multiprocessing start method: {e}")
         pass
 
 def merge_coco_jsons(json_files: list[str or Path], output_file: str or Path):

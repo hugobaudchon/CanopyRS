@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from concurrent.futures import ProcessPoolExecutor
 import geopandas as gpd
 
 from canopyrs.engine.components.aggregator import AggregatorComponent
@@ -20,13 +20,16 @@ class Pipeline:
         self.config = config
         self._validate_components_order()
 
+        self.background_executor = ProcessPoolExecutor(max_workers=1)
+
         # Initialize data state from the io (input/output) config
         self.data_state = DataState(
             imagery_path=self.io_config.input_imagery,
             parent_output_path=self.io_config.output_folder,
             tiles_path=self.io_config.tiles_path,
             infer_coco_path=self.io_config.input_coco,
-            infer_gdf=gpd.read_file(self.io_config.input_gpkg) if self.io_config.input_gpkg else None
+            infer_gdf=gpd.read_file(self.io_config.input_gpkg) if self.io_config.input_gpkg else None,
+            background_executor=self.background_executor
         )
 
         # Initialize AOI configuration (Area of Interest, used by the Tilerizer)

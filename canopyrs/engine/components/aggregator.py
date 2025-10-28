@@ -71,6 +71,7 @@ class AggregatorComponent(BaseComponent):
 
         future_coco = generate_future_coco(
             future_key='infer_coco_path',
+            executor=data_state.background_executor,
             component_name=self.name,
             component_id=self.component_id,
             description="Aggregator inference",

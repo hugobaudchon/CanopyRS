@@ -19,6 +19,7 @@ class DataState:
     infer_gdf_columns_to_pass: set = field(default_factory=set)
     infer_gdf_columns_to_delete_on_save: List = field(default_factory=list)
 
+    background_executor: Optional = None
     side_processes: List = field(default_factory=list)
 
     component_output_folders: Dict = field(default_factory=dict)
