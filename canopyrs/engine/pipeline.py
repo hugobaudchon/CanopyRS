@@ -47,18 +47,21 @@ class Pipeline:
         green_print("Pipeline initialized")
 
     def __call__(self):
-        # Run each component in the pipeline, sequentially
-        for component_id, (component_type, component_config) in enumerate(self.config.components_configs):
-            component = self._get_component(component_id, component_type, component_config)
-            self.data_state = component.run(self.data_state)
+        try:
+            # Run each component in the pipeline, sequentially
+            for component_id, (component_type, component_config) in enumerate(self.config.components_configs):
+                component = self._get_component(component_id, component_type, component_config)
+                self.data_state = component.run(self.data_state)
 
-        # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
-        self.data_state.clean_side_processes()
+            # Final cleanup of side processes (COCO files generation...) at the end of the pipeline
+            self.data_state.clean_side_processes()
 
-        # Register any files that might have been missed during async processing
-        self._register_known_component_files()
+            # Register any files that might have been missed during async processing
+            self._register_known_component_files()
 
-        green_print("Pipeline finished")
+            green_print("Pipeline finished")
+        finally:
+            self.background_executor.shutdown(wait=True)
 
         return self.data_state
 
