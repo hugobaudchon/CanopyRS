@@ -14,6 +14,7 @@ class TilerizerConfig(BaseConfig):
     variable_tile_size_pixel_buffer: int = 5
     ignore_black_white_alpha_tiles_threshold: float = 0.75
     coco_n_workers: int = 5
+    output_dtype: str = 'uint8'  # expected by most models
 
     ignore_tiles_without_labels: bool = True    # impacts inference and evaluation!
     min_intersection_ratio: float = 0.4     # impacts evaluation

@@ -119,7 +119,8 @@ class TilerizerComponent(BaseComponent):
             ignore_tiles_without_labels=self.config.ignore_tiles_without_labels,
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=other_labels_attributes_column_names,
-            temp_dir=self.temp_path
+            temp_dir=self.temp_path,
+            output_dtype=self.config.output_dtype
         )
 
         return tilerizer
@@ -137,7 +138,8 @@ class TilerizerComponent(BaseComponent):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
-            temp_dir=self.temp_path
+            temp_dir=self.temp_path,
+            output_dtype=self.config.output_dtype
         )
 
         return tilerizer
@@ -162,7 +164,8 @@ class TilerizerComponent(BaseComponent):
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=other_labels_attributes_column_names,
             coco_n_workers=self.config.coco_n_workers,
-            temp_dir=self.temp_path
+            temp_dir=self.temp_path,
+            output_dtype=self.config.output_dtype
         )
 
         return tilerizer
@@ -182,6 +185,9 @@ class TilerizerComponent(BaseComponent):
 
     def _check_crs_match(self, data_state: DataState):
         """Checks if the CRS of the raster and the GeoDataFrame match."""
+        if data_state.infer_gdf is None:
+            return  # No GeoDataFrame to check against
+
         raster_crs = None
         try:
             with rasterio.open(data_state.imagery_path) as src:
