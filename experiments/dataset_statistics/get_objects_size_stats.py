@@ -5,17 +5,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns  # Added for KDE plotting and aesthetics
 from matplotlib.ticker import ScalarFormatter
+import pandas as pd  # ← new
 
-
-def get_avg_side_length(geom):
+def get_side_length(geom):
     """
-    Given a geometry, compute its bounding box dimensions and return the average side length.
+    Given a geometry, compute its bounding box dimensions and return the longest side length.
     Assumes the geometry is a box (i.e. rectangle).
     """
     minx, miny, maxx, maxy = geom.bounds
     width = maxx - minx
     height = maxy - miny
-    return (width + height) / 2
+    return max(width, height)  # ← now longest instead of average
 
 def process_gpkg(filepath, stats):
     """
@@ -41,11 +41,11 @@ def process_gpkg(filepath, stats):
     for idx, row in gdf.iterrows():
         if row.geometry is None:
             continue
-        avg_side = get_avg_side_length(row.geometry)
+        avg_side = get_side_length(row.geometry)
         stats['total_objects'] += 1
         stats['side_lengths'].append(avg_side)
         
-        # Categorize by average side length (for reporting purposes)
+        # Categorize by side length (for reporting purposes)
         if avg_side < 2:
             stats['categories']['<2'] += 1
         elif 2 <= avg_side < 5:
@@ -108,7 +108,7 @@ def traverse_directory(root_dir):
 def print_statistics(name, stats):
     print(f"=== Statistics Summary for {name} ===")
     print(f"Total number of objects: {stats['total_objects']}")
-    print("Counts by average side length:")
+    print("Counts by side length:")
     for category, count in stats['categories'].items():
         print(f"  {category} m: {count}")
     
@@ -198,7 +198,7 @@ if __name__ == "__main__":
                     rotation=90 if count > 1000 else 0
                 )
 
-    plt.xlabel("Average Box Side Length (m)")
+    plt.xlabel("Box Side Length (m)")
     plt.ylabel("Number of Objects (log scale)")
     plt.title("Distribution of Box Sizes by Dataset (Categorical Bins)")
     plt.xticks(x, categories)
@@ -226,12 +226,6 @@ if __name__ == "__main__":
     # FIGURE 2: Histogram with 5m bins as bars (Updated with wider bars and bin range labels)
     # ---------------------------------------------------------------------------------
     plt.figure(figsize=(12, 7))
-
-    # Compute the global maximum side length to have consistent bins
-    global_max = 0
-    for stats in dataset_stats.values():
-        if stats['side_lengths']:
-            global_max = max(global_max, max(stats['side_lengths']))
 
     # Create bins from 0 to global_max (5m bins)
     bins = np.arange(0, global_max + 5, 5)  # Using 5m bins
@@ -274,7 +268,7 @@ if __name__ == "__main__":
             linewidth=0.5
         )
 
-    plt.xlabel("Average Box Side Length (m) [5m bins]")
+    plt.xlabel("Box Side Length (m) [5m bins]")
     plt.ylabel("Number of Objects (log scale)")
     plt.title("Histogram of Box Sizes with 5m Bins")
     plt.xlim(left=-2.5, right=bin_centers[-1] + 5)  # Set proper x limits
@@ -299,4 +293,29 @@ if __name__ == "__main__":
     plt.savefig(histogram_5m_plot_path)
     print(f"5m bin histogram plot saved to {histogram_5m_plot_path}")
     plt.close()
+
+    # ---------------------------------------------------------------------------------
+    # NEW: export stats to CSV for Google Sheets
+    # ---------------------------------------------------------------------------------
+    # 1) categorical counts
+    # CSV file paths
+    cat_csv_path  = './experiments/dataset_statistics/box_size_categories.csv'
+    hist_csv_path = './experiments/dataset_statistics/box_size_histogram.csv'
+
+    # 1) categorical counts — categories as rows, datasets as columns
+    cat_df = pd.DataFrame(
+        { name: stats['categories'] for name, stats in dataset_stats.items() }
+    )
+    cat_df.index.name = 'category'
+    cat_df.to_csv(cat_csv_path)
+    print(f"Categorical counts CSV saved to {cat_csv_path}")
+
+    # 2) histogram counts (5m bins)
+    hist_df = pd.DataFrame(
+        dataset_counts,
+        index=bin_labels
+    )
+    hist_df.index.name = 'size_range'
+    hist_df.to_csv(hist_csv_path)
+    print(f"Histogram CSV saved to {hist_csv_path}")
 

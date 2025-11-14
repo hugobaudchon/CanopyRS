@@ -31,6 +31,7 @@ class DetectorConfig(BaseConfig):
     augmentation_image_size: Union[int, Tuple[int, int]] = 1024     # Final image size for both training and evaluation. If a tuple, the image will be resized randomly within the range for training (with prob augmentation_train_crop_prob), and will be resized deterministically for evaluation/infer.
 
     augmentation_early_conditional_image_size: Optional[int] = None
+    augmentation_early_image_resize_test_only: Optional[int] = None  # allows evaluation at different image resolution for a given dataset and a model with a resize range (for example first resize to 800px to simulate 10cm/px, then resize to 1024px which is in model range of [1024, 1777]px)
     augmentation_train_crop_size_range: List[int] = [784, 2048]  # TODO implement: add support for floats too, ex: [0.6, 1.0] would crop between 60% and 100% of the image size
     # augmentation_crop_min_size = 333    # TODO implement: Minimum size of the crop, useful if cropping with float range (ex: [0.6, 1.0]) and some datasets have very small images by default (NeonTree at 400x400px...)
     augmentation_crop_prob: float = 0.5
@@ -48,6 +49,7 @@ class DetectorConfig(BaseConfig):
     augmentation_saturation_prob: float = 0.5
     augmentation_hue: int = 10  # in the [0-180] range
     augmentation_hue_prob: float = 0.5
+    augmentation_drop_annotation_random_prob: float = 0.0        # for experiment where we randomly drop % of boxes to compare with detectree2 that kept images with min 40% of annotation cover
 
     lr: Optional[float] = 1e-4
     max_epochs: int = 100

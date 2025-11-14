@@ -10,8 +10,6 @@ from engine.config_parsers.detector import DetectorConfig
 # Grid search parameters
 
 
-exp_name = "multi_resolution"
-
 model_architecture_list = [
     # "fasterrcnn",
     # "dinoresnet",
@@ -23,7 +21,6 @@ seeds_list = [
     42
 ]
 
-
 batch_sizes = [
     4, 
     # 8,
@@ -32,7 +29,6 @@ batch_sizes = [
 max_epochs_list = [
     # 200,
     500,
-    # 1000
 ]
 scheduler_type = "WarmupCosineLR"  # "WarmupCosineLR" or "WarmupMultiStepLR"
 lrs = [
@@ -47,7 +43,7 @@ lrs = [
 ]
 
 base_path = 'experiments/multi_resolution'
-experience_name = f'detector_experience_multi_resolution'
+experience_name = f'detector_experience_multi_resolution_cropprob1p0_gridsearch'
 train_output_path = f'/network/scratch/h/hugo.baudchon/training/{experience_name}'
 wandb_project = experience_name
 
@@ -76,10 +72,10 @@ arch_to_config = {
 dataset_config = {
         "compressed": [
             "ours_gr0p045_1777px.tar.gz",
-            "ours_gr0p06_1333px.tar.gz",
-            "ours_gr0p1_800px.tar.gz",
+            # "ours_gr0p06_1333px.tar.gz",
+            # "ours_gr0p1_800px.tar.gz",
 
-            "ours_gr0p045_888px.tar.gz"     # for validation @40m only
+            # "ours_gr0p045_888px.tar.gz"     # for validation @40m only
         ],
         "train_dataset_names": [
             # training on 0.045m resolution
@@ -108,8 +104,8 @@ dataset_config = {
             # "tilerized_888_0p5_0p045_None/ecuador_tiputini",
             # "tilerized_888_0p5_0p045_None/brazil_zf2",
         ],
-        "augmentation_image_size": [1024, 1777], #[720, 1955],                 # resizing range for training (random or deterministic with p_crop prob) and for test (just a deterministic [min,max] resize if image is too small or too large)
-        "augmentation_train_crop_size_range": [666, 2666] #[666, 2222] #[720, 1955]  #[666, 2222]     # cropping range for training
+        "augmentation_image_size": [600, 1777], # TODO TODO TODO TODO TODO TODO [1024, 1777] [1024, 1777] TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO [1024, 1777],                 # resizing range for training (random or deterministic with p_crop prob) and for test (just a deterministic [min,max] resize if image is too small or too large)
+        "augmentation_train_crop_size_range": [666, 3555] #[720, 1955] #[666, 2222]  #[666, 2666]     # cropping range for training
 }
 
 
@@ -186,6 +182,7 @@ for arch in model_architecture_list:
         config["scheduler_type"] = scheduler_type
         config["lr"] = lr
         config["scheduler_epochs_steps"] = [int(max_epochs * 0.8), int(max_epochs * 0.9)]
+        config["scheduler_gamma"] = 0.1
         config["seed"] = seed
 
         # Include the model architecture in the configuration
@@ -201,7 +198,7 @@ for arch in model_architecture_list:
 
         # Create a unique filename (including the architecture name)
         timestamp = int(time.time())
-        config_filename = f"config_{arch}_{exp_name}_{'_'.join(map(str, dataset_config['augmentation_image_size']))}_bs{batch_size}_epochs{max_epochs}_lr{lr:.6f}_{seed}_{timestamp}.yaml"
+        config_filename = f"config_{arch}_{experience_name}_{'_'.join(map(str, dataset_config['augmentation_image_size']))}_bs{batch_size}_epochs{max_epochs}_lr{lr:.6f}_{seed}_{timestamp}.yaml"
         config_path = os.path.join(config_dir, config_filename)
 
         # Save the modified configuration to file

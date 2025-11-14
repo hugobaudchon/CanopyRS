@@ -277,6 +277,34 @@ class DeterministicResizeWithinRange(Augmentation):
         new_h = int(round(h * scale))
         new_w = int(round(w * scale))
         return ResizeTransform(h, w, new_h, new_w)
+    
+
+class RandomBoxDropTransform(Transform):
+    def __init__(self, drop_prob: float):
+        super().__init__()
+        assert 0.0 <= drop_prob < 1.0
+        self.drop_prob = drop_prob
+
+    def apply_image(self, img: np.ndarray) -> np.ndarray:
+        return img
+
+    def apply_coords(self, coords: np.ndarray) -> np.ndarray:
+        return coords
+
+    def apply_box(self, box: np.ndarray) -> np.ndarray:
+        # box: np.ndarray of shape (4,) or (1,4)
+        if random() < self.drop_prob:
+            return np.zeros_like(box)
+        return box
+
+
+class RandomBoxDropAugmentation(Augmentation):
+    def __init__(self, drop_prob: float):
+        super().__init__()
+        self.drop_prob = drop_prob
+
+    def get_transform(self, image: np.ndarray):
+        return RandomBoxDropTransform(self.drop_prob)
 
 
 class AugmentationAdder:
@@ -298,6 +326,7 @@ class AugmentationAdder:
 
         cfg.AUGMENTATION.IMAGE_SIZE = config.augmentation_image_size
         cfg.AUGMENTATION.EARLY_CONDITIONAL_IMAGE_SIZE = config.augmentation_early_conditional_image_size
+        cfg.AUGMENTATION_EARLY_IMAGE_RESIZE_TEST_ONLY = config.augmentation_early_image_resize_test_only
         cfg.AUGMENTATION.FLIP_HORIZONTAL = config.augmentation_flip_horizontal
         cfg.AUGMENTATION.FLIP_VERTICAL = config.augmentation_flip_vertical
         cfg.AUGMENTATION.ROTATION = config.augmentation_rotation
@@ -314,6 +343,7 @@ class AugmentationAdder:
         cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO = config.augmentation_crop_min_intersection_ratio
         cfg.AUGMENTATION.CROP_PROB = config.augmentation_crop_prob
         cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE = config.augmentation_crop_fallback_to_augmentation_image_size
+        cfg.AUGMENTATION_DROP_ANNOTATION_RANDOM_PROB = config.augmentation_drop_annotation_random_prob
 
     @staticmethod
     def get_augmentation_detectron2_train(cfg):
@@ -339,7 +369,8 @@ class AugmentationAdder:
             crop_size_range=cfg.AUGMENTATION.CROP_SIZE_RANGE,
             crop_min_intersection_ratio=cfg.AUGMENTATION.CROP_MIN_INTERSECTION_RATIO,
             crop_prob=cfg.AUGMENTATION.CROP_PROB,
-            crop_fallback_to_augmentation_image_size=cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE
+            crop_fallback_to_augmentation_image_size=cfg.AUGMENTATION.CROP_FALLBACK_TO_AUGMENTATION_IMAGE_SIZE,
+            box_drop_prob=cfg.AUGMENTATION_DROP_ANNOTATION_RANDOM_PROB
         )
 
         return augs
@@ -350,7 +381,8 @@ class AugmentationAdder:
         Build the test-time augmentation. Typically just a fixed resize.
         """
         augs = AugmentationAdder._get_augmentation_list_test(
-            image_size=cfg.AUGMENTATION.IMAGE_SIZE
+            image_size=cfg.AUGMENTATION.IMAGE_SIZE,
+            augmentation_early_image_resize_test_only=cfg.AUGMENTATION_EARLY_IMAGE_RESIZE_TEST_ONLY
         )
 
         return augs
@@ -375,7 +407,8 @@ class AugmentationAdder:
             crop_size_range=config.augmentation_train_crop_size_range,
             crop_min_intersection_ratio=config.augmentation_crop_min_intersection_ratio,
             crop_prob=config.augmentation_crop_prob,
-            crop_fallback_to_augmentation_image_size=config.augmentation_crop_fallback_to_augmentation_image_size
+            crop_fallback_to_augmentation_image_size=config.augmentation_crop_fallback_to_augmentation_image_size,
+            box_drop_prob=config.augmentation_drop_annotation_random_prob
         )
 
         return augs
@@ -384,7 +417,8 @@ class AugmentationAdder:
     def get_augmentation_detrex_test(config: DetectorConfig):
         # Resize to a final, fixed size
         augs = AugmentationAdder._get_augmentation_list_test(
-            image_size=config.augmentation_image_size
+            image_size=config.augmentation_image_size,
+            augmentation_early_image_resize_test_only=config.augmentation_early_image_resize_test_only
         )
 
         return augs
@@ -408,7 +442,8 @@ class AugmentationAdder:
             crop_size_range: tuple or list,
             crop_min_intersection_ratio: float,
             crop_prob: float,
-            crop_fallback_to_augmentation_image_size: bool
+            crop_fallback_to_augmentation_image_size: bool,
+            box_drop_prob: float
     ):
         """
         Build a list of Detectron2 augmentations based on the given parameters.
@@ -432,6 +467,7 @@ class AugmentationAdder:
             crop_min_intersection_ratio (float): ratio threshold to keep boxes that partially fall outside the crop.
             crop_prob (float): probability of applying the random crop.
             crop_fallback_to_augmentation_image_size (bool): if True, fallback to a centered crop of final_image_size.
+            box_drop_prob (float): probability to drop box annotations during training. Should usually be 0 except for specific experiments.
 
         Returns:
             list[Augmentation]: a list of Detectron2-compatible augmentation objects.
@@ -508,7 +544,10 @@ class AugmentationAdder:
             # Otherwise, regularly crop with crop_prob.
             augs.append(RandomApply(crop_aug, prob=crop_prob))
 
-        # 10) Resize to final size or apply range-based resizing
+        if box_drop_prob > 0:
+            augs.append(RandomBoxDropAugmentation(drop_prob=box_drop_prob))
+
+        # 11) Resize to final size or apply range-based resizing
         if isinstance(final_image_size, int):
             augs.append(
                 ResizeShortestEdge(
@@ -536,7 +575,8 @@ class AugmentationAdder:
         return augs
 
     @staticmethod
-    def _get_augmentation_list_test(image_size: int or tuple[int]):
+    def _get_augmentation_list_test(image_size: int or tuple[int],
+                                    augmentation_early_image_resize_test_only: int or None):
         """
         Build a list of Detectron2 augmentations for test-time based on the given parameters.
 
@@ -546,19 +586,33 @@ class AugmentationAdder:
         Returns:
             list[Augmentation]: a list of Detectron2-compatible augmentation objects.
         """
+
+        augs = []
+
+        if augmentation_early_image_resize_test_only:       # only to simulate other image resolutions at test time (for evaluation purposes)
+            augs.append(
+                ResizeShortestEdge(
+                    short_edge_length=[augmentation_early_image_resize_test_only],
+                    max_size=augmentation_early_image_resize_test_only,
+                    sample_style="choice"
+                )
+            )
+
         if isinstance(image_size, int):
-            return [
+            augs.append(
                 ResizeShortestEdge(
                     short_edge_length=[image_size],
                     max_size=image_size,
                     sample_style="choice"
                 )
-            ]
+            )
         else:
             assert len(image_size) == 2, "image_size should be a single int or a tuple of two ints."
-            return [
+            augs.append(
                 DeterministicResizeWithinRange(
                     min_size=image_size[0],
                     max_size=image_size[1]
                 )
-            ]
+            )
+
+        return augs

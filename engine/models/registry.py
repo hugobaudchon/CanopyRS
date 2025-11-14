@@ -16,6 +16,7 @@ DETECTOR_REGISTRY = {
     'retina_net': RetinaNetWrapper,
     'dino_detrex': Detectron2DetectorWrapper,
     'faster_rcnn_detectron2': Detectron2DetectorWrapper,
+    'retinanet_detectron2': Detectron2DetectorWrapper,
     'detectree2': Detectron2DetectorWrapper
 }
 

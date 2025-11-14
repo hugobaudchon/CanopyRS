@@ -33,6 +33,8 @@ def train_detector_main(args):
 
     if config.model == 'faster_rcnn_detectron2':
         train_detectron2_fasterrcnn(config)
+    if config.model == 'retinanet_detectron2':
+        train_detectron2_fasterrcnn(config)
     elif config.model == 'dino_detrex':
         train_detrex(config)
     else:
