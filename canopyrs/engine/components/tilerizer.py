@@ -7,10 +7,10 @@ import rasterio
 from geodataset.aoi import AOIConfig
 from geodataset.tilerize import RasterTilerizer, LabeledRasterTilerizer, RasterPolygonTilerizer
 
-from engine.components.base import BaseComponent
-from engine.config_parsers.tilerizer import TilerizerConfig
-from engine.data_state import DataState
-from engine.utils import infer_aoi_name
+from canopyrs.engine.components.base import BaseComponent
+from canopyrs.engine.config_parsers.tilerizer import TilerizerConfig
+from canopyrs.engine.data_state import DataState
+from canopyrs.engine.utils import infer_aoi_name
 
 
 class TilerizerComponent(BaseComponent):
