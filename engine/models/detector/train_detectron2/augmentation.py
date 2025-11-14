@@ -121,21 +121,17 @@ class SquareRandomCrop(Augmentation):
         return CropTransform(x0, y0, crop_w, crop_h)
 
 
-class SquareRandomCropWithBoxDiscard(Augmentation):
+class SquareRandomCrop(Augmentation):
     """
     Randomly crop a square region from an image. The side length of the square is sampled
-    from a given range (crop_range). The crop is chosen only once (no iterative search). After
-    cropping, bounding boxes are adjusted; any box whose intersection with the crop covers less
-    than `min_intersection_ratio` of its original area is discarded.
+    from a given range (crop_range). The crop is chosen only once (no iterative search).
 
     Args:
         crop_range (tuple): (min_side, max_side) specifying the range (in pixels) of the square side.
-        min_intersection_ratio (float): Minimum fraction of a box's area that must lie within the crop.
     """
-    def __init__(self, crop_range, min_intersection_ratio: float):
+    def __init__(self, crop_range):
         super().__init__()
         self.crop_range = crop_range
-        self.min_intersection_ratio = min_intersection_ratio
 
     def get_transform(self, image: np.ndarray, boxes: np.ndarray = None):
         """
@@ -167,40 +163,6 @@ class SquareRandomCropWithBoxDiscard(Augmentation):
         y0 = np.random.randint(0, H - side + 1)
 
         crop_transform = CropTransform(x0, y0, side, side)
-
-        # If there are no bounding boxes, simply return the crop transform.
-        if boxes is None or len(boxes) == 0:
-            crop_transform.new_boxes = np.empty((0, 4))
-            return crop_transform
-
-        new_boxes = []
-        for box in boxes:
-            # Each box is assumed to be in [x1, y1, x2, y2] format.
-            # Compute the area of the original box.
-            box_area = (box[2] - box[0]) * (box[3] - box[1])
-            if box_area <= 0:
-                continue
-
-            # Compute the coordinates of the intersection between the box and crop.
-            inter_x1 = max(box[0], x0)
-            inter_y1 = max(box[1], y0)
-            inter_x2 = min(box[2], x0 + side)
-            inter_y2 = min(box[3], y0 + side)
-
-            inter_w = max(0, inter_x2 - inter_x1)
-            inter_h = max(0, inter_y2 - inter_y1)
-            inter_area = inter_w * inter_h
-
-            # Keep the box only if the intersection is large enough.
-            if inter_area / box_area >= self.min_intersection_ratio:
-                # Adjust the box coordinates relative to the crop.
-                new_box = [inter_x1 - x0, inter_y1 - y0, inter_x2 - x0, inter_y2 - y0]
-                new_boxes.append(new_box)
-
-        if new_boxes:
-            crop_transform.new_boxes = np.array(new_boxes)
-        else:
-            crop_transform.new_boxes = np.empty((0, 4))
 
         return crop_transform
 
@@ -487,9 +449,8 @@ class AugmentationAdder:
             augs.append(RandomApply(hue_aug, prob=hue_prob))
 
         # 9) Random crop (custom) with probability - SquareRandomCropWithBoxDiscard
-        crop_aug = SquareRandomCropWithBoxDiscard(
+        crop_aug = SquareRandomCrop(
             crop_range=crop_size_range,
-            min_intersection_ratio=crop_min_intersection_ratio
         )
         if crop_fallback_to_augmentation_image_size:
             assert isinstance(final_image_size, int),\
@@ -499,9 +460,8 @@ class AugmentationAdder:
             # This is useful if for exemple we have 2048x2048 images for training,
             # but we only want to train on 1024x1024 and don't want to always apply cropping, which can distort
             # the image with Bilinear transformations etc.
-            fallback_crop_aug = SquareRandomCropWithBoxDiscard(
+            fallback_crop_aug = SquareRandomCrop(
                 crop_range=(final_image_size, final_image_size),
-                min_intersection_ratio=crop_min_intersection_ratio
             )
             augs.append(RandomChoiceAugmentationWithBox(crop_aug, fallback_crop_aug, prob=crop_prob))
         else:
