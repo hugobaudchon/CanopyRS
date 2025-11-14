@@ -1,0 +1,6 @@
+nms_algorithm: 'ioa-disambiguate'
+score_threshold: 0.05
+nms_threshold: 0.3
+edge_band_buffer_percentage: 0.03   # should be lower than the detector's aggregator edge_band_buffer_percentage as SAM2 can go slightly out of the bbox bounds
+scores_weights: {'detector_score': 0.5, 'segmenter_score': 0.5}
+scores_weighting_method: 'weighted_geometric_mean'

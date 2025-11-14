@@ -1,8 +1,9 @@
 import argparse
 import logging
 import warnings
+from warnings import warn
 
-from engine.utils import init_spawn_method
+from canopyrs.engine.utils import init_spawn_method
 
 warnings.filterwarnings(
     "ignore",
@@ -16,20 +17,25 @@ warnings.filterwarnings(
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
-from engine.config_parsers import InferIOConfig, PipelineConfig
-from engine.config_parsers.base import get_config_path
-from engine.pipeline import Pipeline
+from canopyrs.engine.config_parsers import InferIOConfig, PipelineConfig
+from canopyrs.engine.config_parsers.base import get_config_path
+from canopyrs.engine.pipeline import Pipeline
 
 
 def pipeline_main(args):
-    config_path = get_config_path(f'{args.config}/pipeline')
+    config_path = get_config_path(f'{args.config}')
     config = PipelineConfig.from_yaml(config_path)
 
     if args.io_config_path and (args.imagery_path or args.output_path):
-        raise ValueError("Either provide an io config file or imagery path and output path.")
+        raise ValueError("Either provide an io config file or pass imagery/tiles path and output path as arguments.")
     elif args.io_config_path:
         io_config = InferIOConfig.from_yaml(args.io_config_path)
-    elif args.imagery_path and args.output_path:
+    elif (args.imagery_path or args.tiles_path) and args.output_path:
+        # Check if the first component is 'tilerizer' and remove it if tiles are provided (i.e. tilerizer is not needed).
+        if args.tiles_path and args.imagery_path is None and config.components_configs[0][0] == 'tilerizer':
+            warn('Removing the first component (tilerizer) from the pipeline as it is not needed, since tiles are already provided as input.')
+            config.components_configs.pop(0)
+
         config_args = {
             'input_imagery': args.imagery_path,
             'output_folder': args.output_path,
@@ -41,7 +47,7 @@ def pipeline_main(args):
 
         io_config = InferIOConfig(**config_args)
     else:
-        raise ValueError("Provide either an io config file or imagery path and output path.")
+        raise ValueError("Either provide an io config file or pass imagery/tiles path and output path as arguments.")
 
     pipeline = Pipeline(io_config, config)
     pipeline()

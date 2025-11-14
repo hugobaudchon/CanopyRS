@@ -1,0 +1,13 @@
+components_configs:
+  - tilerizer:
+      tile_type: tile
+      tile_size: 800
+      tile_overlap: 0.75
+      ground_resolution: 0.1
+  - detector: default_components/detector_single_S_low
+  - aggregator:
+      nms_algorithm: 'iou'
+      score_threshold: 0.4
+      nms_threshold: 0.2
+      edge_band_buffer_percentage: 0.05
+      scores_weights: { 'detector_score': 1.0 }
