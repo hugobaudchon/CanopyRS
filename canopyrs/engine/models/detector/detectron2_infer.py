@@ -27,7 +27,7 @@ detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
 
-@DETECTOR_REGISTRY.register('dino_detrex', 'faster_rcnn_detectron2', 'detectree2')
+@DETECTOR_REGISTRY.register('dino_detrex', 'faster_rcnn_detectron2', 'retinanet_detectron2', 'detectree2')
 class Detectron2DetectorWrapper(DetectorWrapperBase):
     def __init__(self, config: DetectorConfig):
         super().__init__(config)
