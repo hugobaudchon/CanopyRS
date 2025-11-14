@@ -13,7 +13,10 @@ def get_wandb_runs(wandb_project: str):
         run_config_mapping[run.name] = run.config
         summary = run.summary._json_dict if hasattr(run.summary, '_json_dict') else run.summary
         run_config_mapping[run.name].update(summary)
-        run_config_mapping[run.name]['bbox/AP.max'] = run_config_mapping[run.name]['bbox/AP']['max']
+
+        # ignore runs that crashed/finished before first eval
+        if 'bbox/AP' in run_config_mapping[run.name]:
+            run_config_mapping[run.name]['bbox/AP.max'] = run_config_mapping[run.name]['bbox/AP']['max']
 
     return run_config_mapping
 
