@@ -15,10 +15,12 @@ class DetectorBenchmarker:
     def __init__(self,
                  output_folder: str or Path,
                  fold_name: str,
-                 raw_data_root: Path or str):
+                 raw_data_root: Path or str,
+                 eval_iou_threshold: float = 0.75):
         self.output_folder = Path(output_folder)
         self.fold_name = fold_name
         self.raw_data_root = Path(raw_data_root)
+        self.eval_iou_threshold = eval_iou_threshold
 
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -114,7 +116,7 @@ class DetectorBenchmarker:
             ground_resolution=eval_at_ground_resolution,
             nms_iou_thresholds=nms_iou_thresholds,
             nms_score_thresholds=nms_score_thresholds,
-            eval_iou_threshold=0.75,
+            eval_iou_threshold=self.eval_iou_threshold,
             n_workers=n_workers
         )
 
@@ -184,7 +186,7 @@ class DetectorBenchmarker:
                         truth_gpkg_path=truths_gpkg,
                         aoi_gpkg_path=aoi_gpkg,
                         ground_resolution=dataset.ground_resolution,
-                        iou_threshold=0.75
+                        iou_threshold=self.eval_iou_threshold
                     )
                     raster_metrics['location'] = location
                     raster_metrics['product_name'] = product_name
