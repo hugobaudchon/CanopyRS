@@ -163,7 +163,7 @@ Each additional dataset will add one or more locations folders.
 
 ### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
 To find the optimal NMS parameters for your model, i.e. `nms_iou_threshold` and `nms_score_threshold`,
-you can use the [`find_optimal_raster_nms.py`](tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
+you can use the [`find_optimal_raster_nms.py`](canopyrs/tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
 Depending on how many Rasters there are in the datasets you select, it could take from a few tens of minutes to a few hours. If you have lots of CPU cores, we recommend to increase the number of workers.
 
 You have to pass the path of a detection model config file, compatible with CanopyRS.
@@ -186,7 +186,7 @@ python -m tools.detection.find_optimal_raster_nms --help
 ```
 
 ### Benchmarking
-To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](tools/detection/benchmark.py) tool script.
+To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](canopyrs/tools/detection/benchmark.py) tool script.
 
 This script will run the model and evaluate the results using COCO metrics (mAP and mAR).
 
@@ -216,7 +216,7 @@ We provide a `train.py` script to train detector models on preprocessed datasets
 
 Currently, our training pipeline requires [wandb](https://wandb.ai/site) to be installed and configured for logging purposes.
 
-Then, for example, if you want to train a model on the `SelvaBox` and `Detectree2` datasets, you will have to copy a `detector.yaml` config file, for example from [`config/default_detection_multi_NQOS_best`](config/default_detection_multi_NQOS_best/detector.yaml), and modify a few things:
+Then, for example, if you want to train a model on the `SelvaBox` and `Detectree2` datasets, you will have to copy a `detector.yaml` config file, for example from [`config/default_detection_multi_NQOS_best`](canopyrs/config/default_detection_multi_NQOS_best/detector.yaml), and modify a few things:
 - `model`: the model type, either `dino_detrex` for detrex-based DINO models or `faster_rcnn_detectron2` for detectron2-based Faster R-CNN models.
 - `architecture`: the model architecture, either `dino-swin/dino_swin_large_384_5scale_36ep.py`, `dino-resnet/dino_r50_4scale_24ep.py` (for DINOs) or `COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml` (for Faster R-CNNs) are currently supported.
 - `checkpoint_path`: path to the pretrained model checkpoint. You can keep the pretrained checkpoint we provide in order to fine tune it, or replace it with one of [detrex](https://detrex.readthedocs.io/en/latest/tutorials/Model_Zoo.html) COCO checkpoints.
