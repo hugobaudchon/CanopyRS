@@ -56,8 +56,8 @@ pip install git+https://github.com/IDEA-Research/detrex.git
 
 Each component is configurable via YAML configuration files.
 
-While default configuration files are provided in the `config` directory,
-you can also create your own configuration files by creating a new folder under `config/`, adding a `pipeline.yaml` script,
+While default configuration files are provided in the `canopyrs/config` directory,
+you can also create your own configuration files by creating a new folder under `canopyrs/config/`, adding a `pipeline.yaml` script,
 and setup your desired list of component configuration files.
 
 A `pipeline` is made of multiple components, each with its own configuration. A typical `pipeline.yaml` configuration will look like this:
@@ -77,7 +77,7 @@ components_configs:
       edge_band_buffer_percentage: 0.05
 ```
 
-where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_components/detector_multi_NQOS_best` points to a `[config_subfolder_name]/[component_name]` .yaml config in `config/`.
+where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_components/detector_multi_NQOS_best` points to a `[config_subfolder_name]/[component_name]` .yaml config in `canopyrs/config/`.
 
 
 ### Default configs
