@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import geopandas as gpd
+from shapely import make_valid
 from shapely.affinity import affine_transform
 from geodataset.utils import get_utm_crs
 
@@ -213,10 +214,57 @@ def move_gdfs_to_ground_resolution(truth_gdf: gpd.GeoDataFrame, infer_gdf: gpd.G
     # Apply the affine transformation to each geometry in both GeoDataFrames.
     truth_gdf['geometry'] = truth_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
     infer_gdf['geometry'] = infer_gdf.geometry.apply(lambda geom: affine_transform(geom, affine_params))
-
+    
+    # Validate and repair geometries in both GeoDataFrames
+    truth_gdf = validate_and_repair_gdf(truth_gdf, "ground truth")
+    infer_gdf = validate_and_repair_gdf(infer_gdf, "predictions")
+    
     # Return the updated GeoDataFrames in a dictionary.
     return truth_gdf, infer_gdf
 
+def validate_and_repair_gdf(gdf: gpd.GeoDataFrame, name: str) -> gpd.GeoDataFrame:
+    """Helper function to validate and repair geometries in a GeoDataFrame."""
+    original_count = len(gdf)
+    invalid_mask = ~gdf.is_valid
+    n_invalid = invalid_mask.sum()
+    
+    if n_invalid > 0:
+        print(f"Found {n_invalid} invalid {name} geometries after transformation. Repairing...")
+        
+        # Apply repair logic directly using vectorized operations
+        repaired_geometries = []
+        for geom in gdf.geometry:
+            if not geom.is_valid:
+                repaired = make_valid(geom)
+                # Handle GeometryCollection
+                if repaired.geom_type == 'GeometryCollection':
+                    polygons = [g for g in repaired.geoms 
+                               if g.geom_type in ['Polygon', 'MultiPolygon']]
+                    if polygons:
+                        repaired_geometries.append(max(polygons, key=lambda g: g.area))
+                    else:
+                        repaired_geometries.append(None)
+                else:
+                    repaired_geometries.append(repaired)
+            else:
+                repaired_geometries.append(geom)
+
+        gdf['geometry'] = repaired_geometries
+
+        # Remove None/invalid geometries
+        gdf = gdf[gdf.geometry.notna() & gdf.is_valid].copy()
+        
+        # Report final counts
+        removed_count = original_count - len(gdf)
+        
+        if removed_count > 0:
+            print(f"Removed {removed_count} &  Kept {len(gdf)}/{original_count} {name} geometries after repair")
+        else:
+            print(f"Repaired all {n_invalid} {name} geometries")
+    else:
+        print(f"All {original_count} {name} geometries are valid")
+    
+    return gdf
 
 def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
     """
