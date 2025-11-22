@@ -1,0 +1,3 @@
+components_configs:
+  - segmenter: default_components/segmenter_detectree2
+  - aggregator: default_components/aggregator_sam2

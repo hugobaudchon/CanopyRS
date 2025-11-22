@@ -122,8 +122,9 @@ class Detectron2SegmenterWrapper(SegmenterWrapperBase):
                 scores = instances.scores.numpy() if instances.has("scores") else None
                 image_size = (orig_h, orig_w)
                 n_masks_processed = 0
-
-                _ = self.queue_masks(masks, image_size, scores, tile_idx, n_masks_processed, queue)
+                num_masks = masks.shape[0]
+                box_object_ids = [None] * num_masks
+                _ = self.queue_masks(box_object_ids, masks, image_size, scores, tile_idx, n_masks_processed, queue)
 
     def infer_on_dataset(self, dataset: UnlabeledRasterDataset):
         return self._infer_on_dataset(dataset, collate_fn_trivial)

@@ -41,8 +41,9 @@ class SegmenterComponent(BaseComponent):
                 other_attributes_names_to_pass=[object_id_column_name]
             )
         else:
+            # No box prompts required, no fold specified
             dataset = UnlabeledRasterDataset(
-                fold=infer_aoi_name,
+                fold=None,
                 root_path=data_paths,
                 transform=None
             )

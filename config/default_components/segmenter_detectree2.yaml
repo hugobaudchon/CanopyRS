@@ -1,0 +1,16 @@
+model: 'detectree2'  # Must be exactly 'detectree2' to trigger the right code path
+
+# Model architecture - passed to setup_detectree2_cfg as base_model
+architecture: "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+
+# Checkpoint path - passed to setup_detectree2_cfg as update_model
+checkpoint_path: "https://zenodo.org/records/15863800/files/250312_flexi.pth"  # YOUR CHECKPOINT HERE
+
+# Image batch size for inference
+image_batch_size: 1
+
+# Post-processing settings (matching SAM2 style)
+pp_n_workers: 16
+pp_simplify_tolerance: 0.0
+pp_remove_rings: true
+pp_remove_small_geoms: 50

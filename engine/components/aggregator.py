@@ -65,6 +65,7 @@ class AggregatorComponent(BaseComponent):
             pre_aggregated_output_path=self.output_path / pre_aggregated_gpkg_name,
         )
         results_gdf = aggregator.polygons_gdf
+        results_gdf = self._validate_and_repair_geometries(results_gdf)
 
         # Generate COCO output asynchronously and update the data state
         columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'aggregator_score'})
@@ -89,6 +90,67 @@ class AggregatorComponent(BaseComponent):
         )
 
         return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
+
+    def _validate_and_repair_geometries(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Validate and repair invalid geometries in a GeoDataFrame.
+        Returns a cleaned GeoDataFrame with valid geometries only.
+        """
+        invalid_count = 0
+        repaired_count = 0
+        removed_count = 0
+        
+        valid_geometries = []
+        valid_indices = []
+        
+        for idx, row in gdf.iterrows():
+            geom = row.geometry
+            
+            if geom is None or geom.is_empty:
+                removed_count += 1
+                continue
+                
+            if not geom.is_valid:
+                invalid_count += 1
+                # Try to repair using make_valid
+                try:
+                    repaired_geom = make_valid(geom)
+                    
+                    # make_valid can return GeometryCollection, extract largest polygon
+                    if repaired_geom.geom_type == 'GeometryCollection':
+                        polygons = [g for g in repaired_geom.geoms 
+                                   if g.geom_type in ['Polygon', 'MultiPolygon']]
+                        if polygons:
+                            repaired_geom = max(polygons, key=lambda g: g.area)
+                        else:
+                            removed_count += 1
+                            continue
+                    
+                    # Verify the repair worked
+                    if repaired_geom.is_valid and not repaired_geom.is_empty:
+                        valid_geometries.append(repaired_geom)
+                        valid_indices.append(idx)
+                        repaired_count += 1
+                    else:
+                        removed_count += 1
+                except Exception as e:
+                    print(f"Warning: Could not repair geometry at index {idx}: {e}")
+                    removed_count += 1
+            else:
+                valid_geometries.append(geom)
+                valid_indices.append(idx)
+        
+        # Create new GeoDataFrame with valid geometries
+        result_gdf = gdf.loc[valid_indices].copy()
+        result_gdf.geometry = valid_geometries
+        
+        if invalid_count > 0:
+            print(f"  Found {invalid_count} invalid geometries")
+            print(f"  Repaired: {repaired_count}")
+            print(f"  Removed: {removed_count}")
+            print(f"  Final valid geometries: {len(result_gdf)}")
+        
+        return result_gdf
 
     def update_data_state(self,
                          data_state: DataState,

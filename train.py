@@ -17,9 +17,10 @@ warnings.filterwarnings(
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
-from engine.config_parsers import DetectorConfig
+from engine.config_parsers import DetectorConfig, SegmenterConfig
 from engine.models.detector.train_detectron2.train_detectron2 import train_detectron2_fasterrcnn
 from engine.models.detector.train_detectron2.train_detrex import train_detrex, eval_detrex
+from engine.models.segmenter.train_sam2.train_sam2 import train_sam2
 
 
 def train_detector_main(args):
@@ -56,6 +57,22 @@ def eval_detector_main(args):
         raise ValueError("Invalid model type/name.")
 
 
+def train_segmenter_main(args):
+    """Train SAM2 segmenter with box prompts."""
+    config = SegmenterConfig.from_yaml(args.config)
+
+    if args.dataset:
+        config.data_root_path = args.dataset
+
+    if config.seed:
+        set_all_seeds(config.seed)
+
+    if config.model == 'sam2':
+        train_sam2(config)
+    else:
+        raise ValueError(f"Invalid segmenter model: {config.model}")
+
+
 if __name__ == '__main__':
     init_spawn_method()
     parser = argparse.ArgumentParser()
@@ -74,7 +91,10 @@ if __name__ == '__main__':
             eval_detector_main(args)
         else:
             train_detector_main(args)
-
-
-
-
+    elif args.model == "segmenter":
+        if args.eval_only_fold:
+            raise NotImplementedError("Evaluation for segmenter not yet implemented.")
+        else:
+            train_segmenter_main(args)
+    else:
+        raise ValueError(f"Unknown model type: {args.model}. Choose 'detector' or 'segmenter'.")

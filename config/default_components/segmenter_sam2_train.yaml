@@ -1,0 +1,74 @@
+# Model
+model: sam2
+architecture: l
+
+# Data
+data_root_path: /home/soduguay/selvamask/tilerized
+train_dataset_names:
+  - ../selvamask/20240131_zf2block4_ms_m3m_rgb
+  - ../selvamask/20240613_tbsnewsite2_m3e_rgb
+  - ../selvamask/20241122_bcifairchildn_m3m_rgb
+valid_dataset_names:
+  - ../selvamask/20240131_zf2block4_ms_m3m_rgb
+  - ../selvamask/20240613_tbsnewsite2_m3e_rgb
+  - ../selvamask/20241122_bcifairchildn_m3m_rgb
+
+# Training
+seed: 42
+batch_size: 4
+max_epochs: 15
+lr: 1.0e-5
+weight_decay: 0.01
+steps_per_epoch: 50
+
+# Freezing (only train mask decoder)
+freeze_image_encoder: true
+freeze_prompt_encoder: false
+freeze_mask_decoder: false
+
+# Augmentation (copy from detector)
+augmentation_brightness: 0.2
+augmentation_brightness_prob: 0.5
+augmentation_contrast: 0.2
+augmentation_contrast_prob: 0.5
+augmentation_crop_fallback_to_augmentation_image_size: false
+augmentation_crop_min_intersection_ratio: 0.5
+augmentation_crop_prob: 0.5
+augmentation_early_conditional_image_size: 2000
+augmentation_flip_horizontal: true
+augmentation_flip_vertical: true
+augmentation_hue: 10
+augmentation_hue_prob: 0.3
+augmentation_image_size:
+- 1024
+- 1777
+augmentation_rotation: 30
+augmentation_rotation_prob: 0.5
+augmentation_saturation: 0.2
+augmentation_saturation_prob: 0.5
+augmentation_train_crop_size_range:
+- 666
+- 2666
+
+# Prompts
+use_box_prompts: true
+use_point_prompts: false
+box_batch_size: 4 
+# Loss
+use_focal_loss: true
+use_dice_loss: true
+focal_loss_weight: 20.0
+dice_loss_weight: 1.0
+
+visualize_batches: false
+visualize_every_n_steps: 2
+visualize_samples_per_batch: 2
+visualize_path : /data/soduguay/selvamask/visualizations/sam2_segmenter
+# Hardware
+use_amp: true
+dataloader_num_workers: 2
+
+# Logging
+wandb_project: sam2-fine-tuning
+wandb_enabled: false
+train_output_path: /data/soduguay/selvamask/checkpoints/sam2_minimal

@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from engine.benchmark.detector.benchmark import DetectorBenchmarker
+#from engine.benchmark.segmenter.benchmark import SegmenterBenchmarker
 from engine.config_parsers import DetectorConfig, AggregatorConfig
 
 def parse_args():

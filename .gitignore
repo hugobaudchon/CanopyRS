@@ -5,7 +5,7 @@ jobs/
 experiments/dataset_statistics/*.png
 experiments/resolution/*/*.yaml
 output/*
-
+results/*
 # Slurm temp files
 *.out
 
