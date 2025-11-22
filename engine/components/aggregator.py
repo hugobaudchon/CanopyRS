@@ -9,7 +9,7 @@ from engine.components.base import BaseComponent
 from engine.config_parsers import AggregatorConfig
 from engine.data_state import DataState
 from engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name, tile_path_column_name
-
+from shapely.validation import make_valid
 
 class AggregatorComponent(BaseComponent):
     name = 'aggregator'
