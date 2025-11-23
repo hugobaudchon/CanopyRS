@@ -19,7 +19,7 @@ class SegmenterComponent(BaseComponent):
         if config.model in SEGMENTER_REGISTRY:
             self.segmenter = SEGMENTER_REGISTRY[config.model](config)
         else:
-            raise ValueError(f'Invalid detector model {config.model}')
+            raise ValueError(f'Invalid segmenter model {config.model}')
 
     def __call__(self, data_state: DataState) -> DataState:
         # Find the tiles (and the COCO file for box prompts if required)
