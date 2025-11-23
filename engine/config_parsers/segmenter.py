@@ -10,7 +10,8 @@ class SegmenterConfig(BaseConfig):
     device: str = 'cuda'
     image_batch_size: int = 1
     box_batch_size: Optional[int] = 250
-
+    max_prompts_per_image: Optional[int] = 64
+    
     # Post-processing
     pp_n_workers: int = 8
     pp_down_scale_masks_px: Optional[int] = 512

@@ -271,32 +271,32 @@ def setup_sam2_trainer(train_dataset_name: str, valid_dataset_name: str, config:
     predictor.model.train()
     
     # Optimizer
+    trainable_params = [p for p in predictor.model.parameters() if p.requires_grad]
+
     optimizer = torch.optim.AdamW(
-        predictor.model.parameters(),
+        trainable_params,
         lr=config.lr,
         weight_decay=getattr(config, 'weight_decay', 1e-4),
     )
     
     # Scheduler
     steps_per_epoch = len(DatasetCatalog.get(train_dataset_name))
+    print(f"\nSteps per epoch: {steps_per_epoch}")
     max_steps = config.max_epochs * steps_per_epoch
     
-    # ✅ Handle None case
+    
     scheduler_epochs_steps = getattr(config, 'scheduler_epochs_steps', None)
+
     if scheduler_epochs_steps is None or len(scheduler_epochs_steps) == 0:
-        # Default: step every 10 epochs
-        step_size = 10 * steps_per_epoch
+        step_size = 10  # every 10 epochs
     else:
-        step_size = scheduler_epochs_steps[0] * steps_per_epoch
-    
+        step_size = scheduler_epochs_steps[0]
     scheduler_gamma = getattr(config, 'scheduler_gamma', 0.1)
-    
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer,
-        step_size=step_size,
+        step_size=step_size,  # number of epochs
         gamma=scheduler_gamma,
     )
-    
     scaler = torch.amp.GradScaler(enabled=getattr(config, 'use_amp', True))
     
     print(f"\nTraining configuration:")
@@ -742,7 +742,7 @@ def train_sam2(config: SegmenterConfig):
             config=vars(config),
         )
 
-    steps_per_epoch = getattr(config, "steps_per_epoch", 100)
+    steps_per_epoch = len(DatasetCatalog.get(train_dataset_name))
     best_val_iou = 0.0
 
     # Training loop

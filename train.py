@@ -29,6 +29,9 @@ def train_detector_main(args):
     if args.dataset:
         config.data_root_path = args.dataset
 
+    if args.train_output_path:
+        config.train_output_path = args.train_output_path
+
     if config.seed:
         set_all_seeds(config.seed)
 
@@ -45,6 +48,9 @@ def eval_detector_main(args):
 
     if args.dataset:
         config.data_root_path = args.dataset
+
+    if args.train_output_path:
+        config.train_output_path = args.train_output_path
 
     if config.seed:
         set_all_seeds(config.seed)
@@ -64,6 +70,9 @@ def train_segmenter_main(args):
     if args.dataset:
         config.data_root_path = args.dataset
 
+    if args.train_output_path:
+        config.train_output_path = args.train_output_path
+
     if config.seed:
         set_all_seeds(config.seed)
 
@@ -81,6 +90,7 @@ if __name__ == '__main__':
     parser.add_argument("-m", "--model", type=str, help="The type of model to train (detector, segmenter, classifier...).", required=True)
     parser.add_argument("-c", "--config", type=str, default='default', help="Name of a default, predefined config or path to the appropriate .yaml config file.")
     parser.add_argument("-d", "--dataset", type=str, help="Path to the root folder of the dataset to use for training a model. Will override whatever is in the yaml config file.")
+    parser.add_argument("-o", "--train_output_path", type=str, help="Path to the output directory for training checkpoints and results. Will override whatever is in the yaml config file.")
 
     parser.add_argument("--eval_only_fold", type=str, help="Whether to only evaluate the model. If defined, the value passed will be used as the fold name to find and load the appropriate data.")
 

@@ -3,24 +3,24 @@ model: sam2
 architecture: l
 
 # Data
-data_root_path: /home/soduguay/selvamask/tilerized
+data_root_path: /home/soduguay/selvamask/
 train_dataset_names:
-  - ../selvamask/20240131_zf2block4_ms_m3m_rgb
-  - ../selvamask/20240613_tbsnewsite2_m3e_rgb
-  - ../selvamask/20241122_bcifairchildn_m3m_rgb
+  - 20240131_zf2block4_ms_m3m_rgb
+  - 20240613_tbsnewsite2_m3e_rgb
+  - 20241122_bcifairchildn_m3m_rgb
 valid_dataset_names:
-  - ../selvamask/20240131_zf2block4_ms_m3m_rgb
-  - ../selvamask/20240613_tbsnewsite2_m3e_rgb
-  - ../selvamask/20241122_bcifairchildn_m3m_rgb
+  - 20240131_zf2block4_ms_m3m_rgb
+  - 20240613_tbsnewsite2_m3e_rgb
+  - 20241122_bcifairchildn_m3m_rgb
 
 # Training
 seed: 42
 batch_size: 4
-max_epochs: 15
+max_epochs: 300
 lr: 1.0e-5
 weight_decay: 0.01
 steps_per_epoch: 50
-
+max_prompts_per_image: 48
 # Freezing (only train mask decoder)
 freeze_image_encoder: true
 freeze_prompt_encoder: false
@@ -70,5 +70,5 @@ dataloader_num_workers: 2
 
 # Logging
 wandb_project: sam2-fine-tuning
-wandb_enabled: false
+wandb_enabled: true
 train_output_path: /data/soduguay/selvamask/checkpoints/sam2_minimal
