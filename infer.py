@@ -14,6 +14,11 @@ warnings.filterwarnings(
     "ignore",
     message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument."
 )
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="pkg_resources is deprecated as an API.*"
+)
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
