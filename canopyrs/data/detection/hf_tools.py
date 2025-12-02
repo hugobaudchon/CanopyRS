@@ -254,7 +254,7 @@ class HFDatasetTools:
             with coco_path.open('w') as f:
                 json.dump(coco, f, indent=3)
 
-        # Remove the temporary HF cache directory if cleanup is enabled.
+                  # Remove the temporary HF cache directory if cleanup is enabled.
         if cleanup_hf_cache:
             dataset.cleanup_cache_files()
             try:

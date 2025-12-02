@@ -63,6 +63,10 @@ class RandomHueTransform(Transform):
         img_aug = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
         return img_aug
 
+    def apply_segmentation(self, segmentation):
+        # Don't apply color augmentation to segmentation masks
+        return segmentation
+
     def apply_coords(self, coords):
         # Hue changes do not affect coordinates.
         return coords

@@ -60,7 +60,8 @@ class Detectron2DetectorWrapper(DetectorWrapperBase):
             checkpointer.load(cfg.train.init_checkpoint)
             self.model.to(self.device)
             self.aug = AugmentationList(cfg.dataloader.test.mapper.augmentation)
-            self.input_format = cfg.model.input_format
+            self.input_format = getattr(cfg.model, 'input_format',
+                                        getattr(cfg.dataloader.test.mapper, 'image_format', 'RGB'))
         else:
             raise ValueError(f"Unknown model type: {self.config.model}")
 

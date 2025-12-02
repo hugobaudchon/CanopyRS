@@ -1,5 +1,5 @@
 model: dino_detrex
-architecture: dino-resnet/dino_r50_4scale_24ep.py
+architecture: dino/configs/dino-resnet/dino_r50_4scale_24ep.py
 checkpoint_path: 'https://huggingface.co/CanopyRS/dino-resnet50-single-6p0cm-S/resolve/main/model_best.pth'
 augmentation_brightness: 0.2
 augmentation_brightness_prob: 0.5
