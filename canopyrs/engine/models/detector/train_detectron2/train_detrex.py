@@ -46,6 +46,7 @@ from detectron2.utils.events import (
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
+import detrex
 from detrex.modeling import ema
 from canopyrs.engine.models.detector.train_detectron2.augmentation import AugmentationAdder
 from canopyrs.engine.models.detector.train_detectron2.dataset import register_detection_dataset
@@ -239,7 +240,12 @@ def do_train(args, cfg, config: DetectorConfig):
     optim = instantiate(cfg.optimizer)
 
     # build training loader
-    train_loader = instantiate(cfg.dataloader.train)
+    print(444, cfg.dataloader.train)
+    try:
+        train_loader = instantiate(cfg.dataloader.train)
+    except TypeError as e:
+        del cfg.dataloader.train.mapper.augmentation_with_crop
+        train_loader = instantiate(cfg.dataloader.train)
 
     # create ddp model
     model = create_ddp_model(model, **cfg.train.ddp)
@@ -342,10 +348,13 @@ def train_detrex(config):
 
 
 def get_base_detrex_model_cfg(config):
-    current_file_path = Path(__file__).resolve().parent
-    cfg = LazyConfig.load(f'{current_file_path}/detrex_models/dino/configs/{config.architecture}')
+    detrex_root = Path(next(iter(detrex.__path__))).resolve()
+    if str(detrex_root) not in sys.path:
+        sys.path.insert(0, str(detrex_root))
+    cfg = LazyConfig.load(str(detrex_root / 'projects' / config.architecture))
     cfg.train.init_checkpoint = config.checkpoint_path
-    cfg.model.num_classes = config.num_classes
+    if hasattr(cfg.model, 'num_classes'):
+        cfg.model.num_classes = config.num_classes
 
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()
@@ -411,8 +420,9 @@ def _train_detrex_process(config, model_name):
         cfg.optimizer.params.base_lr = config.lr
 
     # Enable checkpointing in the transformer encoder, lowering memory consumption.
-    cfg.model.transformer.encoder.use_checkpoint = config.use_gradient_checkpointing
-    cfg.model.transformer.decoder.use_checkpoint = config.use_gradient_checkpointing
+    if hasattr(cfg.model, 'transformer') and hasattr(cfg.model.transformer, 'encoder') and hasattr(cfg.model.transformer, 'decoder'):
+        cfg.model.transformer.encoder.use_checkpoint = config.use_gradient_checkpointing
+        cfg.model.transformer.decoder.use_checkpoint = config.use_gradient_checkpointing
 
     if config.wandb_project is not None:
         cfg.train.wandb.enabled = True

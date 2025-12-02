@@ -1,5 +1,5 @@
 model: dino_detrex
-architecture: dino-swin/dino_swin_large_384_5scale_36ep.py
+architecture: dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py
 checkpoint_path: 'https://huggingface.co/CanopyRS/dino-swin-l-384-multi-NQOS/resolve/main/model_best.pth'
 augmentation_brightness: 0.2
 augmentation_brightness_prob: 0.5
