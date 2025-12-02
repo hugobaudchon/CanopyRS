@@ -3,6 +3,19 @@ from typing import List
 
 import numpy as np
 import torch
+
+# Patch torch.load for PyTorch 2.6+ to allow loading detrex checkpoints
+_original_torch_load = torch.load
+
+def _patched_torch_load(f, *args, **kwargs):
+    """Patched torch.load that defaults to weights_only=False for detrex compatibility"""
+    if 'weights_only' not in kwargs:
+        kwargs['weights_only'] = False
+    return _original_torch_load(f, *args, **kwargs)
+
+# Apply the patch
+torch.load = _patched_torch_load
+
 from detectron2.config import instantiate
 from detectron2.data.transforms import AugmentationList, AugInput, ResizeShortestEdge
 from detectron2.modeling import build_model

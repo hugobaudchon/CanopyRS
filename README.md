@@ -46,8 +46,8 @@ conda create -n canopyrs python=3.10
 conda activate canopyrs
 conda install -c conda-forge gdal=3.6.2
 pip install -e .
-pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
-pip install git+https://github.com/IDEA-Research/detrex.git
+pip install --no-build-isolation git+https://github.com/facebookresearch/detectron2.git@70f4543
+pip install --no-build-isolation  git+https://github.com/IDEA-Research/detrex.git
 ```
 
 ⚠️ You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
