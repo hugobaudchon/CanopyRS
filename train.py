@@ -2,8 +2,8 @@ import argparse
 import logging
 import warnings
 
-from engine.models.utils import set_all_seeds
-from engine.utils import init_spawn_method
+from canopyrs.engine.models.utils import set_all_seeds
+from canopyrs.engine.utils import init_spawn_method
 
 warnings.filterwarnings(
     "ignore",
@@ -14,12 +14,23 @@ warnings.filterwarnings(
     "ignore",
     message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument."
 )
+warnings.filterwarnings(
+    "ignore",
+    category=RuntimeWarning,
+    module=r"shapely.set_operations"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="pkg_resources is deprecated as an API.*"
+)
+
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
-from engine.config_parsers import DetectorConfig
-from engine.models.detector.train_detectron2.train_detectron2 import train_detectron2_fasterrcnn
-from engine.models.detector.train_detectron2.train_detrex import train_detrex, eval_detrex
+from canopyrs.engine.config_parsers import DetectorConfig
+from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import train_detectron2_fasterrcnn
+from canopyrs.engine.models.detector.train_detectron2.train_detrex import train_detrex, eval_detrex
 
 
 def train_detector_main(args):
@@ -32,6 +43,8 @@ def train_detector_main(args):
         set_all_seeds(config.seed)
 
     if config.model == 'faster_rcnn_detectron2':
+        train_detectron2_fasterrcnn(config)
+    if config.model == 'retinanet_detectron2':
         train_detectron2_fasterrcnn(config)
     elif config.model == 'dino_detrex':
         train_detrex(config)

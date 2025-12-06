@@ -1,0 +1,3 @@
+[submodule "detrex"]
+	url = https://github.com/hugobaudchon/detrex.git
+	path = detrex

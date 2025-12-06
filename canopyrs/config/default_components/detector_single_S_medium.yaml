@@ -1,0 +1,57 @@
+model: dino_detrex
+architecture: dino/configs/dino-resnet/dino_r50_4scale_24ep.py
+checkpoint_path: 'https://huggingface.co/CanopyRS/dino-resnet50-single-6p0cm-S/resolve/main/model_best.pth'
+augmentation_brightness: 0.2
+augmentation_brightness_prob: 0.5
+augmentation_contrast: 0.2
+augmentation_contrast_prob: 0.5
+augmentation_crop_fallback_to_augmentation_image_size: true
+augmentation_crop_min_intersection_ratio: 0.5
+augmentation_crop_prob: 0.5
+augmentation_early_conditional_image_size: null
+augmentation_flip_horizontal: true
+augmentation_flip_vertical: true
+augmentation_hue: 10
+augmentation_hue_prob: 0.3
+augmentation_image_size: 1333
+augmentation_rotation: 30.0
+augmentation_rotation_prob: 0.5
+augmentation_saturation: 0.2
+augmentation_saturation_prob: 0.5
+augmentation_train_crop_size_range:
+- 1200
+- 1466
+backbone_model_pretrained: true
+batch_size: 2
+box_nms_thresh: 0.5
+box_predictions_per_image: 500
+box_score_thresh: 0.05
+data_root_path: 'TODO: change this for training!'
+dataloader_num_workers: 4
+eval_epoch_interval: 2
+freeze_layers: 2
+grad_accumulation_steps: 1
+lr: 0.0001
+main_metric: bbox/AP
+max_epochs: 500
+num_classes: 1
+scheduler_epochs_steps:
+- 400
+- 450
+scheduler_gamma: 0.1
+scheduler_type: WarmupCosineLR
+scheduler_warmup_steps: 5000
+seed: 33
+train_dataset_names:
+- panama_aguasalud
+- ecuador_tiputini
+- brazil_zf2
+train_log_interval: 10
+train_output_path: 'TODO: change this for training!'
+use_amp: true
+use_gradient_checkpointing: true
+valid_dataset_names:
+- panama_aguasalud
+- ecuador_tiputini
+- brazil_zf2
+wandb_project: 'TODO: change this for training!'

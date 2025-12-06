@@ -3,7 +3,7 @@ import logging
 import warnings
 from warnings import warn
 
-from engine.utils import init_spawn_method
+from canopyrs.engine.utils import init_spawn_method
 
 warnings.filterwarnings(
     "ignore",
@@ -14,12 +14,17 @@ warnings.filterwarnings(
     "ignore",
     message="torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument."
 )
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="pkg_resources is deprecated as an API.*"
+)
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
-from engine.config_parsers import InferIOConfig, PipelineConfig
-from engine.config_parsers.base import get_config_path
-from engine.pipeline import Pipeline
+from canopyrs.engine.config_parsers import InferIOConfig, PipelineConfig
+from canopyrs.engine.config_parsers.base import get_config_path
+from canopyrs.engine.pipeline import Pipeline
 
 
 def pipeline_main(args):

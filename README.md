@@ -19,6 +19,10 @@
 Canopy RS (Remote Sensing) is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes.
 The pipeline includes components for tiling, detecting, aggregating, and segmenting trees in orthomosaics. These components can be chained together based on the desired application.
 
+## 🎉 News
+- **[2024-11-15]**: 🥇 Our team Limelight Rainforest won the $10M XPRIZE Rainforest competition, in part thanks to CanopyRS and SelvaBox!
+
+
 ## 🛠️ Installation
 
 ### Requirements
@@ -41,9 +45,9 @@ Install the required Python packages in a python 3.10 conda environment:
 conda create -n canopyrs python=3.10
 conda activate canopyrs
 conda install -c conda-forge gdal=3.6.2
-pip install -e .
-pip install git+https://github.com/facebookresearch/detectron2.git@70f4543
-pip install git+https://github.com/IDEA-Research/detrex.git
+git submodule update --init --recursive
+python -m pip install -e .
+python -m pip install --no-build-isolation -e ./detrex/detectron2 -e ./detrex
 ```
 
 ⚠️ You will likely encounter this error: `sam2 0.4.1 requires iopath>=0.1.10, but you have iopath 0.1.9 which is incompatible`, which is a conflict between Detectron2 and SAM2 libraries, but it can be ignored and shouldn't impact installation or usage of the pipeline.
@@ -52,8 +56,8 @@ pip install git+https://github.com/IDEA-Research/detrex.git
 
 Each component is configurable via YAML configuration files.
 
-While default configuration files are provided in the `config` directory,
-you can also create your own configuration files by creating a new folder under `config/`, adding a `pipeline.yaml` script,
+While default configuration files are provided in the `canopyrs/config` directory,
+you can also create your own configuration files by creating a new folder under `canopyrs/config/`, adding a `pipeline.yaml` script,
 and setup your desired list of component configuration files.
 
 A `pipeline` is made of multiple components, each with its own configuration. A typical `pipeline.yaml` configuration will look like this:
@@ -73,7 +77,7 @@ components_configs:
       edge_band_buffer_percentage: 0.05
 ```
 
-where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_components/detector_multi_NQOS_best` points to a `[config_subfolder_name]/[component_name]` .yaml config in `config/`.
+where `tilerizer`, `detector`, and `aggregator` are the names of the components, and `default_components/detector_multi_NQOS_best` points to a `[config_subfolder_name]/[component_name]` .yaml config in `canopyrs/config/`.
 
 
 ### Default configs
@@ -159,7 +163,7 @@ Each additional dataset will add one or more locations folders.
 
 ### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
 To find the optimal NMS parameters for your model, i.e. `nms_iou_threshold` and `nms_score_threshold`,
-you can use the [`find_optimal_raster_nms.py`](tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
+you can use the [`find_optimal_raster_nms.py`](canopyrs/tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
 Depending on how many Rasters there are in the datasets you select, it could take from a few tens of minutes to a few hours. If you have lots of CPU cores, we recommend to increase the number of workers.
 
 You have to pass the path of a detection model config file, compatible with CanopyRS.
@@ -182,7 +186,7 @@ python -m tools.detection.find_optimal_raster_nms --help
 ```
 
 ### Benchmarking
-To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](tools/detection/benchmark.py) tool script.
+To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](canopyrs/tools/detection/benchmark.py) tool script.
 
 This script will run the model and evaluate the results using COCO metrics (mAP and mAR).
 
@@ -212,7 +216,7 @@ We provide a `train.py` script to train detector models on preprocessed datasets
 
 Currently, our training pipeline requires [wandb](https://wandb.ai/site) to be installed and configured for logging purposes.
 
-Then, for example, if you want to train a model on the `SelvaBox` and `Detectree2` datasets, you will have to copy a `detector.yaml` config file, for example from [`config/default_detection_multi_NQOS_best`](config/default_detection_multi_NQOS_best/detector.yaml), and modify a few things:
+Then, for example, if you want to train a model on the `SelvaBox` and `Detectree2` datasets, you will have to copy a `detector.yaml` config file, for example from [`config/default_detection_multi_NQOS_best`](canopyrs/config/default_detection_multi_NQOS_best/detector.yaml), and modify a few things:
 - `model`: the model type, either `dino_detrex` for detrex-based DINO models or `faster_rcnn_detectron2` for detectron2-based Faster R-CNN models.
 - `architecture`: the model architecture, either `dino-swin/dino_swin_large_384_5scale_36ep.py`, `dino-resnet/dino_r50_4scale_24ep.py` (for DINOs) or `COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml` (for Faster R-CNNs) are currently supported.
 - `checkpoint_path`: path to the pretrained model checkpoint. You can keep the pretrained checkpoint we provide in order to fine tune it, or replace it with one of [detrex](https://detrex.readthedocs.io/en/latest/tutorials/Model_Zoo.html) COCO checkpoints.
