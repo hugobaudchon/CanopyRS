@@ -52,10 +52,8 @@ class Detectron2DetectionLabeledRasterCocoDataset(DetectionLabeledRasterCocoData
         return tile_info, annotations
 
 
-def process_single_sample(args):
+def process_single_sample(idx, dataset_instance):
     """Process a single sample (used in the sequential loop)."""
-    idx, dataset_instance = args
-
     tile_info, annotations = dataset_instance[idx]
 
     record = {
@@ -122,15 +120,13 @@ def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
     dataset_dicts = []
     for idx in tqdm(range(dataset_size), desc="Processing dataset"):
         try:
-            record = process_single_sample((idx, dataset_instance))
+            record = process_single_sample(idx, dataset_instance)
         except Exception as e:
-            # If something blows up during conversion, dump enough info to debug
             print(f"[ERROR] Failed to process sample idx={idx}")
             tile_info, annotations = dataset_instance[idx]
             print("[ERROR] tile_info:")
             pprint.pprint(tile_info)
             print("[ERROR] annotations (truncated):")
-            # be careful not to print massive stuff; show just counts
             print("   n_boxes:", len(annotations.get("boxes", [])))
             print("   n_segmentations:", len(annotations.get("segmentations", [])))
             raise e
