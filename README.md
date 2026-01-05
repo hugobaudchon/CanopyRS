@@ -200,15 +200,17 @@ For more information on parameters, you can use the `--help` flag:
 python -m canopyrs.tools.detection.find_optimal_raster_nms --help
 ```
 
-⚠️ **Important:** Always use the **same** `--eval_iou_threshold` value when finding NMS parameters and when running the final benchmark. If you optimize for $RF1_{75}$ but benchmark with $RF1_{50:95}$, your NMS parameters will not be optimal for that metric.
-
 ### Benchmarking
 To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](canopyrs/tools/detection/benchmark.py) tool script.
 
 This script will run the model and evaluate the results using tile-level COCO metrics (mAP and mAR).
 
 To run raster-level evaluation ($RF1$) in addition to tile-level, you must pass values for `--nms_threshold` and `--score_threshold` (to find these parameter values, you can run `find_optimal_raster_nms.py` as described in the previous section). The benchmark will then run a single raster-level aggregation with those values and report RF1 at the chosen IoU setting.
-Finally, raster-level $RF1$ can be computed at a single evaluation IoU or across a sweep: use `--eval_iou_threshold 0.75` for $RF1_{75}$ (default) or `--eval_iou_threshold 50:95` for the COCO-style sweep ($RF1_{50:95}$). Comma-separated lists (e.g., `--eval_iou_threshold 0.50,0.65,0.80`) are also accepted.
+
+The raster-level $RF1$ can be computed at a single evaluation IoU or across a sweep: use `--eval_iou_threshold 0.75` for $RF1_{75}$ (default) or `--eval_iou_threshold 50:95` for the COCO-style sweep ($RF1_{50:95}$). Comma-separated lists (e.g., `--eval_iou_threshold 0.50,0.65,0.80`) are also accepted.
+
+
+⚠️ **Important:** Always use the **same** `--eval_iou_threshold` value when finding NMS parameters (previous section) and when running the final benchmark. If you optimize NMS for $RF1_{75}$ but benchmark with $RF1_{50:95}$, your NMS parameters will not be optimal for that metric.
 
 For example, to benchmark the `default_detection_multi_NQOS_best` default model (DINO+Swin L-384 trained on NQOS datasets) on the test set of SelvaBox and Detectree2 datasets,
 you can use the following command (make sure to download the data first, see `Data` section):
@@ -220,7 +222,8 @@ python -m canopyrs.tools.detection.benchmark \
   -r <DATA_ROOT> \
   -o <OUTPUT_PATH> \
   --nms_threshold 0.7 \
-  --score_threshold 0.5
+  --score_threshold 0.5 \
+  --eval_iou_threshold 0.75
 ```
 
 By default the evaluation is done on the test set. 
