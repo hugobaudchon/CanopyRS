@@ -60,15 +60,39 @@ class CocoEvaluator:
                                           ground_resolution: float = 0.045,
                                           iou_threshold: float = 0.5) -> dict:
         """
-        Compute precision, recall, and F1 score at a given IoU threshold
-        between prediction and ground-truth GeoDataFrames.
+        Backward-compatible single-IoU evaluation wrapper.
+        """
+        return CocoEvaluator.raster_level_multi_iou_thresholds(
+            iou_type=iou_type,
+            preds_gpkg_path=preds_gpkg_path,
+            truth_gpkg_path=truth_gpkg_path,
+            aoi_gpkg_path=aoi_gpkg_path,
+            ground_resolution=ground_resolution,
+            iou_thresholds=[float(iou_threshold)]
+        )
+
+    @staticmethod
+    def raster_level_multi_iou_thresholds(iou_type: str,
+                                          preds_gpkg_path: str,
+                                          truth_gpkg_path: str,
+                                          aoi_gpkg_path: str or None,
+                                          ground_resolution: float = 0.045,
+                                          iou_thresholds: list[float] | None = None) -> dict:
+        """
+        Compute precision, recall, and F1 averaged over one or more IoU thresholds
+        between prediction and ground-truth GeoDataFrames (RF1-style).
 
         iou_type: type of IoU to compute (e.g., 'bbox', 'segm').
         preds_gpkg_path: path to GeoDataFrame with a 'geometry' column and a 'score', 'aggregator_score', 'detector_score' or 'segmentation_score' column (will be checked in that order).
         truth_gpkg_path: path to GeoDataFrame with a 'geometry' column.
         aoi_gpkg_path: path to GeoDataFrame with a 'geometry' column (optional).
-        iou_threshold: IoU threshold for a match (default: 0.5).
+        iou_thresholds: List of IoU thresholds to average over (e.g. [0.50, 0.55, ..., 0.95]).
         """
+
+        if iou_thresholds is None or len(iou_thresholds) == 0:
+            iou_thresholds = [0.5]
+        # De-duplicate and sort for deterministic output
+        iou_thresholds = sorted({float(t) for t in iou_thresholds})
 
         # Load the prediction and ground truth GeoDataFrames
         infer_gdf = gpd.read_file(preds_gpkg_path)
@@ -124,49 +148,80 @@ class CocoEvaluator:
         infer_gdf = infer_gdf.sort_values(score_column_name, ascending=False).reset_index(drop=True)
         truth_gdf = truth_gdf.reset_index(drop=True)
 
-        # Add a matched flag to ground truths
-        truth_gdf["matched"] = False
         truth_sindex = truth_gdf.sindex
 
-        tp = 0  # True positives
-        fp = 0  # False positives
-
-        # Greedy match each prediction
+        # Pre-compute candidate IoUs for each prediction to reuse across thresholds
+        candidate_ious: list[list[tuple[int, float]]] = []
         for _, pred in infer_gdf.iterrows():
-            # Bounding-box preselection for potential matches
             candidates = list(truth_sindex.intersection(pred.geometry.bounds))
-            best_iou = 0
-            best_idx = None
-
-            # Find best IoU among unmatched candidates
+            cand_iou: list[tuple[int, float]] = []
             for idx in candidates:
-                if truth_gdf.at[idx, "matched"]:
-                    continue
                 truth_geom = truth_gdf.at[idx, "geometry"]
                 inter_area = pred.geometry.intersection(truth_geom).area
                 union_area = pred.geometry.union(truth_geom).area
-                iou = inter_area / union_area if union_area > 0 else 0
-                if iou > best_iou:
-                    best_iou = iou
-                    best_idx = idx
+                iou = inter_area / union_area if union_area > 0 else 0.0
+                cand_iou.append((idx, iou))
+            # Sort descending IoU to speed thresholded greedy matching
+            cand_iou.sort(key=lambda x: x[1], reverse=True)
+            candidate_ious.append(cand_iou)
 
-            # Assign match or count as false positive
-            if best_iou >= iou_threshold:
-                tp += 1
-                truth_gdf.at[best_idx, "matched"] = True
-            else:
-                fp += 1
+        per_iou_results = []
+        for iou_thresh in iou_thresholds:
+            matched = np.zeros(len(truth_gdf), dtype=bool)
+            tp = 0
+            fp = 0
 
-        # False negatives: ground truths never matched
-        fn = (~truth_gdf["matched"]).sum()
+            for cand_list in candidate_ious:
+                match_idx = None
+                for idx, iou in cand_list:
+                    if iou < iou_thresh:
+                        break  # remaining candidates have lower IoU
+                    if not matched[idx]:
+                        match_idx = idx
+                        break
+                if match_idx is not None:
+                    tp += 1
+                    matched[match_idx] = True
+                else:
+                    fp += 1
 
-        # Calculate metrics
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+            fn = (~matched).sum()
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
 
-        metrics = {'precision': precision, 'recall': recall, 'f1': f1, 'tp': tp, 'fp': fp, 'fn': fn,
-                   'num_truths': len(truth_gdf), 'num_preds': len(infer_gdf), 'num_images': 1}
+            per_iou_results.append({
+                'iou_threshold': iou_thresh,
+                'precision': precision,
+                'recall': recall,
+                'f1': f1,
+                'tp': tp,
+                'fp': fp,
+                'fn': fn
+            })
+
+        # Aggregate across IoU thresholds (RF1_50:95-style averaging)
+        precisions = [m['precision'] for m in per_iou_results]
+        recalls = [m['recall'] for m in per_iou_results]
+        f1s = [m['f1'] for m in per_iou_results]
+
+        metrics = {
+            'precision': float(np.mean(precisions)) if precisions else 0.0,
+            'recall': float(np.mean(recalls)) if recalls else 0.0,
+            'f1': float(np.mean(f1s)) if f1s else 0.0,
+            'tp': per_iou_results[0]['tp'] if per_iou_results else 0,
+            'fp': per_iou_results[0]['fp'] if per_iou_results else 0,
+            'fn': per_iou_results[0]['fn'] if per_iou_results else 0,
+            'num_truths': len(truth_gdf),
+            'num_preds': len(infer_gdf),
+            'num_images': 1,
+            # Keep sorted per-IoU scores to log downstream
+            'precision_per_iou': precisions,
+            'recall_per_iou': recalls,
+            'f1_per_iou': f1s,
+            'iou_thresholds': iou_thresholds,
+        }
+
         print(metrics)
 
         return metrics
