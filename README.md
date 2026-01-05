@@ -161,10 +161,12 @@ Each additional dataset will add one or more locations folders.
 
 ## 📊 Evaluation
 
-### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$)
+### Find optimal NMS parameters for Raster-level evaluation ($RF1_{75}$ or other IoU thresholds)
 To find the optimal NMS parameters for your model, i.e. `nms_iou_threshold` and `nms_score_threshold`,
-you can use the [`find_optimal_raster_nms.py`](canopyrs/tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics.
+you can use the [`find_optimal_raster_nms.py`](canopyrs/tools/detection/find_optimal_raster_nms.py) tool script. This script will run a grid search over the NMS parameters and evaluate the results using the COCO evaluation metrics at a chosen IoU threshold.
 Depending on how many Rasters there are in the datasets you select, it could take from a few tens of minutes to a few hours. If you have lots of CPU cores, we recommend to increase the number of workers.
+
+Use `--eval_iou_threshold 0.75` for $RF1_{75}$ (default) or `--eval_iou_threshold 50:95` for the COCO-style sweep ($RF1_{50:95}$). Comma-separated lists (e.g., `--eval_iou_threshold 0.50,0.65,0.80`) are also accepted.
 
 You have to pass the path of a detection model config file, compatible with CanopyRS.
 
@@ -177,13 +179,28 @@ python -m canopyrs.tools.detection.find_optimal_raster_nms \
   -d SelvaBox Detectree2 \
   -r <DATA_ROOT> \
   -o <OUTPUT_PATH> \
-  --n_workers 6
+  --n_workers 6 \
+  --eval_iou_threshold 0.75
+```
+
+To search for NMS parameters optimized for the COCO-style $RF1_{50:95}$ metric instead, use:
+
+```bash
+python -m canopyrs.tools.detection.find_optimal_raster_nms \
+  -c config/default_detection_multi_NQOS_best/detector.yaml \
+  -d SelvaBox Detectree2 \
+  -r <DATA_ROOT> \
+  -o <OUTPUT_PATH> \
+  --n_workers 6 \
+  --eval_iou_threshold 50:95
 ```
 
 For more information on parameters, you can use the `--help` flag:
 ```bash
 python -m canopyrs.tools.detection.find_optimal_raster_nms --help
 ```
+
+⚠️ **Important:** Always use the **same** `--eval_iou_threshold` value when finding NMS parameters and when running the final benchmark. If you optimize for $RF1_{75}$ but benchmark with $RF1_{50:95}$, your NMS parameters will not be optimal for that metric.
 
 ### Benchmarking
 To benchmark a model on the test or valid sets of some datasets, you can use the [`benchmark.py`](canopyrs/tools/detection/benchmark.py) tool script.
