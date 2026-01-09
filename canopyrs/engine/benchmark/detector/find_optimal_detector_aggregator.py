@@ -1,10 +1,13 @@
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import contextlib
+import os
 from pathlib import Path
 import traceback
 
 import numpy as np
 import pandas as pd
 from geodataset.aggregator import Aggregator
+from tqdm import tqdm
 
 from canopyrs.engine.benchmark.detector.evaluator import CocoEvaluator
 
@@ -20,9 +23,9 @@ def eval_single_aggregator(
         eval_iou_threshold: float,
         ground_resolution: float
 ):
-    try:
-        print(f"Evaluating NMS IOU threshold: {nms_iou_threshold}, NMS score threshold: {nms_score_threshold}, output will be at {output_path}")
-
+    with open(os.devnull, "w") as devnull, \
+        contextlib.redirect_stdout(devnull), \
+        contextlib.redirect_stderr(devnull):
         output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_nmsscorethresh_{str(nms_score_threshold).replace('.', 'p')}"
         Path(output_path).mkdir(parents=True, exist_ok=True)
         aggregator_output_path = output_path / 'aggregator_output.gpkg'
@@ -54,10 +57,6 @@ def eval_single_aggregator(
             ground_resolution=ground_resolution,
             iou_threshold=eval_iou_threshold
         )
-
-    except Exception as e:
-        traceback.print_exc()
-        raise e
 
     return metrics
 
@@ -155,16 +154,19 @@ def find_optimal_detector_aggregator(
             future_to_params[future] = params
 
         # Collect the results as they complete
-        for future in as_completed(future_to_params):
-            params = future_to_params[future]
-            try:
-                metrics = future.result()
-                record = params.copy()
-                record.update(metrics)
-                results_list.append(record)
-            except Exception as exc:
-                print(f"Parameters {params} generated an exception:")
-                traceback.print_exc()
+        with tqdm(total=len(future_to_params), desc="Grid search", unit="task") as pbar:
+            for future in as_completed(future_to_params):
+                params = future_to_params[future]
+                try:
+                    metrics = future.result()
+                    record = params.copy()
+                    record.update(metrics)
+                    results_list.append(record)
+                except Exception:
+                    print(f"Parameters {params} generated an exception:")
+                    traceback.print_exc()
+                finally:
+                    pbar.update(1)
 
     results_df = pd.DataFrame(results_list)
 
@@ -173,5 +175,4 @@ def find_optimal_detector_aggregator(
     results_df = average_metrics_by_raster(results_df)
 
     return results_df
-
 

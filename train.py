@@ -2,9 +2,6 @@ import argparse
 import logging
 import warnings
 
-from canopyrs.engine.models.utils import set_all_seeds
-from canopyrs.engine.utils import init_spawn_method
-
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -24,16 +21,34 @@ warnings.filterwarnings(
     category=UserWarning,
     message="pkg_resources is deprecated as an API.*"
 )
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"torch\.utils\.checkpoint: the use_reentrant parameter should be passed explicitly.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"None of the inputs have requires_grad=True\. Gradients will be None"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The given NumPy array is not writable, and PyTorch does not support non-writable tensors.*"
+)
+
+from canopyrs.engine.models.utils import set_all_seeds
+from canopyrs.engine.utils import init_spawn_method
 
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
 from canopyrs.engine.config_parsers import DetectorConfig
-from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import train_detectron2_fasterrcnn
+from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import train_detectron2
 from canopyrs.engine.models.detector.train_detectron2.train_detrex import train_detrex, eval_detrex
 
 
-def train_detector_main(args):
+def train_detector_main(args, task):
     config = DetectorConfig.from_yaml(args.config)
 
     if args.dataset:
@@ -42,17 +57,15 @@ def train_detector_main(args):
     if config.seed:
         set_all_seeds(config.seed)
 
-    if config.model == 'faster_rcnn_detectron2':
-        train_detectron2_fasterrcnn(config)
-    if config.model == 'retinanet_detectron2':
-        train_detectron2_fasterrcnn(config)
-    elif config.model == 'dino_detrex':
-        train_detrex(config)
+    if config.model in ['faster_rcnn_detectron2', 'retinanet_detectron2', 'mask_rcnn_detectron2', 'mask2former_detectron2']:
+        train_detectron2(config, task)
+    elif config.model in ['dino_detrex', 'maskdino_detrex', 'mask2former_detrex']:
+        train_detrex(config, task)
     else:
         raise ValueError("Invalid model type/name.")
 
 
-def eval_detector_main(args):
+def eval_detector_main(args, task):
     config = DetectorConfig.from_yaml(args.config)
 
     if args.dataset:
@@ -84,10 +97,12 @@ if __name__ == '__main__':
 
     if args.model == "detector":
         if args.eval_only_fold:
-            eval_detector_main(args)
+            eval_detector_main(args, task='detection')
         else:
-            train_detector_main(args)
-
-
-
+            train_detector_main(args, task='detection')
+    elif args.model == "segmenter":
+        if args.eval_only_fold:
+            eval_detector_main(args, task='segmentation')
+        else:
+            train_detector_main(args, task='segmentation')
 
