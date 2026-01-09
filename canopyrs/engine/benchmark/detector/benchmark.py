@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from canopyrs.engine.benchmark.detector.evaluator import CocoEvaluator
@@ -12,21 +13,43 @@ from canopyrs.data.detection.preprocessed_datasets import DATASET_REGISTRY
 
 
 class DetectorBenchmarker:
+    """
+    Run detector (and optional aggregator) benchmarks at tile and raster level, and search NMS/aggregation params.
+    """
     def __init__(self,
                  output_folder: str or Path,
                  fold_name: str,
                  raw_data_root: Path or str,
-                 eval_iou_threshold: float = 0.75):
+                 eval_iou_threshold: float | list[float] = 0.75):
+        """
+        Initialize the benchmarker.
+
+        output_folder: root folder where metrics and intermediate files are saved.
+        fold_name: dataset fold to use ('test' or 'valid').
+        raw_data_root: base path to preprocessed datasets.
+        eval_iou_threshold: single IoU float or list of IoUs for RF1-style averaging.
+        """
         self.output_folder = Path(output_folder)
         self.fold_name = fold_name
         self.raw_data_root = Path(raw_data_root)
-        self.eval_iou_threshold = eval_iou_threshold
+        
+        # Normalize to list internally
+        if isinstance(eval_iou_threshold, (list, tuple)):
+            self.eval_iou_threshold_list = [float(t) for t in eval_iou_threshold]
+        else:
+            self.eval_iou_threshold_list = [float(eval_iou_threshold)]
+
+        # Primary IoU for scalar-only contexts (labels/legacy paths)
+        self.eval_iou_threshold = float(self.eval_iou_threshold_list[0])
 
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
         assert fold_name in ['test', 'valid'], f'Fold {fold_name} not supported. Supported folds are "test" and "valid".'
 
     def get_preprocessed_datasets(self, dataset_names: str or list[str]):
+        """
+        Load and validate requested datasets for the current fold.
+        """
         datasets = {}
         for dataset_name in list(dataset_names):
             assert dataset_name in DATASET_REGISTRY, f'Dataset {dataset_name} not supported. Supported datasets are {DATASET_REGISTRY.keys()}.'
@@ -40,6 +63,9 @@ class DetectorBenchmarker:
                              detector_config: DetectorConfig,
                              aggregator_config: AggregatorConfig or None,
                              output_folder: str or Path = None):
+        """
+        Run inference (detector + optional aggregator) for one product and return paths to outputs.
+        """
 
         if output_folder is None:
             output_folder = self.output_folder / self.fold_name / product_name
@@ -77,8 +103,6 @@ class DetectorBenchmarker:
         """
         Find the optimal NMS IoU threshold for the detector by evaluating different thresholds on the validation set.
         """
-        eval_iou_threshold = 0.75  # This is the IoU threshold used for RF1_75
-
         datasets = self.get_preprocessed_datasets(dataset_names)
 
         print(f"Finding optimal NMS IoU threshold for datasets: {dataset_names}. Inferring rasters...")
@@ -116,8 +140,8 @@ class DetectorBenchmarker:
             ground_resolution=eval_at_ground_resolution,
             nms_iou_thresholds=nms_iou_thresholds,
             nms_score_thresholds=nms_score_thresholds,
-            eval_iou_threshold=self.eval_iou_threshold,
-            n_workers=n_workers
+            eval_iou_threshold=self.eval_iou_threshold_list,
+            n_workers=n_workers,
         )
 
         csv_output_path = nms_search_output_folder / 'optimal_nms_iou_threshold_search.csv'
@@ -130,7 +154,12 @@ class DetectorBenchmarker:
         best_aggregator_iou = best_aggregator['nms_iou_threshold']
         best_aggregator_score_threshold = best_aggregator['nms_score_threshold']
 
-        print(f"Best NMS IoU threshold: {best_aggregator_iou}, Best Score threshold: {best_aggregator_score_threshold}, with an RF1_{str(int(eval_iou_threshold * 100))} of {best_aggregator['f1']}")
+        if self.eval_iou_threshold_list and len(self.eval_iou_threshold_list) > 1:
+            iou_label = f"{int(self.eval_iou_threshold_list[0] * 100)}:{int(self.eval_iou_threshold_list[-1] * 100)}"
+        else:
+            iou_label = str(int(self.eval_iou_threshold * 100))
+
+        print(f"Best NMS IoU threshold: {best_aggregator_iou}, Best Score threshold: {best_aggregator_score_threshold}, with an RF1_{iou_label} of {best_aggregator['f1']}")
 
         return best_aggregator_iou, best_aggregator_score_threshold
 
@@ -180,14 +209,22 @@ class DetectorBenchmarker:
                 dataset_truths_cocos.append(truths_coco)
 
                 if aggregator_config and do_raster_level_eval:
-                    raster_metrics = evaluator.raster_level_single_iou_threshold(
+                    raster_metrics = evaluator.raster_level_multi_iou_thresholds(
                         iou_type='bbox',
                         preds_gpkg_path=preds_aggregated_gpkg,
                         truth_gpkg_path=truths_gpkg,
                         aoi_gpkg_path=aoi_gpkg,
                         ground_resolution=dataset.ground_resolution,
-                        iou_threshold=self.eval_iou_threshold
+                        iou_thresholds=self.eval_iou_threshold_list
                     )
+                    raster_metrics['iou_thresholds'] = ",".join([f"{t:.2f}" for t in self.eval_iou_threshold_list])
+                    # Log per-IoU scores for traceability
+                    if 'f1_per_iou' in raster_metrics:
+                        raster_metrics['f1_per_iou'] = [float(v) for v in raster_metrics['f1_per_iou']]
+                    if 'precision_per_iou' in raster_metrics:
+                        raster_metrics['precision_per_iou'] = [float(v) for v in raster_metrics['precision_per_iou']]
+                    if 'recall_per_iou' in raster_metrics:
+                        raster_metrics['recall_per_iou'] = [float(v) for v in raster_metrics['recall_per_iou']]
                     raster_metrics['location'] = location
                     raster_metrics['product_name'] = product_name
                     all_raster_level_metrics.append(raster_metrics)
@@ -227,6 +264,18 @@ class DetectorBenchmarker:
                 weighted_avg_metrics['num_truths'] = int(total_truths)
                 weighted_avg_metrics['location'] = dataset_name
                 weighted_avg_metrics['product_name'] = "average_over_rasters"
+                weighted_avg_metrics['iou_thresholds'] = ",".join([f"{t:.2f}" for t in self.eval_iou_threshold_list])
+
+                # Weighted average per-IoU scores for logging
+                if 'f1_per_iou' in merged_df.columns and merged_df['f1_per_iou'].notna().all():
+                    stacked_f1 = np.stack(merged_df['f1_per_iou'].to_list())
+                    weighted_avg_metrics['f1_per_iou'] = (stacked_f1 * weights.to_numpy()[:, None]).sum(axis=0) / total_truths
+                if 'precision_per_iou' in merged_df.columns and merged_df['precision_per_iou'].notna().all():
+                    stacked_prec = np.stack(merged_df['precision_per_iou'].to_list())
+                    weighted_avg_metrics['precision_per_iou'] = (stacked_prec * weights.to_numpy()[:, None]).sum(axis=0) / total_truths
+                if 'recall_per_iou' in merged_df.columns and merged_df['recall_per_iou'].notna().all():
+                    stacked_rec = np.stack(merged_df['recall_per_iou'].to_list())
+                    weighted_avg_metrics['recall_per_iou'] = (stacked_rec * weights.to_numpy()[:, None]).sum(axis=0) / total_truths
 
                 all_raster_level_metrics.append(weighted_avg_metrics)
 

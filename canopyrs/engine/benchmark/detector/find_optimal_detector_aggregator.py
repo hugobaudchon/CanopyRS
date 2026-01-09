@@ -20,8 +20,8 @@ def eval_single_aggregator(
         aoi_gdf: str,
         nms_iou_threshold: float,
         nms_score_threshold: float,
-        eval_iou_threshold: float,
-        ground_resolution: float
+        eval_iou_threshold: float | list[float],
+        ground_resolution: float,
 ):
     with open(os.devnull, "w") as devnull, \
         contextlib.redirect_stdout(devnull), \
@@ -47,15 +47,19 @@ def eval_single_aggregator(
             pre_aggregated_output_path=None
         )
 
-        # Evaluate the predictions
+        # Evaluate the predictions (multi-IoU also handles single-threshold via length-1 list)
         evaluator = CocoEvaluator()
-        metrics = evaluator.raster_level_single_iou_threshold(
+        if isinstance(eval_iou_threshold, (list, tuple)):
+            iou_list = [float(t) for t in eval_iou_threshold]
+        else:
+            iou_list = [float(eval_iou_threshold)]
+        metrics = evaluator.raster_level_multi_iou_thresholds(
             iou_type='bbox',
             preds_gpkg_path=str(aggregator_output_path),
             truth_gpkg_path=truth_gdf,
             aoi_gpkg_path=aoi_gdf,
             ground_resolution=ground_resolution,
-            iou_threshold=eval_iou_threshold
+            iou_thresholds=iou_list
         )
 
     return metrics
@@ -110,12 +114,17 @@ def find_optimal_detector_aggregator(
         ground_resolution: float,
         nms_iou_thresholds: list[float],
         nms_score_thresholds: list[float],
-        eval_iou_threshold: float,
-        n_workers: int
+        eval_iou_threshold: float | list[float],
+        n_workers: int,
 ):
 
     assert len(raster_names) == len(preds_coco_jsons) == len(truths_gdfs) == len(tiles_roots) == len(aois_gdfs), \
         "The number of elements in raster_names, preds_coco_jsons, truths_gdfs, tiles_roots and aois_gdfs must be the same."
+
+    if isinstance(eval_iou_threshold, (list, tuple)):
+        normalized_iou_thresholds = [float(t) for t in eval_iou_threshold]
+    else:
+        normalized_iou_thresholds = [float(eval_iou_threshold)]
 
     # Create a list to hold all parameter combinations
     tasks = []
@@ -148,8 +157,8 @@ def find_optimal_detector_aggregator(
                 aoi_gdf=params["aoi_gdf"],
                 nms_iou_threshold=params["nms_iou_threshold"],
                 nms_score_threshold=params["nms_score_threshold"],
-                eval_iou_threshold=eval_iou_threshold,
-                ground_resolution=ground_resolution
+                eval_iou_threshold=normalized_iou_thresholds,
+                ground_resolution=ground_resolution,
             )
             future_to_params[future] = params
 
