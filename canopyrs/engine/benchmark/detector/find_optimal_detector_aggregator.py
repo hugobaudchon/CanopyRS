@@ -6,10 +6,11 @@ import traceback
 
 import numpy as np
 import pandas as pd
-from geodataset.aggregator import Aggregator
 from tqdm import tqdm
 
 from canopyrs.engine.benchmark.detector.evaluator import CocoEvaluator
+from canopyrs.engine.config_parsers import AggregatorConfig, PipelineConfig, InferIOConfig
+from canopyrs.engine.pipeline import Pipeline
 
 
 def eval_single_aggregator(
@@ -18,34 +19,39 @@ def eval_single_aggregator(
         truth_gdf: str,
         tiles_root: str,
         aoi_gdf: str,
-        nms_iou_threshold: float,
-        nms_score_threshold: float,
         eval_iou_threshold: float | list[float],
         ground_resolution: float,
+        iou_type: str,
+        aggregator_config: AggregatorConfig,
 ):
+    if iou_type not in ('bbox', 'segm'):
+        raise ValueError(f"Unsupported iou_type: {iou_type}. Expected 'bbox' or 'segm'.")
+
     with open(os.devnull, "w") as devnull, \
         contextlib.redirect_stdout(devnull), \
         contextlib.redirect_stderr(devnull):
-        output_path = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}_nmsscorethresh_{str(nms_score_threshold).replace('.', 'p')}"
+        output_path = Path(output_path) / f"nmsiou_{str(aggregator_config.nms_threshold).replace('.', 'p')}_nmsscorethresh_{str(aggregator_config.score_threshold).replace('.', 'p')}"
         Path(output_path).mkdir(parents=True, exist_ok=True)
-        aggregator_output_path = output_path / 'aggregator_output.gpkg'
 
-        Aggregator.from_coco(
-            polygon_type='bbox',
-            output_path=aggregator_output_path,
-            tiles_folder_path=tiles_root,
-            coco_json_path=preds_coco_json,
-            scores_names=['detector_score'],
-            other_attributes_names=None,
-            scores_weights=[1.0],
-            min_centroid_distance_weight=1.0,
-            score_threshold=nms_score_threshold,
-            nms_threshold=nms_iou_threshold,
-            nms_algorithm='iou',
-            edge_band_buffer_percentage=0.05,
-            best_geom_keep_area_ratio=0.5,
-            pre_aggregated_output_path=None
+        # Setup IO config for the aggregator pipeline
+        io_config = InferIOConfig(
+            input_imagery=None,
+            tiles_path=tiles_root,
+            input_coco=preds_coco_json,
+            output_folder=str(output_path),
         )
+
+        # Create a single-component pipeline with only the aggregator
+        pipeline_config = PipelineConfig(components_configs=[
+            ('aggregator', aggregator_config)
+        ])
+
+        # Run the pipeline
+        pipeline = Pipeline(io_config, pipeline_config)
+        pipeline()
+
+        # Get aggregator output from pipeline
+        aggregator_output_path = pipeline.data_state.get_output_file('aggregator', 0, 'gpkg')
 
         # Evaluate the predictions (multi-IoU also handles single-threshold via length-1 list)
         evaluator = CocoEvaluator()
@@ -54,7 +60,7 @@ def eval_single_aggregator(
         else:
             iou_list = [float(eval_iou_threshold)]
         metrics = evaluator.raster_level_multi_iou_thresholds(
-            iou_type='bbox',
+            iou_type=iou_type,
             preds_gpkg_path=str(aggregator_output_path),
             truth_gpkg_path=truth_gdf,
             aoi_gpkg_path=aoi_gdf,
@@ -116,6 +122,8 @@ def find_optimal_detector_aggregator(
         nms_score_thresholds: list[float],
         eval_iou_threshold: float | list[float],
         n_workers: int,
+        iou_type: str = 'bbox',
+        aggregator_config: AggregatorConfig = None,
 ):
 
     assert len(raster_names) == len(preds_coco_jsons) == len(truths_gdfs) == len(tiles_roots) == len(aois_gdfs), \
@@ -126,11 +134,20 @@ def find_optimal_detector_aggregator(
     else:
         normalized_iou_thresholds = [float(eval_iou_threshold)]
 
+    # Create a base aggregator config if not provided
+    if aggregator_config is None:
+        aggregator_config = AggregatorConfig()
+
     # Create a list to hold all parameter combinations
     tasks = []
     for nms_iou_threshold in nms_iou_thresholds:
         for nms_score_threshold in nms_score_thresholds:
             for raster_name, preds_coco_json, truth_gdf, tiles_root, aoi_gdf in zip(raster_names, preds_coco_jsons, truths_gdfs, tiles_roots, aois_gdfs):
+                # Create a copy of aggregator config with grid search parameters
+                task_aggregator_config = aggregator_config.model_copy(deep=True)
+                task_aggregator_config.nms_threshold = nms_iou_threshold
+                task_aggregator_config.score_threshold = nms_score_threshold
+                
                 tasks.append({
                     "raster_name": raster_name,
                     "nms_iou_threshold": nms_iou_threshold,
@@ -138,7 +155,8 @@ def find_optimal_detector_aggregator(
                     "preds_coco_json": preds_coco_json,
                     "truth_gdf": truth_gdf,
                     "tiles_root": tiles_root,
-                    "aoi_gdf": aoi_gdf
+                    "aoi_gdf": aoi_gdf,
+                    "aggregator_config": task_aggregator_config
                 })
 
     results_list = []
@@ -155,10 +173,10 @@ def find_optimal_detector_aggregator(
                 truth_gdf=params["truth_gdf"],
                 tiles_root=params["tiles_root"],
                 aoi_gdf=params["aoi_gdf"],
-                nms_iou_threshold=params["nms_iou_threshold"],
-                nms_score_threshold=params["nms_score_threshold"],
                 eval_iou_threshold=normalized_iou_thresholds,
                 ground_resolution=ground_resolution,
+                iou_type=iou_type,
+                aggregator_config=params["aggregator_config"],
             )
             future_to_params[future] = params
 

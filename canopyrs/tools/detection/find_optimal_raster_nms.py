@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from canopyrs.engine.benchmark.detector.benchmark import DetectorBenchmarker
 from canopyrs.engine.config_parsers import DetectorConfig
@@ -105,15 +106,21 @@ def main():
     )
 
     try:
-        best_iou, best_score = bench.find_optimal_nms_iou_threshold(
+        optimal_aggregator_config = bench.find_optimal_nms_iou_threshold(
             detector_config=cfg,
             dataset_names=args.datasets,
             nms_iou_thresholds=args.iou_thresholds,
             nms_score_thresholds=args.score_thresholds,
             n_workers=args.n_workers
         )
-        print(f"Best NMS IoU Threshold: {best_iou}")
-        print(f"Best Score Threshold:  {best_score}")
+        print(f"Best NMS IoU Threshold: {optimal_aggregator_config.nms_threshold}")
+        print(f"Best Score Threshold:  {optimal_aggregator_config.score_threshold}")
+        
+        # Save the optimal aggregator config to a YAML file
+        config_output_path = out / "optimal_aggregator_config.yaml"
+        with open(config_output_path, 'w') as f:
+            yaml.dump(optimal_aggregator_config.model_dump(), f, default_flow_style=False, sort_keys=False)
+        print(f"\nOptimal aggregator config saved to: {config_output_path}")
     except Exception as e:
         print(f"Error during NMS search: {e}", file=sys.stderr)
         sys.exit(1)
