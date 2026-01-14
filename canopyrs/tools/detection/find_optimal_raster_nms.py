@@ -7,7 +7,7 @@ import numpy as np
 import yaml
 
 from canopyrs.engine.benchmark.detector.benchmark import DetectorBenchmarker
-from canopyrs.engine.config_parsers import DetectorConfig
+from canopyrs.engine.config_parsers import DetectorConfig, AggregatorConfig
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -90,9 +90,9 @@ def main():
 
     # build default threshold grids if none provided
     if args.iou_thresholds is None:
-        args.iou_thresholds = [round(x, 1) for x in np.arange(0.05, 1.05, 0.05)]
+        args.iou_thresholds = [i / 20 for i in range(1, 21)]
     if args.score_thresholds is None:
-        args.score_thresholds = [round(x, 2) for x in np.arange(0.05, 1.05, 0.05)]
+        args.score_thresholds = [i / 20 for i in range(1, 21)]
 
     cfg = DetectorConfig.from_yaml(str(args.detector_config))
     out = args.output_folder.resolve()
@@ -105,9 +105,14 @@ def main():
         eval_iou_threshold=eval_iou_threshold,
     )
 
+    aggregator_config = AggregatorConfig(
+        nms_algorithm='iou',
+    )
+
     try:
         optimal_aggregator_config = bench.find_optimal_nms_iou_threshold(
             detector_config=cfg,
+            base_aggregator_config=aggregator_config,
             dataset_names=args.datasets,
             nms_iou_thresholds=args.iou_thresholds,
             nms_score_thresholds=args.score_thresholds,
