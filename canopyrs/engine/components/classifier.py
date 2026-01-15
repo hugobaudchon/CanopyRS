@@ -158,6 +158,10 @@ class ClassifierComponent(BaseComponent):
         if not results_gdf.empty:
             data_state.register_output_file(self.name, self.component_id, 'gpkg', gpkg_path)
             data_state.update_infer_gdf(results_gdf)
+            # If necessary: Save the GeoPackage directly for debugging
+            data_state.infer_gdf.to_file(gpkg_path, driver="GPKG")
+            print(f"Saved classifier results to: {gpkg_path}")
+
         else:
             print("Classifier: Results GDF is empty, data_state.infer_gdf not updated by classifier.")
         data_state.infer_gdf_columns_to_pass = columns_to_pass
