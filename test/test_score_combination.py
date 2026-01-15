@@ -339,8 +339,12 @@ def test_no_scores_provided():
         )
 
         print("\nNo scores in predictions")
-        print("Should handle gracefully (use default scores or skip)")
-        print("Evaluation completed")
+        print("Default score=1.0 added automatically")
+        print("Evaluation completed successfully")
+        
+        # Verify metrics exist
+        assert 'AP' in metrics, "Should return metrics"
+        assert 'AR' in metrics, "Should return metrics"
 
         print("\n✓ TEST PASSED")
 
