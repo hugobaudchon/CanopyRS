@@ -378,7 +378,6 @@ class ClassifierCocoEvaluator:
 
         return report
 
-
     def _compute_miou(self, eval_result):
         """Compute mean IoU from COCO evaluation results"""
         try:
