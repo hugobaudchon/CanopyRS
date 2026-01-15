@@ -128,23 +128,23 @@ class ClassifierCocoEvaluator:
                    truth_coco_path: str,
                    max_dets: list[int] = (1, 10, 100),
                    evaluate_bbox: bool = False,
-                   score_combination: Optional[Dict] = None) -> dict:
+                   score_combination: Optional[Dict] = None,
+                   evaluate_class_agnostic: bool = False) -> dict:
         """
         Tile-level evaluation for instance segmentation with classes.
 
         Args:
             preds_coco_path: Path to predictions COCO file
-            truth_coco_path: Path to ground truth COCO file  
+            truth_coco_path: Path to ground truth COCO file
             max_dets: Maximum detections to consider
-            evaluate_bbox: If True, also evaluate bbox IoU and return both metrics
-            score_combination: Dict with 'weights' and 'method' for combining scores
-                              Example: {
-                                  'weights': {'detector_score': 0.5, 'classifier_score': 0.3, 'segmentation_score': 0.2},
-                                  'method': 'weighted_arithmetic_mean'  # or 'weighted_geometric_mean'
-                              }
+            evaluate_bbox: If True, also evaluate bbox IoU
+            score_combination: Dict with 'weights' and 'method' for scores
+            evaluate_class_agnostic: If True, also compute class-agnostic
+                segmentation metrics (ignores category_id)
 
         Returns:
-            dict: Metrics dictionary. If evaluate_bbox=True, contains both 'segm' and 'bbox' keys
+            dict: Metrics dictionary with 'segm' key (and optionally 'bbox',
+                'class_agnostic_segm', 'classification_accuracy')
         """
         # Preprocess predictions to fix score field names
         processed_preds_path = self._preprocess_predictions_coco(
@@ -181,16 +181,33 @@ class ClassifierCocoEvaluator:
         # Optionally evaluate bbox
         if evaluate_bbox:
             print("Evaluating bbox IoU...")
-            bbox_metrics = self._evaluate_single_iou_type(truth_coco, preds_coco, 'bbox', max_dets)
+            bbox_metrics = self._evaluate_single_iou_type(
+                truth_coco, preds_coco, 'bbox', max_dets)
             results['bbox'] = bbox_metrics
+
+        # Optionally evaluate class-agnostic segmentation
+        if evaluate_class_agnostic:
+            print("\nEvaluating class-agnostic segmentation...")
+            print("(This ignores category_id and only checks mask overlap)")
+            ca_metrics = self._evaluate_class_agnostic_segmentation(
+                truth_coco, preds_coco, max_dets)
+            results['class_agnostic_segm'] = ca_metrics
+
+            # Also compute classification accuracy
+            print("\nComputing classification accuracy...")
+            class_metrics = self._compute_classification_metrics(
+                truth_coco, preds_coco)
+            results['classification'] = class_metrics
 
         # Clean up temporary file
         if processed_preds_path != preds_coco_path:
             Path(processed_preds_path).unlink()
 
-        # Return segm metrics directly if only evaluating segmentation
-        # Return both if evaluating both
-        return results if evaluate_bbox else segm_metrics
+        # Return appropriate results based on what was evaluated
+        if evaluate_class_agnostic or evaluate_bbox:
+            return results
+        else:
+            return segm_metrics
 
     def _evaluate_single_iou_type(self, truth_coco: COCO, preds_coco: COCO, 
                                   iou_type: str, max_dets: list[int]) -> dict:
@@ -275,13 +292,19 @@ class ClassifierCocoEvaluator:
         elif not ('score' in existing_score_fields and len(existing_score_fields) == 1):
             score_field_to_use = self._select_primary_score_field(existing_score_fields)
             if score_field_to_use:
-                print(f"Converting '{score_field_to_use}' to 'score' in predictions")
+                print("Converting '{}' to 'score' in predictions".format(
+                    score_field_to_use))
                 self._move_score_to_top_level(coco_data, score_field_to_use)
             else:
-                print("WARNING: No score fields found in predictions.")
-                return preds_coco_path
+                print("WARNING: No score fields found in predictions. "
+                      "Adding default score=1.0")
+                # Add default score to all annotations
+                for ann in coco_data.get('annotations', []):
+                    if 'score' not in ann:
+                        ann['score'] = 1.0
         else:
-            print("Predictions already have 'score' field, no preprocessing needed")
+            print("Predictions already have 'score' field, "
+                  "no preprocessing needed")
             return preds_coco_path
 
         # Create temporary file with processed data
@@ -562,6 +585,157 @@ class ClassifierCocoEvaluator:
 
         print("="*70 + "\n")
         return report
+
+    def _evaluate_class_agnostic_segmentation(self, truth_coco: COCO,
+                                               preds_coco: COCO,
+                                               max_dets: list) -> Dict:
+        """
+        Evaluate segmentation ignoring category_id.
+        All annotations treated as same class.
+        """
+        # Create copies and force all to same category
+        truth_copy = COCO()
+        truth_copy.dataset = json.loads(json.dumps(truth_coco.dataset))
+        pred_copy = COCO()
+        pred_copy.dataset = json.loads(json.dumps(preds_coco.dataset))
+
+        # Force all categories to ID 1
+        truth_copy.dataset['categories'] = [{
+            'id': 1, 'name': 'object', 'supercategory': ''
+        }]
+        pred_copy.dataset['categories'] = [{
+            'id': 1, 'name': 'object', 'supercategory': ''
+        }]
+
+        # Change all annotation categories to 1
+        for ann in truth_copy.dataset.get('annotations', []):
+            ann['category_id'] = 1
+        for ann in pred_copy.dataset.get('annotations', []):
+            ann['category_id'] = 1
+
+        truth_copy.createIndex()
+        pred_copy.createIndex()
+
+        # Run evaluation
+        coco_eval = Summarize2COCOEval(
+            cocoGt=truth_copy,
+            cocoDt=pred_copy,
+            iouType='segm'
+        )
+        coco_eval.params.maxDets = max_dets
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        metrics = {
+            'AP': coco_eval.stats[0],
+            'AP50': coco_eval.stats[1],
+            'AP75': coco_eval.stats[2],
+            'AR': coco_eval.stats[8],
+            'num_images': len(truth_copy.getImgIds()),
+            'num_truths': len(truth_copy.getAnnIds()),
+            'num_preds': len(pred_copy.getAnnIds()),
+        }
+
+        if hasattr(coco_eval, 'eval') and coco_eval.eval:
+            miou = self._compute_miou(coco_eval.eval)
+            metrics['mIoU'] = miou
+
+        return metrics
+
+    def _compute_classification_metrics(self, truth_coco: COCO,
+                                        preds_coco: COCO) -> Dict:
+        """
+        Compute classification accuracy for matched instances.
+        Matches instances by IoU > 0.5, then checks if category_id matches.
+        """
+        total_matches = 0
+        correct_class = 0
+        per_class_stats = {}
+
+        # For each image
+        for img_id in truth_coco.getImgIds():
+            gt_anns = truth_coco.loadAnns(
+                truth_coco.getAnnIds(imgIds=img_id))
+            pred_anns = preds_coco.loadAnns(
+                preds_coco.getAnnIds(imgIds=img_id))
+
+            if not gt_anns or not pred_anns:
+                continue
+
+            # Match GT to predictions by IoU
+            for gt_ann in gt_anns:
+                gt_cat = gt_ann['category_id']
+                if gt_cat not in per_class_stats:
+                    per_class_stats[gt_cat] = {
+                        'total': 0, 'correct': 0
+                    }
+
+                # Find best matching prediction
+                best_iou = 0.0
+                best_pred = None
+
+                for pred_ann in pred_anns:
+                    # Compute bbox IoU as proxy
+                    iou = self._compute_bbox_iou(
+                        gt_ann['bbox'], pred_ann['bbox'])
+
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_pred = pred_ann
+
+                # If matched with IoU > 0.5
+                if best_iou > 0.5 and best_pred is not None:
+                    total_matches += 1
+                    per_class_stats[gt_cat]['total'] += 1
+
+                    if best_pred['category_id'] == gt_cat:
+                        correct_class += 1
+                        per_class_stats[gt_cat]['correct'] += 1
+
+        accuracy = correct_class / total_matches if total_matches > 0 else 0.0
+
+        # Compute per-class accuracy
+        per_class_acc = {}
+        for cat_id, stats in per_class_stats.items():
+            if stats['total'] > 0:
+                per_class_acc[cat_id] = stats['correct'] / stats['total']
+            else:
+                per_class_acc[cat_id] = 0.0
+
+        return {
+            'overall_accuracy': accuracy,
+            'total_matched_instances': total_matches,
+            'correctly_classified': correct_class,
+            'per_class_accuracy': per_class_acc,
+            'per_class_counts': per_class_stats
+        }
+
+    def _compute_bbox_iou(self, box1, box2):
+        """Compute IoU between two bboxes [x, y, w, h]"""
+        x1_min, y1_min = box1[0], box1[1]
+        x1_max, y1_max = x1_min + box1[2], y1_min + box1[3]
+
+        x2_min, y2_min = box2[0], box2[1]
+        x2_max, y2_max = x2_min + box2[2], y2_min + box2[3]
+
+        # Intersection
+        xi_min = max(x1_min, x2_min)
+        yi_min = max(y1_min, y2_min)
+        xi_max = min(x1_max, x2_max)
+        yi_max = min(y1_max, y2_max)
+
+        if xi_max <= xi_min or yi_max <= yi_min:
+            return 0.0
+
+        intersection = (xi_max - xi_min) * (yi_max - yi_min)
+
+        # Union
+        area1 = box1[2] * box1[3]
+        area2 = box2[2] * box2[3]
+        union = area1 + area2 - intersection
+
+        return intersection / union if union > 0 else 0.0
 
     def _select_primary_score_field(self, existing_score_fields: set) -> Optional[str]:
         """Select primary score field when no combination is specified"""
