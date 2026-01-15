@@ -2,6 +2,7 @@
 import warnings
 import json
 import tempfile
+import copy
 from pathlib import Path
 import numpy as np
 from faster_coco_eval.core.coco import COCO
@@ -594,10 +595,11 @@ class ClassifierCocoEvaluator:
         All annotations treated as same class.
         """
         # Create copies and force all to same category
+        # Use deepcopy to handle binary RLE masks properly
         truth_copy = COCO()
-        truth_copy.dataset = json.loads(json.dumps(truth_coco.dataset))
+        truth_copy.dataset = copy.deepcopy(truth_coco.dataset)
         pred_copy = COCO()
-        pred_copy.dataset = json.loads(json.dumps(preds_coco.dataset))
+        pred_copy.dataset = copy.deepcopy(preds_coco.dataset)
 
         # Force all categories to ID 1
         truth_copy.dataset['categories'] = [{
