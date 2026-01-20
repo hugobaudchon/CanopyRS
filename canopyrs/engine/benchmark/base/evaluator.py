@@ -313,6 +313,21 @@ class CocoEvaluator:
             'size_labels': [s for s in size_labels_with_all if s != 'all']
         }
 
+        def _find_iou_index(target_iou: float) -> int | None:
+            for idx, iou in enumerate(iou_thresholds):
+                if np.isclose(iou, target_iou):
+                    return idx
+            return None
+
+        # Expose common single-threshold metrics when 0.50 or 0.75 are requested
+        for target_iou, suffix in [(0.5, '50'), (0.75, '75')]:
+            idx = _find_iou_index(target_iou)
+            if idx is not None and idx < len(all_results):
+                result = all_results[idx]
+                metrics[f'precision_{suffix}'] = float(result['precision'])
+                metrics[f'recall_{suffix}'] = float(result['recall'])
+                metrics[f'f1_{suffix}'] = float(result['f1'])
+
         # Average per-size over IoU thresholds
         for lbl in size_labels_with_all:
             if lbl == 'all':
