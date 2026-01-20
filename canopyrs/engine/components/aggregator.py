@@ -69,25 +69,29 @@ class AggregatorComponent(BaseComponent):
         # Generate COCO output asynchronously and update the data state
         columns_to_pass = data_state.infer_gdf_columns_to_pass.union({'aggregator_score'})
 
-        future_coco = generate_future_coco(
-            future_key='infer_coco_path',
-            executor=data_state.background_executor,
-            component_name=self.name,
-            component_id=self.component_id,
-            description="Aggregator inference",
-            gdf=results_gdf,
-            tiles_paths_column=tile_path_column_name,
-            polygons_column='geometry',
-            scores_column='aggregator_score',
-            categories_column='segmenter_class' if 'segmenter_class' in results_gdf.columns
-                              else 'detector_class' if 'detector_class' in results_gdf.columns
-                              else None,
-            other_attributes_columns=columns_to_pass,
-            output_path=self.output_path,
-            use_rle_for_labels=False,
-            n_workers=4,
-            coco_categories_list=None
-        )
+        if results_gdf.empty:
+            print(f"[AggregatorComponent] Skip COCO generation: empty results GeoDataFrame.")
+            future_coco = None
+        else:
+            future_coco = generate_future_coco(
+                future_key='infer_coco_path',
+                executor=data_state.background_executor,
+                component_name=self.name,
+                component_id=self.component_id,
+                description="Aggregator inference",
+                gdf=results_gdf,
+                tiles_paths_column=tile_path_column_name,
+                polygons_column='geometry',
+                scores_column='aggregator_score',
+                categories_column='segmenter_class' if 'segmenter_class' in results_gdf.columns
+                                else 'detector_class' if 'detector_class' in results_gdf.columns
+                                else None,
+                other_attributes_columns=columns_to_pass,
+                output_path=self.output_path,
+                use_rle_for_labels=False,
+                n_workers=4,
+                coco_categories_list=None
+            )
 
         return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
 
