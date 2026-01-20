@@ -123,12 +123,17 @@ class SegmenterWrapperBase(ABC):
         # Scale down the masks to a fixed size to reduce memory footprint during postprocessing
         if self.config.pp_down_scale_masks_px and masks.shape[-1] > self.config.pp_down_scale_masks_px:
             resized_list = []
+            original_dtype = masks.dtype
             for i in range(masks.shape[0]):
                 mask_resized = cv2.resize(
-                    masks[i],
+                    masks[i].astype(np.float32, copy=False),  # OpenCV resize does not support boolean arrays
                     (self.config.pp_down_scale_masks_px, self.config.pp_down_scale_masks_px),
                     interpolation=cv2.INTER_LINEAR
                 )
+                if original_dtype == np.bool_:
+                    mask_resized = mask_resized > 0.5  # Restore binary masks after resizing
+                else:
+                    mask_resized = mask_resized.astype(original_dtype, copy=False)
                 resized_list.append(mask_resized)
 
             # Stack them back along the batch dimension if you want a single tensor

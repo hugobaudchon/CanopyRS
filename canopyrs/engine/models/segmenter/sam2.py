@@ -38,7 +38,7 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
     def forward(self,
                 images: List[np.array],
                 boxes: List[np.array],
-                boxes_object_ids: List[int],
+                boxes_object_ids: List[np.array],
                 tiles_idx: List[int],
                 queue: multiprocessing.JoinableQueue):
 
