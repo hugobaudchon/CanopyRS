@@ -8,14 +8,14 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from canopyrs.engine.benchmark.detector.evaluator import CocoEvaluator
+from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator
 from canopyrs.engine.config_parsers import AggregatorConfig, PipelineConfig, InferIOConfig
 from canopyrs.engine.pipeline import Pipeline
 
 
 def eval_single_aggregator(
         output_path: str,
-        preds_coco_json: str,
+        model_gpkg_output: str,
         truth_gdf: str,
         tiles_root: str,
         aoi_gdf: str,
@@ -36,8 +36,8 @@ def eval_single_aggregator(
         # Setup IO config for the aggregator pipeline
         io_config = InferIOConfig(
             input_imagery=None,
-            tiles_path=tiles_root,
-            input_coco=preds_coco_json,
+            tiles_path=str(tiles_root),
+            input_gpkg=str(model_gpkg_output),
             output_folder=str(output_path),
         )
 
@@ -113,7 +113,7 @@ def average_metrics_by_raster(results_df: pd.DataFrame):
 def find_optimal_detector_aggregator(
         output_folder: str,
         raster_names: list[str],
-        preds_coco_jsons: list[str],
+        model_gpkg_outputs: list[str],
         truths_gdfs: list[str],
         aois_gdfs: list[str],
         tiles_roots: list[str],
@@ -122,12 +122,12 @@ def find_optimal_detector_aggregator(
         nms_score_thresholds: list[float],
         eval_iou_threshold: float | list[float],
         n_workers: int,
-        iou_type: str = 'bbox',
+        iou_type: str,
         aggregator_config: AggregatorConfig = None,
 ):
 
-    assert len(raster_names) == len(preds_coco_jsons) == len(truths_gdfs) == len(tiles_roots) == len(aois_gdfs), \
-        "The number of elements in raster_names, preds_coco_jsons, truths_gdfs, tiles_roots and aois_gdfs must be the same."
+    assert len(raster_names) == len(model_gpkg_outputs) == len(truths_gdfs) == len(tiles_roots) == len(aois_gdfs), \
+        "The number of elements in raster_names, model_gpkg_outputs, truths_gdfs, tiles_roots and aois_gdfs must be the same."
 
     if isinstance(eval_iou_threshold, (list, tuple)):
         normalized_iou_thresholds = [float(t) for t in eval_iou_threshold]
@@ -142,7 +142,7 @@ def find_optimal_detector_aggregator(
     tasks = []
     for nms_iou_threshold in nms_iou_thresholds:
         for nms_score_threshold in nms_score_thresholds:
-            for raster_name, preds_coco_json, truth_gdf, tiles_root, aoi_gdf in zip(raster_names, preds_coco_jsons, truths_gdfs, tiles_roots, aois_gdfs):
+            for raster_name, model_gpkg_output, truth_gdf, tiles_root, aoi_gdf in zip(raster_names, model_gpkg_outputs, truths_gdfs, tiles_roots, aois_gdfs):
                 # Create a copy of aggregator config with grid search parameters
                 task_aggregator_config = aggregator_config.model_copy(deep=True)
                 task_aggregator_config.nms_threshold = nms_iou_threshold
@@ -152,7 +152,7 @@ def find_optimal_detector_aggregator(
                     "raster_name": raster_name,
                     "nms_iou_threshold": nms_iou_threshold,
                     "nms_score_threshold": nms_score_threshold,
-                    "preds_coco_json": preds_coco_json,
+                    "model_gpkg_output": model_gpkg_output,
                     "truth_gdf": truth_gdf,
                     "tiles_root": tiles_root,
                     "aoi_gdf": aoi_gdf,
@@ -169,7 +169,7 @@ def find_optimal_detector_aggregator(
             future = executor.submit(
                 eval_single_aggregator,
                 output_path=f"{output_folder}/{params['raster_name']}",
-                preds_coco_json=params["preds_coco_json"],
+                model_gpkg_output=params["model_gpkg_output"],
                 truth_gdf=params["truth_gdf"],
                 tiles_root=params["tiles_root"],
                 aoi_gdf=params["aoi_gdf"],
@@ -202,4 +202,3 @@ def find_optimal_detector_aggregator(
     results_df = average_metrics_by_raster(results_df)
 
     return results_df
-

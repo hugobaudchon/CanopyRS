@@ -1,5 +1,4 @@
-from canopyrs.engine.benchmark.base_benchmarker import BaseBenchmarker
-from canopyrs.engine.benchmark.detector.benchmark import DetectorBenchmarker
-from canopyrs.engine.benchmark.segmenter.benchmark import SegmenterBenchmarker
+from canopyrs.engine.benchmark.detector import DetectorBenchmarker
+from canopyrs.engine.benchmark.segmenter import SegmenterBenchmarker
 
-__all__ = ['BaseBenchmarker', 'DetectorBenchmarker', 'SegmenterBenchmarker']
+__all__ = ['DetectorBenchmarker', 'SegmenterBenchmarker']

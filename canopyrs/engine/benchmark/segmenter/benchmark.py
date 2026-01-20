@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from canopyrs.engine.benchmark.base_benchmarker import BaseBenchmarker
+from canopyrs.engine.benchmark.base.base_benchmarker import BaseBenchmarker
 from canopyrs.engine.config_parsers import SegmenterConfig, DetectorConfig, AggregatorConfig, PipelineConfig
 
 
