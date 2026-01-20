@@ -29,6 +29,7 @@ class Pipeline:
             tiles_path=self.io_config.tiles_path,
             infer_coco_path=self.io_config.input_coco,
             infer_gdf=gpd.read_file(self.io_config.input_gpkg) if self.io_config.input_gpkg else None,
+            infer_gdf_columns_to_pass=set(self.io_config.infer_gdf_columns_to_pass) if self.io_config.infer_gdf_columns_to_pass else set(),
             background_executor=self.background_executor
         )
 
