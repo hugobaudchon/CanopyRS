@@ -317,6 +317,12 @@ class BaseBenchmarker(ABC):
                 for metric in metrics_to_average:
                     weighted_avg_metrics[metric] = (merged_df[metric] * weights).sum() / total_truths
 
+                    # weighted average for single-IoU threshold metrics (e.g., precision_50, recall_75, f1_50, etc.)
+                    for suffix in ['50', '75']:
+                        col_name = f"{metric}_{suffix}"
+                        if col_name in merged_df.columns and merged_df[col_name].notna().all():
+                            weighted_avg_metrics[col_name] = (merged_df[col_name] * weights).sum() / total_truths
+
                     # per-IoU metrics
                     per_iou_col = f"{metric}_per_iou"
                     if per_iou_col in merged_df.columns and merged_df[per_iou_col].notna().all():
