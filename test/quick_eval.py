@@ -21,8 +21,8 @@ def main():
     # CONFIGURE YOUR PATHS HERE
     # ========================================================================
     
-    PREDICTIONS_COCO = "/path/to/predictions.json"
-    GROUND_TRUTH_COCO = "/path/to/ground_truth.json"
+    PREDICTIONS_COCO = "/network/scratch/a/arthur.ouaknine/temp/quebectree_z3_predicted_jan26/2021-09-02-sbl-z3-rgb-cog/2021_09_02_sbl_z3_rgb_cog/2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
+    GROUND_TRUTH_COCO = "/network/scratch/a/arthur.ouaknine/temp/quebectree_z3_labelled_jan26/2021-09-02-sbl-z3-rgb-cog/2021_09_02_sbl_z3_rgb_cog/2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
     
     # Evaluation options
     EVALUATE_CLASS_AGNOSTIC = True  # Set to True for full diagnostic
