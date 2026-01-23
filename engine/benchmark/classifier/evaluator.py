@@ -245,8 +245,8 @@ class ClassifierCocoEvaluator:
         metrics['iou_type'] = iou_type
 
         # Add mIoU computation
-        if hasattr(coco_evaluator, 'eval') and coco_evaluator.eval:
-            miou = self._compute_miou(coco_evaluator.eval)
+        if hasattr(coco_evaluator, 'ious') and coco_evaluator.ious:
+            miou = self._compute_miou(coco_evaluator)
             metrics['mIoU'] = miou
 
         return metrics
@@ -402,27 +402,25 @@ class ClassifierCocoEvaluator:
 
         return report
 
-    def _compute_miou(self, eval_result):
+    def _compute_miou(self, coco_evaluator):
         """Compute mean IoU from COCO evaluation results"""
         try:
-            # The 'matched' key is a dictionary where keys are (imgId, catId) and values are arrays of IoU scores.
-            # We need to flatten these arrays and filter for valid IoU values.
+            # IoU data is stored in coco_evaluator.ious
+            # Format: {(imgId, catId): IoU_matrix}
+            # IoU_matrix is a 2D array [num_detections x num_ground_truths]
             all_ious = []
-            if 'matched' in eval_result:
-                for key, iou_array in eval_result['matched'].items():
-                    # Ensure iou_array is a numpy array and contains numbers
-                    if isinstance(iou_array, np.ndarray):
-                        all_ious.extend(iou_array.tolist())
-                    elif isinstance(iou_array, list): # Fallback for list of lists or similar
-                        for item in iou_array:
-                            if isinstance(item, (int, float)) and item > 0:
-                                all_ious.append(item)
             
-            # Filter valid IoU values (> 0, typically <= 1)
-            valid_ious = np.array([iou for iou in all_ious if iou > 0 and iou <= 1])
-
-            if len(valid_ious) > 0:
-                miou = float(np.mean(valid_ious))
+            if hasattr(coco_evaluator, 'ious') and coco_evaluator.ious:
+                for key, iou_matrix in coco_evaluator.ious.items():
+                    if isinstance(iou_matrix, np.ndarray):
+                        # Flatten the matrix and collect all IoU values
+                        flat_ious = iou_matrix.flatten()
+                        # Filter out zeros and invalid values
+                        valid = flat_ious[(flat_ious > 0) & (flat_ious <= 1)]
+                        all_ious.extend(valid.tolist())
+            
+            if len(all_ious) > 0:
+                miou = float(np.mean(all_ious))
                 return miou
             
             return 0.0
@@ -639,8 +637,8 @@ class ClassifierCocoEvaluator:
             'num_preds': len(pred_copy.getAnnIds()),
         }
 
-        if hasattr(coco_eval, 'eval') and coco_eval.eval:
-            miou = self._compute_miou(coco_eval.eval)
+        if hasattr(coco_eval, 'ious') and coco_eval.ious:
+            miou = self._compute_miou(coco_eval)
             metrics['mIoU'] = miou
 
         return metrics
