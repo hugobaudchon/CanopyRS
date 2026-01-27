@@ -475,6 +475,12 @@ def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
     preds_coco.createIndex()
 
 def filter_min_overlap(gdf, aoi_geom, min_frac=0.4):
+    from shapely.validation import make_valid
+    # Make geometries valid to avoid TopologyException during intersection
+    gdf = gdf.copy()
+    gdf['geometry'] = gdf.geometry.apply(lambda g: make_valid(g) if g is not None and not g.is_valid else g)
+    aoi_geom = make_valid(aoi_geom) if not aoi_geom.is_valid else aoi_geom
+
     orig_areas = gdf.geometry.area
     inter_areas = gdf.geometry.intersection(aoi_geom).area
     with np.errstate(divide='ignore', invalid='ignore'):
