@@ -487,7 +487,7 @@ class BaseBenchmarker(ABC):
         overlap = [c for c in raster_df.columns if c in tile_df.columns and c not in required_cols]
         raster_unique = raster_df.drop(columns=overlap)
 
-        merged = pd.merge(tile_df, raster_unique, on=['location', 'product_name'], how='inner')
+        merged = pd.merge(tile_df, raster_unique, on=['location', 'product_name'], how='left') # using left in case some datasets dont have raster-level metrics
 
         if output_csv is not None:
             output_csv = Path(output_csv)
