@@ -30,9 +30,15 @@ class AggregatorComponent(BaseComponent):
 
         # Determine naming for the aggregated output (using the first tile’s name).
         tiles_path = data_state.infer_gdf[tile_path_column_name].unique().tolist()
-        product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
-            Path(tiles_path[0]).name
-        )
+        try:
+            product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
+                Path(tiles_path[0]).name
+            )
+        except Exception as e:
+            product_name = Path(tiles_path[0]).stem
+            scale_factor = 1.0
+            ground_resolution = None
+
         gpkg_name = GeoPackageNameConvention.create_name(
             product_name=product_name,
             fold=infer_aoi_name,
