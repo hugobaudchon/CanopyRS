@@ -41,12 +41,14 @@ class WandbWriterHook(HookBase):
     A simple Detectron2 hook to log training losses (and other metrics)
     to Weights & Biases (wandb) every few iterations.
     """
-    def __init__(self, cfg, config, train_log_interval: int, wandb_project_name: str, wandb_model_name: str):
+    def __init__(self, cfg, config, train_log_interval: int, wandb_project_name: str, wandb_model_name: str, task: str):
         self.cfg = cfg
         self.config = config
         self.train_log_interval = train_log_interval
         self.wandb_project_name = wandb_project_name
         self.wandb_model_name = wandb_model_name
+        self.task = task
+        assert task in ["detection", "segmentation"], "Task must be either 'detection' or 'segmentation'"
 
     def before_train(self):
         # Initialize wandb with the trainer’s config.
@@ -63,6 +65,12 @@ class WandbWriterHook(HookBase):
             wandb.define_metric("bbox/AP50", summary="max")
             wandb.define_metric("bbox/AP75", summary="max")
             wandb.define_metric("bbox/APs", summary="max")
+
+            if self.task == "segmentation":
+                wandb.define_metric("segm/AP", summary="max")
+                wandb.define_metric("segm/AP50", summary="max")
+                wandb.define_metric("segm/AP75", summary="max")
+                wandb.define_metric("segm/APs", summary="max")
 
             # Convert your lazy config to YAML
             yaml_config = yaml.dump(clean_config(lazyconfig_to_dict(self.cfg)), Dumper=yaml.SafeDumper)
@@ -88,10 +96,11 @@ class WandbWriterHook(HookBase):
             # Retrieve the metrics stored in Detectron2's storage
             metrics = self.trainer.storage.latest()
 
-            # Retrieve total loss if available
-            log_data = {}
-            if "total_loss" in metrics:
-                log_data["total_loss"] = metrics["total_loss"][0]
+            log_data = {
+                key: value[0]
+                for key, value in metrics.items()
+                if "loss" in key and not key[-1].isdigit()
+            }
 
             lr = self.trainer.storage.history("lr").latest()
             log_data["learning_rate"] = lr

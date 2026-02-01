@@ -51,12 +51,31 @@ def parse_args():
         default=None,
         help="Use this score threshold (skip search tool if provided)"
     )
+    parser.add_argument(
+        "--eval_iou_threshold",
+        type=str,
+        default="0.75",
+        help="IoU threshold for raster metrics (e.g., 0.75 for RF1_75 or '50:95' for RF1_50:95)"
+    )
 
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+
+    # Handle IoU threshold parsing (single or 50:95 sweep)
+    if str(args.eval_iou_threshold).lower() == "50:95":
+        eval_iou_threshold = [round(t, 2) for t in [0.50 + 0.05 * i for i in range(10)]]
+    else:
+        try:
+            # Allow comma-separated list for convenience
+            if "," in str(args.eval_iou_threshold):
+                eval_iou_threshold = [float(x) for x in str(args.eval_iou_threshold).split(",")]
+            else:
+                eval_iou_threshold = float(args.eval_iou_threshold)
+        except ValueError:
+            raise ValueError("Invalid eval_iou_threshold. Use a float, comma-separated floats, or '50:95'.")
 
     cfg = DetectorConfig.from_yaml(str(args.detector_config))
     out = args.output_folder.resolve()
@@ -66,6 +85,7 @@ def main():
         output_folder=str(out),
         fold_name=args.fold_name,
         raw_data_root=str(args.data_root.resolve()),
+        eval_iou_threshold=eval_iou_threshold,
     )
 
     agg_cfg = None

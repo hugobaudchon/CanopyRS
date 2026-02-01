@@ -15,11 +15,14 @@ class Detectron2DetectionLabeledRasterCocoDataset(DetectionLabeledRasterCocoData
         labels = tile_info['labels']
         bboxes = []
         segmentations = []
+        area = []
+        iscrowd = []
+        image_id = []
 
         for label in labels:
             # Get bounding box directly from COCO bbox field
-            bbox = label['bbox']
-            bboxes.append(np.array([int(x) for x in bbox]))
+            x, y, w, h = label["bbox"]
+            bboxes.append(np.array([x, y, x + w, y + h], dtype=float))
 
             # Just pass through the segmentation if present
             if 'segmentation' in label and label['segmentation']:
@@ -28,6 +31,10 @@ class Detectron2DetectionLabeledRasterCocoDataset(DetectionLabeledRasterCocoData
                 # Keep explicit None so we can see where we don't have segs
                 segmentations.append(None)
 
+            area.append(label['area'])
+            iscrowd.append(label['iscrowd'])
+            image_id.append(idx)
+
         if self.force_binary_class:
             category_ids = np.array([1 for _ in labels])
         else:
@@ -35,10 +42,6 @@ class Detectron2DetectionLabeledRasterCocoDataset(DetectionLabeledRasterCocoData
                 0 if label['category_id'] is None else label['category_id']
                 for label in labels
             ])
-
-        area = np.array([(bboxe[3] - bboxe[1]) * (bboxe[2] - bboxe[0]) for bboxe in bboxes])
-        iscrowd = np.zeros((len(bboxes),))
-        image_id = np.array([idx])
 
         annotations = {
             'boxes': bboxes,
@@ -109,7 +112,7 @@ def process_single_sample(idx, dataset_instance):
     return record
 
 
-def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
+def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset, segmentation_only: bool = False):
     """
     Convert the custom dataset format to detectron2's dictionary format.
     Single-threaded version.
@@ -130,16 +133,30 @@ def get_dataset_dicts(dataset_instance: DetectionLabeledRasterCocoDataset):
             print("   n_boxes:", len(annotations.get("boxes", [])))
             print("   n_segmentations:", len(annotations.get("segmentations", [])))
             raise e
+
+        if segmentation_only: 
+            # Skip this record if ANY annotation has an empty or missing segmentation
+             annos = record.get("annotations", [])
+             has_empty_seg = any(
+                 ("segmentation" not in obj) 
+                 or (not obj["segmentation"]) #empty list or falsy 
+                 for obj in annos
+             )
+             if has_empty_seg: 
+                continue
+
         dataset_dicts.append(record)
 
     print(f"Conversion complete: {len(dataset_dicts)} samples ready.")
     return dataset_dicts
 
 
+
 def register_detection_dataset(
     fold: str,
     root_path: str | list[str],
     force_binary_class: bool = True,
+    segmentation_only: bool = False
 ):
     """
     Register a custom dataset with detectron2 (no multiprocessing).
@@ -157,7 +174,7 @@ def register_detection_dataset(
 
     DatasetCatalog.register(
         dataset_name,
-        lambda: get_dataset_dicts(dataset)
+        lambda: get_dataset_dicts(dataset, segmentation_only)
     )
 
     MetadataCatalog.get(dataset_name).set(

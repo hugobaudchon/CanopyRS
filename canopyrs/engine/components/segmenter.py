@@ -3,6 +3,7 @@ from pathlib import Path
 import geopandas as gpd
 
 from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset
+from geodataset.utils import GeoPackageNameConvention, TileNameConvention
 
 from canopyrs.engine.components.base import BaseComponent
 from canopyrs.engine.config_parsers import SegmenterConfig
@@ -42,7 +43,7 @@ class SegmenterComponent(BaseComponent):
             )
         else:
             dataset = UnlabeledRasterDataset(
-                fold=infer_aoi_name,
+                fold=None,  # load all tiles,
                 root_path=data_paths,
                 transform=None
             )
@@ -54,6 +55,11 @@ class SegmenterComponent(BaseComponent):
         results_gdf, new_columns = self.combine_as_gdf(
             data_state.infer_gdf, tiles_paths, tiles_masks_polygons, tiles_masks_scores, tiles_masks_objects_ids
         )
+
+        pre_aggregated_gpkg_name = self.get_pre_aggregated_gpkg_name(results_gdf)
+
+        # Save pre-aggregated GeoPackage
+        results_gdf.to_file(pre_aggregated_gpkg_name, driver='GPKG')
 
         # Generate COCO output asynchronously and update the data state
         columns_to_pass = data_state.infer_gdf_columns_to_pass.union(new_columns)
@@ -76,16 +82,37 @@ class SegmenterComponent(BaseComponent):
             coco_categories_list=None
         )
 
-        return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
+        return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco, pre_aggregated_gpkg_name)
+
+    def get_pre_aggregated_gpkg_name(self, infer_gdf: gpd.GeoDataFrame) -> Path:
+        tiles_path = infer_gdf[tile_path_column_name].iat[0]
+        product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
+            Path(tiles_path).name
+        )
+        pre_aggregated_gpkg_name = GeoPackageNameConvention.create_name(
+            product_name=product_name,
+            fold=f'{infer_aoi_name}notaggregated',
+            scale_factor=scale_factor,
+            ground_resolution=ground_resolution
+        )
+        return self.output_path / pre_aggregated_gpkg_name
 
     def update_data_state(self,
                           data_state: DataState,
                           results_gdf: gpd.GeoDataFrame,
                           columns_to_pass: set,
-                          future_coco: tuple) -> DataState:
+                          future_coco: tuple,
+                          pre_aggregated_gpkg_name: Path) -> DataState:
         # Register the component folder
         data_state = self.register_outputs_base(data_state)
         data_state.update_infer_gdf(results_gdf)
+        data_state.register_output_file(
+            self.name,
+            self.component_id,
+            'pre_aggregated_gpkg',
+            pre_aggregated_gpkg_name
+        )
+
         data_state.infer_gdf_columns_to_pass = columns_to_pass
         data_state.side_processes.append(future_coco)
         return data_state

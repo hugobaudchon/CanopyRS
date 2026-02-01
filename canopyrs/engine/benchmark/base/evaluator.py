@@ -1,7 +1,9 @@
 import warnings
+from pathlib import Path
 
 import numpy as np
 import geopandas as gpd
+import rasterio
 from shapely import make_valid
 from shapely.affinity import affine_transform
 from geodataset.utils import get_utm_crs
@@ -13,12 +15,42 @@ from faster_coco_eval.core.faster_eval_api import COCOeval_faster      # speeds 
 class CocoEvaluator:
     small_max_sq_meters = 16
     medium_max_sq_meters = 100
+    gsd_sample_size = 50
+    gsd_rel_tol = 0.01
+
+    size_thresholds_sq_meters = {
+        'tiny': (0, 9),
+        'small': (9, 25),
+        'medium': (25, 49),
+        'large': (49, 100),
+        'giant': (100, float('inf'))
+    }
+    size_labels = ['tiny', 'small', 'medium', 'large', 'giant']
+
+    @classmethod
+    def _get_area_ranges_pixels_from_gsd(cls, ground_resolution: float) -> dict:
+        pixel_area_per_sq_meter = 1 / (ground_resolution ** 2)
+        area_ranges = {}
+        for category, (min_m2, max_m2) in cls.size_thresholds_sq_meters.items():
+            min_px = min_m2 * pixel_area_per_sq_meter
+            max_px = max_m2 * pixel_area_per_sq_meter if max_m2 != float('inf') else 1e10
+            area_ranges[category] = (min_px, max_px)
+        return area_ranges
+
+    @classmethod
+    def get_size_label(cls, area: float, area_ranges: dict) -> str:
+        for label in cls.size_labels:
+            min_a, max_a = area_ranges[label]
+            if min_a <= area < max_a:
+                return label
+        return cls.size_labels[-1]
 
     def tile_level(self,
                    iou_type: str,
                    preds_coco_path: str,
                    truth_coco_path: str,
-                   max_dets: list[int] = (1, 10, 100)) -> dict:
+                   max_dets: list[int] = (1, 10, 100),
+                   images_common_ground_resolution: float=None) -> dict:
 
         truth_coco = COCO(str(truth_coco_path))
         preds_coco = COCO(str(preds_coco_path))
@@ -37,6 +69,20 @@ class CocoEvaluator:
             iouType=iou_type
         )
         coco_evaluator.params.maxDets = max_dets
+
+        if images_common_ground_resolution is not None:
+            area_ranges = self._get_area_ranges_pixels_from_gsd(images_common_ground_resolution)
+            area_rng_list = [
+                [0, 1e10],
+                [area_ranges['tiny'][0], area_ranges['tiny'][1]],
+                [area_ranges['small'][0], area_ranges['small'][1]],
+                [area_ranges['medium'][0], area_ranges['medium'][1]],
+                [area_ranges['large'][0], area_ranges['large'][1]],
+                [area_ranges['giant'][0], area_ranges['giant'][1]]
+            ]
+            area_rng_lbl = ['all', 'tiny', 'small', 'medium', 'large', 'giant']
+            coco_evaluator.params.areaRng = area_rng_list
+            coco_evaluator.params.areaRngLbl = area_rng_lbl
         coco_evaluator.evaluate()
         coco_evaluator.accumulate()
 
@@ -60,15 +106,39 @@ class CocoEvaluator:
                                           ground_resolution: float = 0.045,
                                           iou_threshold: float = 0.5) -> dict:
         """
-        Compute precision, recall, and F1 score at a given IoU threshold
-        between prediction and ground-truth GeoDataFrames.
+        Backward-compatible single-IoU evaluation wrapper.
+        """
+        return CocoEvaluator.raster_level_multi_iou_thresholds(
+            iou_type=iou_type,
+            preds_gpkg_path=preds_gpkg_path,
+            truth_gpkg_path=truth_gpkg_path,
+            aoi_gpkg_path=aoi_gpkg_path,
+            ground_resolution=ground_resolution,
+            iou_thresholds=[float(iou_threshold)]
+        )
+
+    @staticmethod
+    def raster_level_multi_iou_thresholds(iou_type: str,
+                                          preds_gpkg_path: str,
+                                          truth_gpkg_path: str,
+                                          aoi_gpkg_path: str or None,
+                                          ground_resolution: float = 0.045,
+                                          iou_thresholds: list[float] | None = None) -> dict:
+        """
+        Compute precision, recall, and F1 averaged over one or more IoU thresholds
+        between prediction and ground-truth GeoDataFrames (RF1-style).
 
         iou_type: type of IoU to compute (e.g., 'bbox', 'segm').
         preds_gpkg_path: path to GeoDataFrame with a 'geometry' column and a 'score', 'aggregator_score', 'detector_score' or 'segmentation_score' column (will be checked in that order).
         truth_gpkg_path: path to GeoDataFrame with a 'geometry' column.
         aoi_gpkg_path: path to GeoDataFrame with a 'geometry' column (optional).
-        iou_threshold: IoU threshold for a match (default: 0.5).
+        iou_thresholds: List of IoU thresholds to average over (e.g. [0.50, 0.55, ..., 0.95]).
         """
+
+        if iou_thresholds is None or len(iou_thresholds) == 0:
+            iou_thresholds = [0.5]
+        # De-duplicate and sort for deterministic output
+        iou_thresholds = sorted({float(t) for t in iou_thresholds})
 
         # Load the prediction and ground truth GeoDataFrames
         infer_gdf = gpd.read_file(preds_gpkg_path)
@@ -110,7 +180,9 @@ class CocoEvaluator:
 
         truth_gdf, infer_gdf = move_gdfs_to_ground_resolution(truth_gdf, infer_gdf, ground_resolution)
 
-        # Sort predictions by descending score
+        area_ranges = CocoEvaluator._get_area_ranges_pixels_from_gsd(ground_resolution)
+        size_labels = CocoEvaluator.size_labels
+
         score_column_name = None
         for score_col in ['score', 'aggregator_score', 'detector_score', 'segmentation_score']:
             if score_col in infer_gdf.columns:
@@ -124,49 +196,153 @@ class CocoEvaluator:
         infer_gdf = infer_gdf.sort_values(score_column_name, ascending=False).reset_index(drop=True)
         truth_gdf = truth_gdf.reset_index(drop=True)
 
-        # Add a matched flag to ground truths
-        truth_gdf["matched"] = False
+        # Precompute size categories based on area (pixel space after transform), after sorting/resets
+        gt_sizes = [CocoEvaluator.get_size_label(a, area_ranges) for a in truth_gdf.geometry.area]
+        pred_sizes = [CocoEvaluator.get_size_label(a, area_ranges) for a in infer_gdf.geometry.area]
+
+        gt_counts = {lbl: 0 for lbl in size_labels}
+        pred_counts = {lbl: 0 for lbl in size_labels}
+        for lbl in gt_sizes:
+            gt_counts[lbl] += 1
+        for lbl in pred_sizes:
+            pred_counts[lbl] += 1
+        print(f"GT per size: {gt_counts} | Preds per size: {pred_counts}")
+
         truth_sindex = truth_gdf.sindex
 
-        tp = 0  # True positives
-        fp = 0  # False positives
-
-        # Greedy match each prediction
+        # Pre-compute candidate IoUs for each prediction to reuse across thresholds
+        candidate_ious: list[list[tuple[int, float]]] = []
         for _, pred in infer_gdf.iterrows():
-            # Bounding-box preselection for potential matches
             candidates = list(truth_sindex.intersection(pred.geometry.bounds))
-            best_iou = 0
-            best_idx = None
-
-            # Find best IoU among unmatched candidates
+            cand_iou: list[tuple[int, float]] = []
             for idx in candidates:
-                if truth_gdf.at[idx, "matched"]:
-                    continue
                 truth_geom = truth_gdf.at[idx, "geometry"]
                 inter_area = pred.geometry.intersection(truth_geom).area
                 union_area = pred.geometry.union(truth_geom).area
-                iou = inter_area / union_area if union_area > 0 else 0
-                if iou > best_iou:
-                    best_iou = iou
-                    best_idx = idx
+                iou = inter_area / union_area if union_area > 0 else 0.0
+                cand_iou.append((idx, iou))
+            # Sort descending IoU to speed thresholded greedy matching
+            cand_iou.sort(key=lambda x: x[1], reverse=True)
+            candidate_ious.append(cand_iou)
 
-            # Assign match or count as false positive
-            if best_iou >= iou_threshold:
-                tp += 1
-                truth_gdf.at[best_idx, "matched"] = True
-            else:
-                fp += 1
+        size_labels_with_all = ['all'] + size_labels
+        per_size_iou_results: dict[str, list[dict]] = {lbl: [] for lbl in size_labels_with_all}
 
-        # False negatives: ground truths never matched
-        fn = (~truth_gdf["matched"]).sum()
+        # Precompute index lists per size for reuse
+        gt_indices_by_size = {lbl: [i for i, s in enumerate(gt_sizes) if lbl == 'all' or s == lbl]
+                              for lbl in size_labels_with_all}
+        pred_indices_by_size = {lbl: [i for i, s in enumerate(pred_sizes) if lbl == 'all' or s == lbl]
+                                for lbl in size_labels_with_all}
 
-        # Calculate metrics
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        for iou_thresh in iou_thresholds:
+            for size_lbl in size_labels_with_all:
+                gt_indices = gt_indices_by_size[size_lbl]
+                pred_indices = pred_indices_by_size[size_lbl]
 
-        metrics = {'precision': precision, 'recall': recall, 'f1': f1, 'tp': tp, 'fp': fp, 'fn': fn,
-                   'num_truths': len(truth_gdf), 'num_preds': len(infer_gdf), 'num_images': 1}
+                if not gt_indices and not pred_indices:
+                    per_size_iou_results[size_lbl].append({
+                        'iou_threshold': iou_thresh,
+                        'precision': 0.0,
+                        'recall': 0.0,
+                        'f1': 0.0,
+                        'tp': 0,
+                        'fp': 0,
+                        'fn': 0
+                    })
+                    continue
+
+                gt_idx_to_local = {idx: local for local, idx in enumerate(gt_indices)}
+                matched = np.zeros(len(gt_indices), dtype=bool)
+                tp = 0
+                fp = 0
+
+                for pred_idx in pred_indices:
+                    cand_list = candidate_ious[pred_idx]
+                    match_local_idx = None
+                    for gt_idx, iou in cand_list:
+                        if iou < iou_thresh:
+                            break  # remaining candidates have lower IoU
+                        if gt_idx not in gt_idx_to_local:
+                            continue
+                        local_idx = gt_idx_to_local[gt_idx]
+                        if not matched[local_idx]:
+                            match_local_idx = local_idx
+                            break
+                    if match_local_idx is not None:
+                        tp += 1
+                        matched[match_local_idx] = True
+                    else:
+                        fp += 1
+
+                fn = (~matched).sum()
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+                per_size_iou_results[size_lbl].append({
+                    'iou_threshold': iou_thresh,
+                    'precision': precision,
+                    'recall': recall,
+                    'f1': f1,
+                    'tp': tp,
+                    'fp': fp,
+                    'fn': fn
+                })
+
+        # Aggregate across IoU thresholds (RF1_50:95-style averaging) for the "all" bin
+        all_results = per_size_iou_results['all']
+        precisions = [m['precision'] for m in all_results]
+        recalls = [m['recall'] for m in all_results]
+        f1s = [m['f1'] for m in all_results]
+
+        metrics = {
+            'precision': float(np.mean(precisions)) if precisions else 0.0,
+            'recall': float(np.mean(recalls)) if recalls else 0.0,
+            'f1': float(np.mean(f1s)) if f1s else 0.0,
+            'tp': all_results[0]['tp'] if all_results else 0,
+            'fp': all_results[0]['fp'] if all_results else 0,
+            'fn': all_results[0]['fn'] if all_results else 0,
+            'num_truths': len(truth_gdf),
+            'num_preds': len(infer_gdf),
+            'num_images': 1,
+            # Keep sorted per-IoU scores to log downstream
+            'precision_per_iou': precisions,
+            'recall_per_iou': recalls,
+            'f1_per_iou': f1s,
+            'iou_thresholds': iou_thresholds,
+            'size_labels': [s for s in size_labels_with_all if s != 'all']
+        }
+
+        def _find_iou_index(target_iou: float) -> int | None:
+            for idx, iou in enumerate(iou_thresholds):
+                if np.isclose(iou, target_iou):
+                    return idx
+            return None
+
+        # Expose common single-threshold metrics when 0.50 or 0.75 are requested
+        for target_iou, suffix in [(0.5, '50'), (0.75, '75')]:
+            idx = _find_iou_index(target_iou)
+            if idx is not None and idx < len(all_results):
+                result = all_results[idx]
+                metrics[f'precision_{suffix}'] = float(result['precision'])
+                metrics[f'recall_{suffix}'] = float(result['recall'])
+                metrics[f'f1_{suffix}'] = float(result['f1'])
+
+        # Average per-size over IoU thresholds
+        for lbl in size_labels_with_all:
+            if lbl == 'all':
+                continue
+            results = per_size_iou_results[lbl]
+            prec_list = [m['precision'] for m in results]
+            rec_list = [m['recall'] for m in results]
+            f1_list = [m['f1'] for m in results]
+            metrics[f'precision_{lbl}'] = float(np.mean(prec_list)) if prec_list else 0.0
+            metrics[f'recall_{lbl}'] = float(np.mean(rec_list)) if rec_list else 0.0
+            metrics[f'f1_{lbl}'] = float(np.mean(f1_list)) if f1_list else 0.0
+            metrics[f'precision_per_iou_{lbl}'] = [float(m['precision']) for m in results]
+            metrics[f'recall_per_iou_{lbl}'] = [float(m['recall']) for m in results]
+            metrics[f'f1_per_iou_{lbl}'] = [float(m['f1']) for m in results]
+
         print(metrics)
 
         return metrics
@@ -298,58 +474,13 @@ def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
     preds_coco.dataset['annotations'] = new_preds_annotations
     preds_coco.createIndex()
 
-
-def gdf_to_coco_single_image(gdf: gpd.GeoDataFrame, width: int, height: int, is_ground_truth: bool):
-    geometries = gdf['geometry'].tolist()
-    scores = gdf['aggregator_score'].tolist() if not is_ground_truth else None
-    categories = [1] * len(geometries)
-    image_id = 1
-    annotations = []
-
-    for i, geometry in enumerate(geometries):
-        if geometry.is_empty or not geometry.is_valid:
-            continue
-
-        if geometry.geom_type == "Polygon":
-            segmentation = [np.array(geometry.exterior.coords).flatten().tolist()]
-        elif geometry.geom_type == "MultiPolygon":
-            segmentation = []
-            for polygon in geometry.geoms:
-                segmentation.append(np.array(polygon.exterior.coords).flatten().tolist())
-        else:
-            raise ValueError(f"Unsupported geometry type: {geometry.geom_type}")
-
-        annotation = {
-            'id': i + 1,
-            'image_id': image_id,
-            'category_id': categories[i],
-            'segmentation': segmentation,
-            'area': geometry.area,
-            'bbox': list(geometry.bounds),
-            'iscrowd': 0
-        }
-
-        if not is_ground_truth:
-            annotation['score'] = scores[i]
-
-        annotations.append(annotation)
-
-    coco = {
-        'images': [{
-            'id': image_id,
-            'file_name': 'dummy_raster_name.tif',
-            'width': width,
-            'height': height
-        }],
-        'annotations': annotations,
-        'categories': [{
-            'id': 1, 'name': 'object'
-        }]
-    }
-    return coco
-
-
 def filter_min_overlap(gdf, aoi_geom, min_frac=0.4):
+    from shapely.validation import make_valid
+    # Make geometries valid to avoid TopologyException during intersection
+    gdf = gdf.copy()
+    gdf['geometry'] = gdf.geometry.apply(lambda g: make_valid(g) if g is not None and not g.is_valid else g)
+    aoi_geom = make_valid(aoi_geom) if not aoi_geom.is_valid else aoi_geom
+
     orig_areas = gdf.geometry.area
     inter_areas = gdf.geometry.intersection(aoi_geom).area
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -389,35 +520,49 @@ class Summarize2COCOEval(COCOeval_faster):
             return mean_s, stat_string
 
         def _summarizeDets():
-            # Now 15 metrics instead of 13.
-            stats = np.zeros((15,))
-            stats_strings = ['' for _ in range(15)]
+            area_labels = set(self.params.areaRngLbl)
+            use_extended_sizes = all(label in area_labels for label in ['tiny', 'giant'])
+
+            stats: list[float] = []
+            stats_strings: list[str] = []
+
+            def push(ap=1, iouThr=None, areaRng='all', maxDets=100):
+                value, stat_string = _summarize(ap, iouThr=iouThr, areaRng=areaRng, maxDets=maxDets)
+                stats.append(value)
+                stats_strings.append(stat_string)
 
             # AP metrics
-            stats[0], stats_strings[0] = _summarize(1, maxDets=self.params.maxDets[max_dets_index])
-            stats[1], stats_strings[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
-            stats[2], stats_strings[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
-            stats[3], stats_strings[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
-            stats[4], stats_strings[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
-            stats[5], stats_strings[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
+            push(1, maxDets=self.params.maxDets[max_dets_index])
+            push(1, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
+            push(1, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
 
-            # AR metrics (average recall over different max detections)
-            stats[6], stats_strings[6] = _summarize(0, maxDets=self.params.maxDets[0])
-            stats[7], stats_strings[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8], stats_strings[8] = _summarize(0, maxDets=self.params.maxDets[2])
-            stats[9], stats_strings[9] = (_summarize(0, maxDets=self.params.maxDets[3])
-                                          if len(self.params.maxDets) > 3
-                                          else _summarize(0, maxDets=self.params.maxDets[2]))
+            if use_extended_sizes:
+                push(1, areaRng='tiny', maxDets=self.params.maxDets[max_dets_index])
+            push(1, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
+            push(1, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
+            push(1, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
+            if use_extended_sizes:
+                push(1, areaRng='giant', maxDets=self.params.maxDets[max_dets_index])
 
-            # New: AR at specific IoU thresholds (mAR50 and mAR75)
-            stats[10], stats_strings[10] = _summarize(0, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
-            stats[11], stats_strings[11] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
+            # AR metrics
+            push(0, maxDets=self.params.maxDets[0])
+            push(0, maxDets=self.params.maxDets[1])
+            push(0, maxDets=self.params.maxDets[2])
+            if len(self.params.maxDets) > 3:
+                push(0, maxDets=self.params.maxDets[3])
 
-            # AR for different object sizes
-            stats[12], stats_strings[12] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
-            stats[13], stats_strings[13] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
-            stats[14], stats_strings[14] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
-            return stats, stats_strings
+            push(0, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
+            push(0, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
+
+            if use_extended_sizes:
+                push(0, areaRng='tiny', maxDets=self.params.maxDets[max_dets_index])
+            push(0, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
+            push(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
+            push(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
+            if use_extended_sizes:
+                push(0, areaRng='giant', maxDets=self.params.maxDets[max_dets_index])
+
+            return np.array(stats), stats_strings
 
         def _summarizeKps():
             stats = np.zeros((10,))
@@ -449,10 +594,45 @@ class Summarize2COCOEval(COCOeval_faster):
     def summarize_to_dict(self):
         self.summarize_custom()
         stats = self.stats
-        metric_names = [
-            "AP", "AP50", "AP75", "AP_small", "AP_medium", "AP_large",
-            "AR_1", "AR_10", "AR_100", "AR", "AR50", "AR75", "AR_small", "AR_medium", "AR_large"
-        ]
+        iou_type = self.params.iouType
+
+        # Build metric names in the exact order metrics are pushed in summarize_custom()
+        if iou_type == 'keypoints':
+            metric_names = [
+                "AP", "AP50", "AP75", "AP_medium", "AP_large",
+                "AR", "AR50", "AR75", "AR_medium", "AR_large",
+            ]
+            ar_names: list[str] = ["AR"]
+        else:
+            area_labels = set(self.params.areaRngLbl)
+            use_extended_sizes = all(label in area_labels for label in ['tiny', 'giant'])
+
+            metric_names = ["AP", "AP50", "AP75"]
+            if use_extended_sizes:
+                metric_names.append("AP_tiny")
+            metric_names.extend(["AP_small", "AP_medium", "AP_large"])
+            if use_extended_sizes:
+                metric_names.append("AP_giant")
+
+            ar_names: list[str] = []
+            for max_det in self.params.maxDets[:3]:
+                ar_names.append(f"AR_{max_det}")
+            if len(self.params.maxDets) > 3:
+                ar_names.append(f"AR_{self.params.maxDets[3]}")
+            metric_names.extend(ar_names)
+
+            metric_names.extend(["AR50", "AR75"])
+
+            if use_extended_sizes:
+                metric_names.append("AR_tiny")
+            metric_names.extend(["AR_small", "AR_medium", "AR_large"])
+            if use_extended_sizes:
+                metric_names.append("AR_giant")
+
         metrics_dict = {name: float(value) for name, value in zip(metric_names, stats)}
+
+        # Provide a plain 'AR' alias (largest maxDets) for callers expecting it.
+        if iou_type != 'keypoints' and ar_names:
+            metrics_dict.setdefault("AR", metrics_dict[ar_names[-1]])
+
         return metrics_dict
-    
