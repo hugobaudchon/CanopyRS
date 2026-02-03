@@ -115,6 +115,7 @@ class HFDatasetTools:
     @staticmethod
     def download_and_extract_huggingface_dataset(hf_dataset_name: str,
                                                  root_output_path: str,
+                                                 folds: list[str] = None,
                                                  cleanup_hf_cache: bool = True,
                                                  cleanup_hf_cache_temp_dir: str = './temp_hf_cache'):
         """
@@ -137,12 +138,40 @@ class HFDatasetTools:
           - 'image': a PIL Image (decoded already)
           - 'tile_metadata': dictionary with keys like 'crs', 'transform', 'bounds', 'width', 'height', etc.
           - Optionally, top-level 'crs' and 'transform' can override those in tile_metadata.
+
+        Args:
+            hf_dataset_name: Name of the HuggingFace dataset
+            root_output_path: Root path to save the extracted dataset
+            folds: List of folds to download (e.g., ['train', 'valid', 'test']). If None, downloads all folds.
+            cleanup_hf_cache: Whether to cleanup the HuggingFace cache after download
+            cleanup_hf_cache_temp_dir: Temporary directory for HuggingFace cache
         """
         # Download the dataset from HF Hub.
-        if cleanup_hf_cache:
-            dataset = load_dataset(hf_dataset_name, cache_dir=cleanup_hf_cache_temp_dir)
+        # Prepare kwargs for load_dataset
+        load_kwargs = {'cache_dir': cleanup_hf_cache_temp_dir} if cleanup_hf_cache else {}
+
+        # Map internal fold names to HuggingFace split names
+        # HuggingFace uses 'validation' while we use 'valid' internally
+        fold_to_split_mapping = {'train': 'train', 'valid': 'validation', 'test': 'test'}
+
+        if folds is not None:
+            # Convert internal fold names to HF split names and download each split
+            hf_splits = [fold_to_split_mapping.get(fold, fold) for fold in folds]
+            dataset = {
+                fold: load_dataset(hf_dataset_name, split=hf_split, **load_kwargs)
+                for fold, hf_split in zip(folds, hf_splits)
+            }
         else:
-            dataset = load_dataset(hf_dataset_name)
+            # Download all splits - returns a DatasetDict
+            dataset_dict = load_dataset(hf_dataset_name, **load_kwargs)
+
+            # Map HF split names back to our internal fold names
+            reverse_mapping = {v: k for k, v in fold_to_split_mapping.items()}
+            dataset = {
+                reverse_mapping.get(split_name, split_name): ds
+                for split_name, ds in dataset_dict.items()
+            }
+
         out_base = Path(root_output_path)
         out_base.mkdir(parents=True, exist_ok=True)
 
@@ -155,7 +184,6 @@ class HFDatasetTools:
                     loc = record['location']
                     raster = record['raster_name']
                     fold = record['fold']
-                    tile_name = record['tile_name']
                 except KeyError as e:
                     raise KeyError(f"Expected key missing in record: {e}")
 
@@ -256,7 +284,14 @@ class HFDatasetTools:
 
                   # Remove the temporary HF cache directory if cleanup is enabled.
         if cleanup_hf_cache:
-            dataset.cleanup_cache_files()
+            # Cleanup cache files for each dataset
+            for ds in dataset.values():
+                try:
+                    ds.cleanup_cache_files()
+                except Exception as e:
+                    print(f"Warning: Unable to cleanup dataset cache files. {e}")
+
+            # Remove the temporary HF cache directory
             try:
                 if os.path.exists(cleanup_hf_cache_temp_dir):
                     shutil.rmtree(cleanup_hf_cache_temp_dir)

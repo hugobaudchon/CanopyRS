@@ -37,6 +37,7 @@ class BasePreprocessedDataset(ABC):
         HFDatasetTools.download_and_extract_huggingface_dataset(
             hf_dataset_name=f'{hf_root}/{self.dataset_name}',
             root_output_path=root_output_path,
+            folds=folds,
             cleanup_hf_cache=True,
             cleanup_hf_cache_temp_dir=f"{root_output_path}/hf_cache_temp"
         )
