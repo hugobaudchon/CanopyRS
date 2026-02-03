@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from faster_coco_eval.core.coco import COCO
 from faster_coco_eval.core.faster_eval_api import COCOeval_faster
+from pycocotools import mask as mask_util
 from typing import Optional, Dict, List
 from dataclasses import dataclass, field as dataclass_field
 from enum import Enum
@@ -130,7 +131,8 @@ class ClassifierCocoEvaluator:
                    max_dets: list[int] = (1, 10, 100),
                    evaluate_bbox: bool = False,
                    score_combination: Optional[Dict] = None,
-                   evaluate_class_agnostic: bool = False) -> dict:
+                   evaluate_class_agnostic: bool = False,
+                   min_gt_coverage: float = 0.0) -> dict:
         """
         Tile-level evaluation for instance segmentation with classes.
 
@@ -142,6 +144,10 @@ class ClassifierCocoEvaluator:
             score_combination: Dict with 'weights' and 'method' for scores
             evaluate_class_agnostic: If True, also compute class-agnostic
                 segmentation metrics (ignores category_id)
+            min_gt_coverage: Optional filter to exclude tiles with too little
+                GT annotation coverage. Coverage is computed per tile as:
+                (sum of GT mask areas) / (image_width * image_height).
+                Set to 0.0 to disable.
 
         Returns:
             dict: Metrics dictionary with 'segm' key (and optionally 'bbox',
@@ -172,6 +178,23 @@ class ClassifierCocoEvaluator:
         
         # Validate alignment quality
         self._validate_alignment(alignment_report)
+
+        # Optional: filter out tiles with very low GT coverage
+        if min_gt_coverage > 0:
+            truth_coco, preds_coco, filter_report = self._filter_by_min_gt_coverage(
+                truth_coco=truth_coco,
+                preds_coco=preds_coco,
+                min_gt_coverage=min_gt_coverage
+            )
+            if self.verbose:
+                print("\n" + "="*70)
+                print("GT COVERAGE FILTER")
+                print("="*70)
+                print("min_gt_coverage: {:.3%}".format(min_gt_coverage))
+                print("Images kept: {} / {}".format(filter_report['num_images_kept'], filter_report['num_images_before']))
+                print("Images dropped: {}".format(filter_report['num_images_dropped']))
+                print("GT ann kept: {} / {}".format(filter_report['num_gt_anns_kept'], filter_report['num_gt_anns_before']))
+                print("Pred ann kept: {} / {}".format(filter_report['num_pred_anns_kept'], filter_report['num_pred_anns_before']))
 
         results = {}
         # Always evaluate segmentation (primary metric for classification)
@@ -209,6 +232,75 @@ class ClassifierCocoEvaluator:
             return results
         else:
             return segm_metrics
+
+    def _filter_by_min_gt_coverage(self, truth_coco: COCO, preds_coco: COCO,
+                                    min_gt_coverage: float):
+        gt_images = truth_coco.dataset.get('images', [])
+        gt_anns = truth_coco.dataset.get('annotations', [])
+        pred_images = preds_coco.dataset.get('images', [])
+        pred_anns = preds_coco.dataset.get('annotations', [])
+
+        num_images_before = len(gt_images)
+        num_gt_anns_before = len(gt_anns)
+        num_pred_anns_before = len(pred_anns)
+
+        gt_area_by_img = {}
+        for ann in gt_anns:
+            img_id = ann.get('image_id')
+            if img_id is None:
+                continue
+
+            area = ann.get('area')
+            if area is None:
+                seg = ann.get('segmentation')
+                if isinstance(seg, dict):
+                    try:
+                        area = float(mask_util.area(seg))
+                    except Exception:
+                        area = 0.0
+                else:
+                    area = 0.0
+
+            gt_area_by_img[img_id] = gt_area_by_img.get(img_id, 0.0) + float(area)
+
+        kept_img_ids = set()
+        new_gt_images = []
+        for img in gt_images:
+            img_id = img.get('id')
+            w = float(img.get('width', 0) or 0)
+            h = float(img.get('height', 0) or 0)
+            denom = w * h
+            if denom <= 0:
+                continue
+
+            cov = gt_area_by_img.get(img_id, 0.0) / denom
+            if cov >= min_gt_coverage:
+                kept_img_ids.add(img_id)
+                new_gt_images.append(img)
+
+        new_gt_anns = [ann for ann in gt_anns if ann.get('image_id') in kept_img_ids]
+        new_pred_images = [img for img in pred_images if img.get('id') in kept_img_ids]
+        new_pred_anns = [ann for ann in pred_anns if ann.get('image_id') in kept_img_ids]
+
+        truth_coco.dataset['images'] = new_gt_images
+        truth_coco.dataset['annotations'] = new_gt_anns
+        truth_coco.createIndex()
+
+        preds_coco.dataset['images'] = new_pred_images
+        preds_coco.dataset['annotations'] = new_pred_anns
+        preds_coco.createIndex()
+
+        report = {
+            'num_images_before': num_images_before,
+            'num_images_kept': len(new_gt_images),
+            'num_images_dropped': num_images_before - len(new_gt_images),
+            'num_gt_anns_before': num_gt_anns_before,
+            'num_gt_anns_kept': len(new_gt_anns),
+            'num_pred_anns_before': num_pred_anns_before,
+            'num_pred_anns_kept': len(new_pred_anns),
+        }
+
+        return truth_coco, preds_coco, report
 
     def _evaluate_single_iou_type(self, truth_coco: COCO, preds_coco: COCO, 
                                   iou_type: str, max_dets: list[int]) -> dict:
