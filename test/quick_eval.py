@@ -27,6 +27,7 @@ def main():
     # Evaluation options
     EVALUATE_CLASS_AGNOSTIC = True  # Set to True for full diagnostic
     EVALUATE_BBOX = False           # Set to True to also check bbox metrics
+    MIN_GT_COVERAGE = 0.02          # 2% minimum GT mask coverage per tile
     
     # ========================================================================
     # END CONFIGURATION
@@ -58,7 +59,8 @@ def main():
         preds_coco_path=PREDICTIONS_COCO,
         truth_coco_path=GROUND_TRUTH_COCO,
         evaluate_class_agnostic=EVALUATE_CLASS_AGNOSTIC,
-        evaluate_bbox=EVALUATE_BBOX
+        evaluate_bbox=EVALUATE_BBOX,
+        min_gt_coverage=MIN_GT_COVERAGE
     )
     
     # Print summary
