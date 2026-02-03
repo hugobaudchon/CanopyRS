@@ -39,6 +39,13 @@ dependencies = [
     "wandb>=0.19"
 ]
 
+[project.optional-dependencies]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/hugobaudchon/CanopyRS"
 Repository = "https://github.com/hugobaudchon/CanopyRS"
