@@ -54,7 +54,7 @@ def pipeline_main(args):
     else:
         raise ValueError("Either provide an io config file or pass imagery/tiles path and output path as arguments.")
 
-    pipeline = Pipeline(io_config, config)
+    pipeline = Pipeline.from_config(io_config, config)
     pipeline()
 
 

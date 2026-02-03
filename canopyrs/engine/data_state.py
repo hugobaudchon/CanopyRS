@@ -11,6 +11,7 @@ from canopyrs.engine.utils import get_component_folder_name, object_id_column_na
 class DataState:
     imagery_path: str = None
     parent_output_path: str = None
+    product_name: str = None  # Derived from imagery filename or "tiled_input" if only tiles
 
     tiles_path: str = None
 
@@ -78,8 +79,26 @@ class DataState:
         """Get all registered output files organized by component."""
         return self.component_output_files
 
-    def clean_side_processes(self):
+    def clean_side_processes(self, key: str = None):
+        """
+        Wait for and process side processes.
+
+        Args:
+            key: If provided, only process side processes for this attribute.
+                 If None, process all side processes.
+        """
+        to_process = []
+        to_keep = []
+
         for side_process in self.side_processes:
+            if key is None or (isinstance(side_process, tuple) and side_process[0] == key):
+                to_process.append(side_process)
+            else:
+                to_keep.append(side_process)
+
+        self.side_processes = to_keep
+
+        for side_process in to_process:
             if isinstance(side_process, tuple):
                 attribute_name = side_process[0]
                 future_or_result = side_process[1]

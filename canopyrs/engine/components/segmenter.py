@@ -1,158 +1,157 @@
+"""
+SegmenterComponent with simplified architecture.
+
+Single __call__() method returns flattened GDF with new geometries (masks).
+Pipeline handles merging with existing GDF (to preserve detector columns) and I/O.
+"""
+
 from pathlib import Path
+from typing import Set
 
 import geopandas as gpd
 
 from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset
-from geodataset.utils import GeoPackageNameConvention, TileNameConvention
 
-from canopyrs.engine.components.base import BaseComponent
+from canopyrs.engine.constants import Col, StateKey, INFER_AOI_NAME
+from canopyrs.engine.components.base import BaseComponent, ComponentResult, validate_requirements
 from canopyrs.engine.config_parsers import SegmenterConfig
 from canopyrs.engine.data_state import DataState
 from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
-from canopyrs.engine.utils import infer_aoi_name, generate_future_coco, object_id_column_name, tile_path_column_name
 
 
 class SegmenterComponent(BaseComponent):
+    """
+    Runs instance segmentation on image tiles.
+
+    Modes:
+        - With box prompts: Requires infer_coco_path with detection boxes
+        - Without box prompts: Runs segmentation on full tiles
+
+    Requirements:
+        - tiles_path: Directory containing tiles
+        - infer_coco_path + infer_gdf: If model requires box prompts
+
+    Produces:
+        - infer_gdf: GeoDataFrame with segmented polygons
+        - Columns: segmenter_score (+ preserves detector columns if present)
+    """
+
     name = 'segmenter'
 
-    def __init__(self, config: SegmenterConfig, parent_output_path: str, component_id: int):
-        super().__init__(config, parent_output_path, component_id)
-        if config.model in SEGMENTER_REGISTRY:
-            self.segmenter = SEGMENTER_REGISTRY[config.model](config)
-        else:
-            raise ValueError(f'Invalid detector model {config.model}')
+    BASE_REQUIRES_STATE = {StateKey.TILES_PATH}
+    BASE_REQUIRES_COLUMNS: Set[str] = set()
 
-    def __call__(self, data_state: DataState) -> DataState:
-        # Find the tiles (and the COCO file for box prompts if required)
+    BASE_PRODUCES_STATE = {StateKey.INFER_GDF, StateKey.INFER_COCO_PATH}
+    BASE_PRODUCES_COLUMNS = {Col.GEOMETRY, Col.OBJECT_ID, Col.TILE_PATH, Col.SEGMENTER_SCORE}
+
+    BASE_STATE_HINTS = {
+        StateKey.TILES_PATH: "Segmenter needs tiles to process. Add a tilerizer before segmenter.",
+        StateKey.INFER_COCO_PATH: "This segmenter model requires box prompts from a COCO file.",
+        StateKey.INFER_GDF: "This segmenter model requires a GeoDataFrame with detection boxes.",
+    }
+
+    BASE_COLUMN_HINTS = {
+        Col.OBJECT_ID: "Segmenter needs object IDs to associate masks with detections.",
+    }
+
+    def __init__(
+        self,
+        config: SegmenterConfig,
+        parent_output_path: str = None,
+        component_id: int = None
+    ):
+        super().__init__(config, parent_output_path, component_id)
+
+        # Get model class (without instantiating) to check requirements
+        if config.model not in SEGMENTER_REGISTRY:
+            raise ValueError(f'Invalid segmenter model: {config.model}')
+        self._model_class = SEGMENTER_REGISTRY.get(config.model)
+
+        # Set base requirements
+        self.requires_state = set(self.BASE_REQUIRES_STATE)
+        self.requires_columns = set(self.BASE_REQUIRES_COLUMNS)
+        self.produces_state = set(self.BASE_PRODUCES_STATE)
+        self.produces_columns = set(self.BASE_PRODUCES_COLUMNS)
+
+        # Set hints
+        self.state_hints = dict(self.BASE_STATE_HINTS)
+        self.column_hints = dict(self.BASE_COLUMN_HINTS)
+
+        # Add model-specific requirements
+        if self._model_class.REQUIRES_BOX_PROMPT:
+            self.requires_state.add(StateKey.INFER_COCO_PATH)
+            self.state_hints[StateKey.INFER_COCO_PATH] = (
+                f"The '{config.model}' segmenter requires box prompts. "
+                f"Add a detector before segmenter."
+            )
+
+    @validate_requirements
+    def __call__(self, data_state: DataState) -> ComponentResult:
+        """
+        Run instance segmentation on tiles.
+
+        Returns flattened GDF with new geometries (masks).
+        Pipeline handles merging with existing GDF (to preserve detector columns).
+        """
+        
+        segmenter = self._model_class(self.config)
+
+        # Create appropriate dataset
         data_paths = [data_state.tiles_path]
-        if self.segmenter.REQUIRES_BOX_PROMPT:
-            if not data_state.infer_coco_path:
-                # Maybe there is a COCO still being generated in a side process
-                data_state.clean_side_processes()
-            assert data_state.infer_coco_path is not None, \
-                ("The selected Segmenter model requires a COCO file with boxes to prompt. Either input it,"
-                 " add a tilerizer before the segmenter, add a detector before the"
-                 " segmenter in the pipeline, or choose a segmenter model that doesn't require boxes prompts.")
+
+        if segmenter.REQUIRES_BOX_PROMPT:
             data_paths.append(Path(data_state.infer_coco_path).parent)
             dataset = DetectionLabeledRasterCocoDataset(
-                fold=infer_aoi_name,
+                fold=INFER_AOI_NAME,
                 root_path=data_paths,
                 box_padding_percentage=self.config.box_padding_percentage,
                 transform=None,
-                other_attributes_names_to_pass=[object_id_column_name]
+                other_attributes_names_to_pass=[Col.OBJECT_ID]
             )
         else:
             dataset = UnlabeledRasterDataset(
-                fold=None,  # load all tiles,
+                fold=None,
                 root_path=data_paths,
                 transform=None
             )
 
         # Run inference
-        (tiles_paths, tiles_masks_objects_ids, tiles_masks_polygons, tiles_masks_scores) = self.segmenter.infer_on_dataset(dataset)
+        tiles_paths, tiles_masks_objects_ids, tiles_masks_polygons, tiles_masks_scores = \
+            segmenter.infer_on_dataset(dataset)
 
-        # Combine results into a GeoDataFrame
-        results_gdf, new_columns = self.combine_as_gdf(
-            data_state.infer_gdf, tiles_paths, tiles_masks_polygons, tiles_masks_scores, tiles_masks_objects_ids
-        )
-
-        pre_aggregated_gpkg_name = self.get_pre_aggregated_gpkg_name(results_gdf)
-
-        # Save pre-aggregated GeoPackage
-        results_gdf.to_file(pre_aggregated_gpkg_name, driver='GPKG')
-
-        # Generate COCO output asynchronously and update the data state
-        columns_to_pass = data_state.infer_gdf_columns_to_pass.union(new_columns)
-
-        future_coco = generate_future_coco(
-            future_key='infer_coco_path',
-            executor=data_state.background_executor,
-            component_name=self.name,
-            component_id=self.component_id,
-            description="Segmenter inference",
-            gdf=results_gdf,
-            tiles_paths_column=tile_path_column_name,
-            polygons_column='geometry',
-            scores_column='segmenter_score',
-            categories_column=None,
-            other_attributes_columns=columns_to_pass,
-            output_path=self.output_path,
-            use_rle_for_labels=False,
-            n_workers=4,
-            coco_categories_list=None
-        )
-
-        return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco, pre_aggregated_gpkg_name)
-
-    def get_pre_aggregated_gpkg_name(self, infer_gdf: gpd.GeoDataFrame) -> Path:
-        tiles_path = infer_gdf[tile_path_column_name].iat[0]
-        product_name, scale_factor, ground_resolution, _, _, _ = TileNameConvention().parse_name(
-            Path(tiles_path).name
-        )
-        pre_aggregated_gpkg_name = GeoPackageNameConvention.create_name(
-            product_name=product_name,
-            fold=f'{infer_aoi_name}notaggregated',
-            scale_factor=scale_factor,
-            ground_resolution=ground_resolution
-        )
-        return self.output_path / pre_aggregated_gpkg_name
-
-    def update_data_state(self,
-                          data_state: DataState,
-                          results_gdf: gpd.GeoDataFrame,
-                          columns_to_pass: set,
-                          future_coco: tuple,
-                          pre_aggregated_gpkg_name: Path) -> DataState:
-        # Register the component folder
-        data_state = self.register_outputs_base(data_state)
-        data_state.update_infer_gdf(results_gdf)
-        data_state.register_output_file(
-            self.name,
-            self.component_id,
-            'pre_aggregated_gpkg',
-            pre_aggregated_gpkg_name
-        )
-
-        data_state.infer_gdf_columns_to_pass = columns_to_pass
-        data_state.side_processes.append(future_coco)
-        return data_state
-
-    @staticmethod
-    def combine_as_gdf(infer_gdf, tiles_paths, masks, masks_scores, masks_object_ids) -> (gpd.GeoDataFrame, set):
-        gdf_items = []
+        # Flatten outputs into GDF
+        rows = []
+        unique_id = 0
         for i in range(len(tiles_paths)):
-            for j in range(len(masks[i])):
-                pred_data = {
-                    tile_path_column_name: tiles_paths[i],
-                    'geometry': masks[i][j],
-                    'segmenter_score': masks_scores[i][j],
-                    # 'segmenter_class': masks_classes[i][j]    # currently not supported but will be in future
+            for j in range(len(tiles_masks_polygons[i])):
+                row = {
+                    Col.TILE_PATH: tiles_paths[i],
+                    Col.GEOMETRY: tiles_masks_polygons[i][j],
+                    Col.SEGMENTER_SCORE: tiles_masks_scores[i][j],
                 }
+                # Include object_id if available (from detector)
+                if tiles_masks_objects_ids is not None:
+                    row[Col.OBJECT_ID] = tiles_masks_objects_ids[i][j]
+                else:
+                    row[Col.OBJECT_ID] = unique_id
+                    unique_id += 1
+                rows.append(row)
 
-                if masks_object_ids is not None:
-                    pred_data[object_id_column_name] = masks_object_ids[i][j]
-
-                gdf_items.append(pred_data)
-
-        gdf = gpd.GeoDataFrame(
-            data=gdf_items,
-            geometry='geometry',
+        # Create GDF with new geometries (masks)
+        # Pipeline will merge with existing to get detector columns, or assign new object_ids
+        gdf = gpd.GeoDataFrame(rows, geometry=Col.GEOMETRY, crs=None) if rows else gpd.GeoDataFrame(
+            columns=self.produces_columns,
             crs=None
         )
 
-        new_columns = {'segmenter_score'}   # 'segmenter_class' currently not supported but will be in future
-        if masks_object_ids is None:
-            # New objects, assign a unique ID to each object detected
-            gdf[object_id_column_name] = range(len(gdf))
-            new_columns.add(object_id_column_name)
-        else:
-            # Objects IDs are already assigned, need to match them with existing infer_gdf objects
-            gdf.set_index(object_id_column_name, inplace=True)
-            infer_gdf.set_index(object_id_column_name, inplace=True)
-            # Joining the new columns to the existing infer_gdf, overwriting the existing columns
-            other_columns = infer_gdf.columns.difference(gdf.columns)
-            gdf = gdf.join(infer_gdf[other_columns], how='left')
-            # Resetting the index to keep the object_id_column_name as a column
-            gdf.reset_index(inplace=True)
+        print(f"SegmenterComponent: Generated {len(gdf)} masks.")
 
-        return gdf, new_columns
+        return ComponentResult(
+            gdf=gdf,
+            produced_columns=self.produces_columns,
+            save_gpkg=True,
+            gpkg_name_suffix="notaggregated",
+            save_coco=True,
+            coco_scores_column=Col.SEGMENTER_SCORE,
+            coco_categories_column=None,
+        )
