@@ -115,6 +115,7 @@ python infer.py -c default_detection_multi_NQOS_best -t /path/to/tiles/folder -o
 In order to train or benchmark models, you will need data. In addition to SelvaBox, we provide 5 other pre-processed datasets:
 
 - **SelvaBox** (~31.5 GB): https://huggingface.co/datasets/CanopyRS/SelvaBox
+- **SelvaMask** (~3.3 GB): https://huggingface.co/datasets/CanopyRS/SelvaMask
 - **Detectree2** (~1.5 GB): https://huggingface.co/datasets/CanopyRS/Detectree2
 - **NeonTreeEvaluation** (~3.3 GB): https://huggingface.co/datasets/CanopyRS/NeonTreeEvaluation
 - **OAM-TCD** (~32.2 GB): https://huggingface.co/datasets/CanopyRS/OAM-TCD
