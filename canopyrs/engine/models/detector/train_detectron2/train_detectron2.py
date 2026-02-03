@@ -1,7 +1,13 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional, Any, Dict, Set
 import uuid
 import os
+import sys
+from pathlib import Path
+import copy
+import itertools
+
+import torch
 
 import wandb
 
@@ -20,6 +26,31 @@ from canopyrs.engine.models.detector.train_detectron2.augmentation import Augmen
 from canopyrs.engine.models.detector.train_detectron2.dataset import register_detection_dataset
 from canopyrs.engine.models.detector.train_detectron2.hook import WandbWriterHook
 from canopyrs.engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
+
+
+def _resolve_architecture_path(architecture: str) -> Optional[Path]:
+    """
+    Resolve an architecture path that might live outside the Detectron2 model zoo.
+
+    Returns a Path if the file exists either as-is or relative to the repo root,
+    otherwise returns None.
+    """
+    arch_path = Path(architecture)
+    if arch_path.is_file():
+        return arch_path
+
+    # Try to locate the repo root (marked by pyproject.toml or .git) and look relative to it.
+    repo_root = None
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").exists() or (parent / ".git").exists():
+            repo_root = parent
+            break
+    if repo_root:
+        candidate = repo_root / architecture
+        if candidate.is_file():
+            return candidate
+
+    return None
 
 
 class TrainerWithValidation(DefaultTrainer):
@@ -90,17 +121,21 @@ class TrainerWithValidation(DefaultTrainer):
 
         # Log results of first dataset to wandb
         if len(results) > 0:
-            ret_bbox = results["bbox"]
-            if "AP" in ret_bbox:
-                wandb.log({"bbox/AP": ret_bbox["AP"]})
-                wandb.log({"bbox/AP50": ret_bbox["AP50"]})
-                wandb.log({"bbox/AP75": ret_bbox["AP75"]})
-                wandb.log({"bbox/APs": ret_bbox["APs"]})
-                wandb.log({"bbox/APm": ret_bbox["APm"]})
-                wandb.log({"bbox/APl": ret_bbox["APl"]})
-            else:
-                # If you have a different key, adjust here.
-                raise Exception(f"Warning: AP metric not found in evaluation results.")
+            def log_ap_metrics(prefix, metrics):
+                if metrics is None:
+                    return
+                if "AP" in metrics:
+                    wandb.log({f"{prefix}/AP": metrics["AP"]})
+                    wandb.log({f"{prefix}/AP50": metrics["AP50"]})
+                    wandb.log({f"{prefix}/AP75": metrics["AP75"]})
+                    wandb.log({f"{prefix}/APs": metrics["APs"]})
+                    wandb.log({f"{prefix}/APm": metrics["APm"]})
+                    wandb.log({f"{prefix}/APl": metrics["APl"]})
+                else:
+                    raise Exception(f"Warning: AP metric not found in evaluation results for {prefix}.")
+
+            log_ap_metrics("bbox", results.get("bbox"))
+            log_ap_metrics("segm", results.get("segm"))
 
         return results
 
@@ -183,7 +218,7 @@ def get_base_detectron2_model_cfg(config):
     return cfg
 
 
-def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str], config: DetectorConfig, model_name: str):
+def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str], config: DetectorConfig, model_name: str, task):
     """
     Set up a basic Faster R-CNN trainer with default configurations.
 
@@ -262,7 +297,8 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
                 config=config,
                 train_log_interval=config.train_log_interval,
                 wandb_project_name=config.wandb_project,
-                wandb_model_name=model_name
+                wandb_model_name=model_name,
+                task=task
             ),
             BestCheckpointer(
                 eval_period=cfg.TEST.EVAL_PERIOD,
@@ -276,7 +312,7 @@ def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str]
     return trainer
 
 
-def train_detectron2_fasterrcnn(config: DetectorConfig):
+def train_detectron2(config: DetectorConfig, task):
     """
     Train a Faster R-CNN model on the custom dataset.
 
@@ -284,19 +320,23 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
     ----------
     config : DetectorConfig
         Configuration object for the detector model
+    task : str
+        The task type, e.g., 'detection' or 'segmentation'
     """
 
     print("Setting up datasets...")
     d2_train_datasets_name = register_detection_dataset(
         root_path=[f"{config.data_root_path}/{path}" for path in config.train_dataset_names],
         fold="train",
-        force_binary_class=True if config.num_classes == 1 else False
+        force_binary_class=True if config.num_classes == 1 else False,
+        segmentation_only=False
     )
 
     d2_valid_datasets_name = register_detection_dataset(
         root_path=[f"{config.data_root_path}/{path}" for path in config.valid_dataset_names],
         fold="valid",
-        force_binary_class=True if config.num_classes == 1 else False
+        force_binary_class=True if config.num_classes == 1 else False,
+        segmentation_only=(task == 'segmentation')
     )
 
     print(f"Setting up trainer for dataset(s): {d2_train_datasets_name}")
@@ -307,7 +347,7 @@ def train_detectron2_fasterrcnn(config: DetectorConfig):
         model_name = f"{config.model}_{now}_{slurm_job_id}"
     else:
         model_name = f"{config.model}_{now}_{u.hex[:4]}"
-    trainer = setup_trainer([d2_train_datasets_name], [d2_valid_datasets_name], config, model_name)
+    trainer = setup_trainer([d2_train_datasets_name], [d2_valid_datasets_name], config, model_name, task)
 
     print("Starting training...")
     trainer.train()

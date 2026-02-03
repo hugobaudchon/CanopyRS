@@ -20,7 +20,7 @@ from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
 from canopyrs.engine.models.utils import collate_fn_trivial
 
 
-@SEGMENTER_REGISTRY.register('detectree2')
+@SEGMENTER_REGISTRY.register('detectree2', 'mask_rcnn_detectron2', 'mask2former_detrex')
 class Detectron2SegmenterWrapper(SegmenterWrapperBase):
     REQUIRES_BOX_PROMPT = False
 
@@ -29,7 +29,7 @@ class Detectron2SegmenterWrapper(SegmenterWrapperBase):
 
         if self.config.model.endswith('detectron2'):
             cfg = get_base_detectron2_model_cfg(self.config)
-            self.model = instantiate(cfg.MODEL)
+            self.model = build_model(cfg)
             self.model.eval()
             checkpointer = Detectron2DetectionCheckpointer(self.model)
             checkpointer.load(cfg.MODEL.WEIGHTS)
@@ -51,7 +51,8 @@ class Detectron2SegmenterWrapper(SegmenterWrapperBase):
             checkpointer.load(cfg.train.init_checkpoint)
             self.model.to(self.device)
             self.aug = AugmentationList(cfg.dataloader.test.mapper.augmentation)
-            self.input_format = cfg.model.input_format
+            self.input_format = getattr(cfg.model, 'input_format',
+                                        getattr(cfg.dataloader.test.mapper, 'image_format', 'RGB'))
         else:
             raise ValueError(f"Unknown model type: {self.config.model}")
 
@@ -123,7 +124,9 @@ class Detectron2SegmenterWrapper(SegmenterWrapperBase):
                 image_size = (orig_h, orig_w)
                 n_masks_processed = 0
 
-                _ = self.queue_masks(masks, image_size, scores, tile_idx, n_masks_processed, queue)
+                image_boxes_object_ids = [None] * masks.shape[0]
+
+                _ = self.queue_masks(image_boxes_object_ids, masks, image_size, scores, tile_idx, n_masks_processed, queue)
 
     def infer_on_dataset(self, dataset: UnlabeledRasterDataset):
         return self._infer_on_dataset(dataset, collate_fn_trivial)

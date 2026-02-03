@@ -4,9 +4,10 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from canopyrs.engine.benchmark.detector.benchmark import DetectorBenchmarker
-from canopyrs.engine.config_parsers import DetectorConfig
+from canopyrs.engine.config_parsers import DetectorConfig, AggregatorConfig
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -62,17 +63,36 @@ def parse_args():
         default=6,
         help="Number of workers for parallel NMS processing on CPU."
     )
+    parser.add_argument(
+        "--eval_iou_threshold",
+        type=str,
+        default="0.75",
+        help="IoU threshold for raster metrics (e.g., 0.75 for RF1_75 or '50:95' for RF1_50:95)"
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
+    # Handle IoU threshold parsing (single or 50:95 sweep)
+    if str(args.eval_iou_threshold).lower() == "50:95":
+        eval_iou_threshold = [round(t, 2) for t in [0.50 + 0.05 * i for i in range(10)]]
+    else:
+        try:
+            # Allow comma-separated list for convenience
+            if "," in str(args.eval_iou_threshold):
+                eval_iou_threshold = [float(x) for x in str(args.eval_iou_threshold).split(",")]
+            else:
+                eval_iou_threshold = float(args.eval_iou_threshold)
+        except ValueError:
+            raise ValueError("Invalid eval_iou_threshold. Use a float, comma-separated floats, or '50:95'.")
+
     # build default threshold grids if none provided
     if args.iou_thresholds is None:
-        args.iou_thresholds = [round(x, 1) for x in np.arange(0.05, 1.05, 0.05)]
+        args.iou_thresholds = [i / 20 for i in range(1, 21)]
     if args.score_thresholds is None:
-        args.score_thresholds = [round(x, 2) for x in np.arange(0.05, 1.05, 0.05)]
+        args.score_thresholds = [i / 20 for i in range(1, 21)]
 
     cfg = DetectorConfig.from_yaml(str(args.detector_config))
     out = args.output_folder.resolve()
@@ -82,18 +102,30 @@ def main():
         output_folder=str(out),
         fold_name=args.fold_name,
         raw_data_root=str(args.data_root.resolve()),
+        eval_iou_threshold=eval_iou_threshold,
+    )
+
+    aggregator_config = AggregatorConfig(
+        nms_algorithm='iou',
     )
 
     try:
-        best_iou, best_score = bench.find_optimal_nms_iou_threshold(
+        optimal_aggregator_config = bench.find_optimal_nms_iou_threshold(
             detector_config=cfg,
+            base_aggregator_config=aggregator_config,
             dataset_names=args.datasets,
             nms_iou_thresholds=args.iou_thresholds,
             nms_score_thresholds=args.score_thresholds,
             n_workers=args.n_workers
         )
-        print(f"Best NMS IoU Threshold: {best_iou}")
-        print(f"Best Score Threshold:  {best_score}")
+        print(f"Best NMS IoU Threshold: {optimal_aggregator_config.nms_threshold}")
+        print(f"Best Score Threshold:  {optimal_aggregator_config.score_threshold}")
+        
+        # Save the optimal aggregator config to a YAML file
+        config_output_path = out / "optimal_aggregator_config.yaml"
+        with open(config_output_path, 'w') as f:
+            yaml.dump(optimal_aggregator_config.model_dump(), f, default_flow_style=False, sort_keys=False)
+        print(f"\nOptimal aggregator config saved to: {config_output_path}")
     except Exception as e:
         print(f"Error during NMS search: {e}", file=sys.stderr)
         sys.exit(1)
