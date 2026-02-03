@@ -1,0 +1,41 @@
+site_name: CanopyRS
+site_description: A pipeline for processing high-resolution geospatial orthomosaics to detect, segment, and classify trees.
+site_url: https://hugobaudchon.github.io/CanopyRS/
+repo_url: https://github.com/hugobaudchon/CanopyRS
+
+theme:
+  name: material
+  palette:
+    primary: green
+    accent: teal
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_inherited_members: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+  - User Guide:
+    - Pipeline: user-guide/pipeline.md
+    - Components: user-guide/components.md
+    - Configuration: user-guide/configuration.md
+    - Presets: user-guide/presets.md
+  - API Reference:
+    - Pipeline: api/pipeline.md
+    - Components: api/components.md
+    - DataState: api/data-state.md
+  - Contributing: contributing.md
