@@ -129,7 +129,7 @@ class SegmenterComponent(BaseComponent):
                     Col.GEOMETRY: tiles_masks_polygons[i][j],
                     Col.SEGMENTER_SCORE: tiles_masks_scores[i][j],
                 }
-                # Include object_id if available (from detector)
+                # Include object_id if available (from detector), or assign new unique id otherwise
                 if tiles_masks_objects_ids is not None:
                     row[Col.OBJECT_ID] = tiles_masks_objects_ids[i][j]
                 else:
@@ -138,7 +138,6 @@ class SegmenterComponent(BaseComponent):
                 rows.append(row)
 
         # Create GDF with new geometries (masks)
-        # Pipeline will merge with existing to get detector columns, or assign new object_ids
         gdf = gpd.GeoDataFrame(rows, geometry=Col.GEOMETRY, crs=None) if rows else gpd.GeoDataFrame(
             columns=self.produces_columns,
             crs=None
