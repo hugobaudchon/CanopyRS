@@ -11,7 +11,7 @@ from canopyrs.engine.config_parsers import SegmenterConfig
 from canopyrs.engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
 from canopyrs.engine.models.utils import collate_fn_infer_image_box
-
+from pathlib import Path
 
 @SEGMENTER_REGISTRY.register('sam2')
 class Sam2PredictorWrapper(SegmenterWrapperBase):
@@ -35,10 +35,37 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
         self.predictor = SAM2ImagePredictor.from_pretrained(self.model_name)
         print(f"Model {self.model_name} loaded")
 
+        checkpoint_path = getattr(self.config, 'checkpoint_path', None)
+        if checkpoint_path:
+            checkpoint_path = Path(checkpoint_path)
+            if checkpoint_path.exists():
+                print(f"Loading fine-tuned checkpoint:")
+                print(f"  Path: {checkpoint_path}")
+                
+                # Load state dict
+                state_dict = torch.load(checkpoint_path, map_location='cpu')
+                
+                # Handle different checkpoint formats
+                if 'model_state_dict' in state_dict:
+                    # Full checkpoint with optimizer, etc.
+                    model_state_dict = state_dict['model_state_dict']
+                    print(f"  Checkpoint type: Full training checkpoint")
+                else:
+                    # Just model weights
+                    model_state_dict = state_dict
+                    print(f"  Checkpoint type: Model weights only")
+                
+                # Load weights into predictor model
+                self.predictor.model.load_state_dict(model_state_dict)
+                print(f"Fine-tuned weights loaded successfully!")
+            else:
+                print(f"\nWARNING: Checkpoint not found: {checkpoint_path}")
+                print(f"Using base pretrained model instead.\n")
+                
     def forward(self,
                 images: List[np.array],
                 boxes: List[np.array],
-                boxes_object_ids: List[np.array],
+                boxes_object_ids: List[int],
                 tiles_idx: List[int],
                 queue: multiprocessing.JoinableQueue):
 
