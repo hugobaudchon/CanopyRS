@@ -1,0 +1,11 @@
+architecture: l
+box_batch_size: 50
+box_padding_percentage: 0.0
+#checkpoint_path:
+image_batch_size: 1
+model: sam3
+pp_down_scale_masks_px: 512
+pp_n_workers: 16
+pp_remove_rings: true
+pp_remove_small_geoms: 50
+pp_simplify_tolerance: 0.0
