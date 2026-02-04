@@ -28,7 +28,7 @@ The pipeline includes components for tiling, detecting, aggregating, and segment
 ### Requirements
 
 - Linux system (this repository was developed and tested on Ubuntu 22.04).
-- Cuda 12.1. Version 12.3 was tested and works too, but others may not as requirements between libraries are quite strict. You can install Cuda by following the [NVIDIA Cuda installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html).
+- Cuda version 12.6. You can install Cuda by following the [NVIDIA Cuda installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html). The command `nvcc --version` should then show version 12.6.
 
 ### Setup
 
@@ -42,9 +42,10 @@ cd CanopyRS
 Install the required Python packages in a python 3.10 conda environment:
 
 ```bash
-conda create -n canopyrs python=3.10
+conda create -n canopyrs -c conda-forge python=3.10 mamba
 conda activate canopyrs
-conda install -c conda-forge gdal=3.6.2
+mamba install gdal=3.6.2 -c conda-forge
+pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
 git submodule update --init --recursive
 python -m pip install -e .
 python -m pip install --no-build-isolation -e ./detrex/detectron2 -e ./detrex
