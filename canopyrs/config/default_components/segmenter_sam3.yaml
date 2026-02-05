@@ -1,7 +1,7 @@
 architecture: l
-box_batch_size: 50
+box_batch_size: 30
 box_padding_percentage: 0.0
-#checkpoint_path:
+checkpoint_path: https://huggingface.co/CanopyRS/sam3-multi-selvabox-selvamask-FT/resolve/main/sam3_selvamask_ft_model_best.pt
 image_batch_size: 1
 model: sam3
 pp_down_scale_masks_px: 512
