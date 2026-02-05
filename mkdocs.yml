@@ -25,21 +25,7 @@ plugins:
       default_handler: python
       handlers:
         python:
-          # 2. Key Change: Point to your code directory
           paths: [.] 
-          
-          # 3. Key Change: "Mock" the heavy libraries
-          # This prevents "ModuleNotFoundError" without needing to install them
-          setup_commands:
-            - import sys
-            - from unittest.mock import MagicMock
-            - sys.modules["torch"] = MagicMock()
-            - sys.modules["torchvision"] = MagicMock()
-            - sys.modules["osgeo"] = MagicMock()
-            - sys.modules["osgeo.gdal"] = MagicMock()
-            - sys.modules["cv2"] = MagicMock()
-            - sys.modules["detectron2"] = MagicMock()
-            - sys.modules["detrex"] = MagicMock()
           
           options:
             docstring_style: google
