@@ -22,7 +22,22 @@ The pipeline handles all I/O, state management, and background tasks. Components
 
 ## Quick links
 
+### Getting started
+
 - [Installation](getting-started/installation.md) — get CanopyRS running
 - [Quickstart](getting-started/quickstart.md) — run inference in minutes
+
+### User guide
+
 - [Components](user-guide/components.md) — understand each pipeline stage
+- [Configuration](user-guide/configuration.md) — configure pipelines via YAML
 - [Presets](user-guide/presets.md) — pre-built configurations for common scenarios
+- [Data](user-guide/data.md) — download datasets for training and benchmarking
+- [Evaluation](user-guide/evaluation.md) — NMS parameter search and benchmarking
+- [Training](user-guide/training.md) — train your own detector models
+
+### API reference
+
+- [Pipeline](api/pipeline.md) — pipeline orchestration
+- [Components](api/components.md) — component classes
+- [DataState](api/data-state.md) — state management

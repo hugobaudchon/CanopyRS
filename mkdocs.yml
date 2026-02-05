@@ -34,6 +34,9 @@ nav:
     - Components: user-guide/components.md
     - Configuration: user-guide/configuration.md
     - Presets: user-guide/presets.md
+    - Data: user-guide/data.md
+    - Evaluation: user-guide/evaluation.md
+    - Training: user-guide/training.md
   - API Reference:
     - Pipeline: api/pipeline.md
     - Components: api/components.md
