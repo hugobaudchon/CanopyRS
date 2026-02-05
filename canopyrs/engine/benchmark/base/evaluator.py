@@ -1,6 +1,10 @@
 import warnings
 from pathlib import Path
 
+from dataclasses import dataclass, field as dataclass_field
+from enum import Enum
+from typing import Optional, Dict, List
+
 import numpy as np
 import geopandas as gpd
 import rasterio
@@ -10,6 +14,80 @@ from geodataset.utils import get_utm_crs
 
 from faster_coco_eval.core.coco import COCO
 from faster_coco_eval.core.faster_eval_api import COCOeval_faster      # speeds up raster level evaluation by 10-100x
+
+
+class AlignmentStrategy(Enum):
+    BASE_RSPLIT_1 = "base_rsplit_1"
+    EXACT_MATCH = "exact"
+
+
+class AlignmentError(Exception):
+    pass
+
+
+class LowMatchRateWarning(UserWarning):
+    pass
+
+
+@dataclass
+class AlignmentReport:
+    num_gt_images: int
+    num_pred_images: int
+    num_matched: int
+    num_gt_without_pred: int
+    num_pred_outside_gt: int
+    match_rate: float
+    unmatched_gt_files: List[str] = dataclass_field(default_factory=list)
+    gt_filename_samples: List[str] = dataclass_field(default_factory=list)
+    pred_filename_samples: List[str] = dataclass_field(default_factory=list)
+    strategy_used: str = AlignmentStrategy.EXACT_MATCH.value
+
+    def print_report(self, verbose: bool = True):
+        print("\n" + "=" * 70)
+        print("COCO DATASET ALIGNMENT REPORT")
+        print("=" * 70)
+        print("Strategy: {}".format(self.strategy_used))
+        print("\nDataset Sizes:")
+        print("  Ground Truth images: {}".format(self.num_gt_images))
+        print("  Prediction images: {}".format(self.num_pred_images))
+        print("\nAlignment Results:")
+        print("  Successfully matched: {} ({:.1%} of GT)".format(
+            self.num_matched, self.match_rate
+        ))
+        print("  GT tiles without predictions: {}".format(self.num_gt_without_pred))
+        print("  Prediction tiles outside GT scope: {}".format(self.num_pred_outside_gt))
+        print("    (These will be ignored - expected for extended prediction areas)")
+
+        if verbose and self.unmatched_gt_files:
+            print("\nUnmatched GT tiles (first 10):")
+            for filename in self.unmatched_gt_files[:10]:
+                print("    - {}".format(filename))
+            if len(self.unmatched_gt_files) > 10:
+                print("    ... and {} more".format(len(self.unmatched_gt_files) - 10))
+
+        if verbose and self.gt_filename_samples:
+            print("\nSample GT filenames (first 3):")
+            for filename in self.gt_filename_samples[:3]:
+                print("    - {}".format(filename))
+
+        if verbose and self.pred_filename_samples:
+            print("\nSample Pred filenames (first 3):")
+            for filename in self.pred_filename_samples[:3]:
+                print("    - {}".format(filename))
+
+        print("=" * 70 + "\n")
+
+    def to_dict(self) -> Dict:
+        return {
+            'num_gt_images': self.num_gt_images,
+            'num_pred_images': self.num_pred_images,
+            'num_matched': self.num_matched,
+            'num_gt_without_pred': self.num_gt_without_pred,
+            'num_pred_outside_gt': self.num_pred_outside_gt,
+            'match_rate': self.match_rate,
+            'strategy_used': self.strategy_used,
+            'unmatched_gt_files': self.unmatched_gt_files,
+        }
 
 
 class CocoEvaluator:
@@ -442,27 +520,44 @@ def validate_and_repair_gdf(gdf: gpd.GeoDataFrame, name: str) -> gpd.GeoDataFram
     
     return gdf
 
-def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
-    """
-    Align the predictions COCO dataset to follow the order of the truth COCO dataset,
-    matching based on the image 'file_name'. For any truth image missing in preds,
-    insert a dummy image (with no annotations) so that the image IDs match.
-    This function updates the preds_coco in-place.
-    """
-    preds_by_name = {img['file_name']: img for img in preds_coco.dataset.get('images', [])}
+def align_coco_datasets_by_name(
+    truth_coco: COCO,
+    preds_coco: COCO,
+    alignment_strategy: AlignmentStrategy = AlignmentStrategy.EXACT_MATCH,
+    return_report: bool = False,
+) -> Optional[AlignmentReport]:
+    if alignment_strategy == AlignmentStrategy.BASE_RSPLIT_1:
+        def get_match_key(file_name: str) -> str:
+            stem = Path(file_name).stem
+            parts = stem.rsplit('_', 1)
+            return parts[0] if len(parts) > 1 else stem
+    else:
+        def get_match_key(file_name: str) -> str:
+            return file_name
+
+    gt_images = truth_coco.dataset.get('images', [])
+    pred_images = preds_coco.dataset.get('images', [])
+
+    preds_by_key = {get_match_key(img['file_name']): img for img in pred_images}
     id_mapping = {}
     new_preds_images = []
-    for truth_img in truth_coco.dataset.get('images', []):
-        file_name = truth_img['file_name']
+    unmatched_gt = []
+
+    for truth_img in gt_images:
+        truth_file = truth_img['file_name']
+        truth_key = get_match_key(truth_file)
         truth_id = truth_img['id']
-        if file_name in preds_by_name:
-            preds_img = preds_by_name[file_name]
+
+        if truth_key in preds_by_key:
+            preds_img = preds_by_key[truth_key]
             id_mapping[preds_img['id']] = truth_id
             new_img = preds_img.copy()
             new_img['id'] = truth_id
             new_preds_images.append(new_img)
         else:
             new_preds_images.append(truth_img.copy())
+            unmatched_gt.append(truth_file)
+
     preds_coco.dataset['images'] = new_preds_images
 
     new_preds_annotations = []
@@ -473,6 +568,29 @@ def align_coco_datasets_by_name(truth_coco: COCO, preds_coco: COCO) -> None:
             new_preds_annotations.append(ann)
     preds_coco.dataset['annotations'] = new_preds_annotations
     preds_coco.createIndex()
+
+    if not return_report:
+        return None
+
+    num_gt = len(gt_images)
+    num_pred = len(pred_images)
+    num_matched = len(id_mapping)
+    num_gt_without_pred = len(unmatched_gt)
+    num_pred_outside_gt = num_pred - num_matched
+    match_rate = num_matched / num_gt if num_gt > 0 else 0.0
+
+    return AlignmentReport(
+        num_gt_images=num_gt,
+        num_pred_images=num_pred,
+        num_matched=num_matched,
+        num_gt_without_pred=num_gt_without_pred,
+        num_pred_outside_gt=num_pred_outside_gt,
+        match_rate=match_rate,
+        unmatched_gt_files=unmatched_gt,
+        gt_filename_samples=[img['file_name'] for img in gt_images[:3]],
+        pred_filename_samples=[img['file_name'] for img in pred_images[:3]],
+        strategy_used=alignment_strategy.value,
+    )
 
 def filter_min_overlap(gdf, aoi_geom, min_frac=0.4):
     from shapely.validation import make_valid

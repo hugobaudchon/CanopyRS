@@ -6,100 +6,17 @@ import copy
 from pathlib import Path
 import numpy as np
 from faster_coco_eval.core.coco import COCO
-from faster_coco_eval.core.faster_eval_api import COCOeval_faster
 from pycocotools import mask as mask_util
-from typing import Optional, Dict, List
-from dataclasses import dataclass, field as dataclass_field
-from enum import Enum
+from typing import Optional, Dict
 
-
-class AlignmentStrategy(Enum):
-    """Strategy for aligning prediction and ground truth COCO datasets"""
-    BASE_RSPLIT_1 = "base_rsplit_1"  # Current default: rsplit('_', 1)[0]
-    EXACT_MATCH = "exact"             # Exact filename matching
-
-
-class AlignmentError(Exception):
-    """Raised when COCO alignment fails critically"""
-    pass
-
-
-class LowMatchRateWarning(UserWarning):
-    """Raised when match rate is below acceptable threshold"""
-    pass
-
-
-@dataclass
-class AlignmentReport:
-    """Report of COCO dataset alignment results"""
-    num_gt_images: int
-    num_pred_images: int
-    num_matched: int
-    num_gt_without_pred: int
-    num_pred_outside_gt: int
-    match_rate: float
-    unmatched_gt_files: List[str] = dataclass_field(default_factory=list)
-    gt_filename_samples: List[str] = dataclass_field(default_factory=list)
-    pred_filename_samples: List[str] = dataclass_field(default_factory=list)
-    strategy_used: str = "base_rsplit_1"
-    
-    def print_report(self, verbose: bool = True):
-        """Print formatted alignment report"""
-        print("\n" + "="*70)
-        print("COCO DATASET ALIGNMENT REPORT")
-        print("="*70)
-        print("Strategy: {}".format(self.strategy_used))
-        print("\nDataset Sizes:")
-        print("  Ground Truth images: {}".format(self.num_gt_images))
-        print("  Prediction images: {}".format(self.num_pred_images))
-        print("\nAlignment Results:")
-        print("  Successfully matched: {} ({:.1%} of GT)".format(
-            self.num_matched, self.match_rate))
-        print("  GT tiles without predictions: {}".format(
-            self.num_gt_without_pred))
-        print("  Prediction tiles outside GT scope: {}".format(
-            self.num_pred_outside_gt))
-        print("    (These will be ignored - expected for extended "
-              "prediction areas)")
-
-        if self.match_rate < 0.98:
-            print("\n  WARNING: Match rate {:.1%} is below 98%".format(
-                self.match_rate))
-            print("    This may indicate a naming mismatch between GT "
-                  "and predictions.")
-
-        if verbose and self.unmatched_gt_files:
-            print("\nUnmatched GT tiles (first 10):")
-            for filename in self.unmatched_gt_files[:10]:
-                print("    - {}".format(filename))
-            if len(self.unmatched_gt_files) > 10:
-                print("    ... and {} more".format(
-                    len(self.unmatched_gt_files) - 10))
-
-        if verbose and self.gt_filename_samples:
-            print("\nSample GT filenames (first 3):")
-            for filename in self.gt_filename_samples[:3]:
-                print("    - {}".format(filename))
-
-        if verbose and self.pred_filename_samples:
-            print("\nSample Pred filenames (first 3):")
-            for filename in self.pred_filename_samples[:3]:
-                print("    - {}".format(filename))
-
-        print("="*70 + "\n")
-    
-    def to_dict(self) -> Dict:
-        """Convert report to dictionary for serialization"""
-        return {
-            'num_gt_images': self.num_gt_images,
-            'num_pred_images': self.num_pred_images,
-            'num_matched': self.num_matched,
-            'num_gt_without_pred': self.num_gt_without_pred,
-            'num_pred_outside_gt': self.num_pred_outside_gt,
-            'match_rate': self.match_rate,
-            'strategy_used': self.strategy_used,
-            'unmatched_gt_files': self.unmatched_gt_files,
-        }
+from canopyrs.engine.benchmark.base.evaluator import (
+    AlignmentStrategy,
+    AlignmentReport,
+    AlignmentError,
+    LowMatchRateWarning,
+    align_coco_datasets_by_name,
+    Summarize2COCOEval,
+)
 
 class ClassifierCocoEvaluator:
     small_max_sq_meters = 16
@@ -169,7 +86,12 @@ class ClassifierCocoEvaluator:
                 del ann['score']
 
         # Align predictions to truth based on file name
-        alignment_report = self._align_coco_datasets_by_name(truth_coco, preds_coco)
+        alignment_report = align_coco_datasets_by_name(
+            truth_coco,
+            preds_coco,
+            alignment_strategy=self.alignment_strategy,
+            return_report=True,
+        )
         self.last_alignment_report = alignment_report
         
         # Print alignment report
@@ -177,7 +99,33 @@ class ClassifierCocoEvaluator:
             alignment_report.print_report(verbose=True)
         
         # Validate alignment quality
-        self._validate_alignment(alignment_report)
+        if alignment_report.match_rate < self.min_match_rate_error:
+            raise AlignmentError(
+                "Critical alignment failure: only {:.1%} of GT tiles matched "
+                "predictions (threshold: {:.1%}).\n"
+                "This indicates incompatible tile naming conventions.\n"
+                "GT samples: {}\n"
+                "Pred samples: {}\n"
+                "Consider using AlignmentStrategy.EXACT_MATCH or check your "
+                "tiling configuration.".format(
+                    alignment_report.match_rate,
+                    self.min_match_rate_error,
+                    alignment_report.gt_filename_samples,
+                    alignment_report.pred_filename_samples
+                )
+            )
+
+        if alignment_report.match_rate < self.min_match_rate_warning:
+            warnings.warn(
+                "Low alignment rate: {:.1%} of GT tiles matched "
+                "(threshold: {:.1%}). {} GT tiles have no predictions. "
+                "This may indicate a pipeline issue.".format(
+                    alignment_report.match_rate,
+                    self.min_match_rate_warning,
+                    alignment_report.num_gt_without_pred
+                ),
+                LowMatchRateWarning
+            )
 
         # Optional: filter out tiles with very low GT coverage
         if min_gt_coverage > 0:
@@ -233,8 +181,90 @@ class ClassifierCocoEvaluator:
         else:
             return segm_metrics
 
+    def classification_only(self,
+                            preds_coco_path: str,
+                            truth_coco_path: str,
+                            score_combination: Optional[Dict] = None,
+                            min_gt_coverage: float = 0.0) -> dict:
+        processed_preds_path = self._preprocess_predictions_coco(
+            preds_coco_path,
+            score_combination=score_combination,
+        )
+
+        truth_coco = COCO(str(truth_coco_path))
+        preds_coco = COCO(str(processed_preds_path))
+
+        for ann in truth_coco.dataset['annotations']:
+            if 'score' in ann:
+                del ann['score']
+
+        alignment_report = align_coco_datasets_by_name(
+            truth_coco,
+            preds_coco,
+            alignment_strategy=self.alignment_strategy,
+            return_report=True,
+        )
+        self.last_alignment_report = alignment_report
+
+        if self.verbose:
+            alignment_report.print_report(verbose=True)
+
+        if alignment_report.match_rate < self.min_match_rate_error:
+            raise AlignmentError(
+                "Critical alignment failure: only {:.1%} of GT tiles matched "
+                "predictions (threshold: {:.1%}).\n"
+                "This indicates incompatible tile naming conventions.\n"
+                "GT samples: {}\n"
+                "Pred samples: {}\n"
+                "Consider using AlignmentStrategy.EXACT_MATCH or check your "
+                "tiling configuration.".format(
+                    alignment_report.match_rate,
+                    self.min_match_rate_error,
+                    alignment_report.gt_filename_samples,
+                    alignment_report.pred_filename_samples,
+                )
+            )
+
+        if alignment_report.match_rate < self.min_match_rate_warning:
+            warnings.warn(
+                "Low alignment rate: {:.1%} of GT tiles matched "
+                "(threshold: {:.1%}). {} GT tiles have no predictions. "
+                "This may indicate a pipeline issue.".format(
+                    alignment_report.match_rate,
+                    self.min_match_rate_warning,
+                    alignment_report.num_gt_without_pred,
+                ),
+                LowMatchRateWarning,
+            )
+
+        if min_gt_coverage > 0:
+            truth_coco, preds_coco, filter_report = self._filter_by_min_gt_coverage(
+                truth_coco=truth_coco,
+                preds_coco=preds_coco,
+                min_gt_coverage=min_gt_coverage,
+            )
+            if self.verbose:
+                print("\n" + "=" * 70)
+                print("GT COVERAGE FILTER")
+                print("=" * 70)
+                print("min_gt_coverage: {:.3%}".format(min_gt_coverage))
+                print("Images kept: {} / {}".format(
+                    filter_report['num_images_kept'],
+                    filter_report['num_images_before'],
+                ))
+
+        cls_metrics = self._compute_classification_metrics(truth_coco, preds_coco)
+        cls_metrics['num_images'] = len(truth_coco.getImgIds())
+        cls_metrics['num_truths'] = len(truth_coco.getAnnIds())
+        cls_metrics['num_preds'] = len(preds_coco.getAnnIds())
+
+        if processed_preds_path != preds_coco_path:
+            Path(processed_preds_path).unlink()
+
+        return cls_metrics
+
     def _filter_by_min_gt_coverage(self, truth_coco: COCO, preds_coco: COCO,
-                                    min_gt_coverage: float):
+                                   min_gt_coverage: float):
         gt_images = truth_coco.dataset.get('images', [])
         gt_anns = truth_coco.dataset.get('annotations', [])
         pred_images = preds_coco.dataset.get('images', [])
@@ -256,7 +286,7 @@ class ClassifierCocoEvaluator:
                 if isinstance(seg, dict):
                     try:
                         area = float(mask_util.area(seg))
-                    except Exception:
+                    except (TypeError, ValueError):
                         area = 0.0
                 else:
                     area = 0.0
@@ -336,14 +366,33 @@ class ClassifierCocoEvaluator:
         metrics['num_preds'] = num_preds
         metrics['iou_type'] = iou_type
 
-        # Add mIoU computation
         if hasattr(coco_evaluator, 'ious') and coco_evaluator.ious:
-            miou = self._compute_miou(coco_evaluator)
-            metrics['mIoU'] = miou
+            metrics['mIoU'] = self._compute_miou(coco_evaluator)
 
         return metrics
 
-    def _preprocess_predictions_coco(self, preds_coco_path: str, score_combination: Optional[Dict] = None) -> str:
+    def _compute_miou(self, coco_evaluator) -> float:
+        try:
+            all_ious = []
+            if hasattr(coco_evaluator, 'ious') and coco_evaluator.ious:
+                for _, iou_matrix in coco_evaluator.ious.items():
+                    if isinstance(iou_matrix, np.ndarray):
+                        flat_ious = iou_matrix.flatten()
+                        valid = flat_ious[(flat_ious > 0) & (flat_ious <= 1)]
+                        all_ious.extend(valid.tolist())
+
+            if all_ious:
+                return float(np.mean(all_ious))
+            return 0.0
+        except ValueError as e:
+            print(f"Error computing mIoU: {e}")
+            return 0.0
+
+    def _preprocess_predictions_coco(
+            self,
+            preds_coco_path: str,
+            score_combination: Optional[Dict] = None,
+    ) -> str:
         """
         Preprocess predictions COCO file to standardize score field names.
         Can also combine multiple scores using weighted averaging.
@@ -356,7 +405,7 @@ class ClassifierCocoEvaluator:
             Path to processed file (may be the same as input if no changes needed).
         """
         # Load the original predictions file
-        with open(preds_coco_path, 'r') as f:
+        with open(preds_coco_path, 'r', encoding='utf-8') as f:
             coco_data = json.load(f)
 
         score_field_candidates = [
@@ -407,120 +456,6 @@ class ClassifierCocoEvaluator:
         
         return temp_file.name
 
-    def _align_coco_datasets_by_name(self, truth_coco: COCO,
-                                      preds_coco: COCO) -> AlignmentReport:
-        """
-        Align predictions COCO to truth COCO, matching by filename.
-
-        Args:
-            truth_coco: Ground truth COCO dataset
-            preds_coco: Predictions COCO dataset (modified in-place)
-
-        Returns:
-            AlignmentReport with detailed matching statistics
-        """
-        # Get strategy-specific filename matcher
-        if self.alignment_strategy == AlignmentStrategy.BASE_RSPLIT_1:
-            def get_match_key(file_name: str) -> str:
-                stem = Path(file_name).stem
-                parts = stem.rsplit('_', 1)
-                return parts[0] if len(parts) > 1 else stem
-        else:  # EXACT_MATCH
-            def get_match_key(file_name: str) -> str:
-                return file_name
-
-        # Build prediction lookup
-        gt_images = truth_coco.dataset.get('images', [])
-        pred_images = preds_coco.dataset.get('images', [])
-
-        preds_by_key = {get_match_key(img['file_name']): img
-                        for img in pred_images}
-        id_mapping = {}
-        new_preds_images = []
-        unmatched_gt = []
-
-        # Match GT to predictions
-        for truth_img in gt_images:
-            truth_file = truth_img['file_name']
-            truth_key = get_match_key(truth_file)
-            truth_id = truth_img['id']
-
-            if truth_key in preds_by_key:
-                preds_img = preds_by_key[truth_key]
-                id_mapping[preds_img['id']] = truth_id
-                new_img = preds_img.copy()
-                new_img['id'] = truth_id
-                new_preds_images.append(new_img)
-            else:
-                # GT without prediction: add dummy image
-                new_preds_images.append(truth_img.copy())
-                unmatched_gt.append(truth_file)
-
-        # Update prediction dataset
-        preds_coco.dataset['images'] = new_preds_images
-
-        # Remap annotation image_ids
-        new_preds_annotations = []
-        for ann in preds_coco.dataset.get('annotations', []):
-            orig_img_id = ann['image_id']
-            if orig_img_id in id_mapping:
-                ann['image_id'] = id_mapping[orig_img_id]
-                new_preds_annotations.append(ann)
-
-        preds_coco.dataset['annotations'] = new_preds_annotations
-        preds_coco.createIndex()
-
-        # Build alignment report
-        num_gt = len(gt_images)
-        num_pred = len(pred_images)
-        num_matched = len(id_mapping)
-        num_gt_without_pred = len(unmatched_gt)
-        num_pred_outside_gt = num_pred - num_matched
-        match_rate = num_matched / num_gt if num_gt > 0 else 0.0
-
-        report = AlignmentReport(
-            num_gt_images=num_gt,
-            num_pred_images=num_pred,
-            num_matched=num_matched,
-            num_gt_without_pred=num_gt_without_pred,
-            num_pred_outside_gt=num_pred_outside_gt,
-            match_rate=match_rate,
-            unmatched_gt_files=unmatched_gt,
-            gt_filename_samples=[img['file_name'] for img in gt_images[:3]],
-            pred_filename_samples=[img['file_name']
-                                   for img in pred_images[:3]],
-            strategy_used=self.alignment_strategy.value
-        )
-
-        return report
-
-    def _compute_miou(self, coco_evaluator):
-        """Compute mean IoU from COCO evaluation results"""
-        try:
-            # IoU data is stored in coco_evaluator.ious
-            # Format: {(imgId, catId): IoU_matrix}
-            # IoU_matrix is a 2D array [num_detections x num_ground_truths]
-            all_ious = []
-            
-            if hasattr(coco_evaluator, 'ious') and coco_evaluator.ious:
-                for key, iou_matrix in coco_evaluator.ious.items():
-                    if isinstance(iou_matrix, np.ndarray):
-                        # Flatten the matrix and collect all IoU values
-                        flat_ious = iou_matrix.flatten()
-                        # Filter out zeros and invalid values
-                        valid = flat_ious[(flat_ious > 0) & (flat_ious <= 1)]
-                        all_ious.extend(valid.tolist())
-            
-            if len(all_ious) > 0:
-                miou = float(np.mean(all_ious))
-                return miou
-            
-            return 0.0
-            
-        except Exception as e:
-            print(f"Error computing mIoU: {e}")
-            return 0.0
-
     def _combine_scores(self, coco_data: Dict, score_combination: Dict):
         """Combine multiple scores using specified weights and method"""
         weights = score_combination['weights']
@@ -537,7 +472,7 @@ class ClassifierCocoEvaluator:
             scores_to_combine = {}
             
             # Collect available scores
-            for score_name, weight in weights.items():
+            for score_name in weights:
                 if score_name in other_attrs:
                     scores_to_combine[score_name] = other_attrs[score_name]
                 elif score_name in ann:
@@ -583,100 +518,6 @@ class ClassifierCocoEvaluator:
         
         return math.exp(log_sum / total_weight) if total_weight > 0 else 0.0
 
-    def _validate_alignment(self, report: AlignmentReport):
-        """Validate alignment quality and raise warnings/errors as needed"""
-        if report.match_rate < self.min_match_rate_error:
-            raise AlignmentError(
-                "Critical alignment failure: only {:.1%} of GT tiles matched "
-                "predictions (threshold: {:.1%}).\n"
-                "This indicates incompatible tile naming conventions.\n"
-                "GT samples: {}\n"
-                "Pred samples: {}\n"
-                "Consider using AlignmentStrategy.EXACT_MATCH or check your "
-                "tiling configuration.".format(
-                    report.match_rate,
-                    self.min_match_rate_error,
-                    report.gt_filename_samples,
-                    report.pred_filename_samples
-                )
-            )
-
-        if report.match_rate < self.min_match_rate_warning:
-            warnings.warn(
-                "Low alignment rate: {:.1%} of GT tiles matched "
-                "(threshold: {:.1%}). {} GT tiles have no predictions. "
-                "This may indicate a pipeline issue.".format(
-                    report.match_rate,
-                    self.min_match_rate_warning,
-                    report.num_gt_without_pred
-                ),
-                LowMatchRateWarning
-            )
-
-    def diagnose_alignment(self, preds_coco_path: str,
-                          truth_coco_path: str) -> AlignmentReport:
-        """
-        Diagnose alignment between GT and predictions without evaluation.
-
-        Args:
-            preds_coco_path: Path to predictions COCO file
-            truth_coco_path: Path to ground truth COCO file
-
-        Returns:
-            AlignmentReport with detailed diagnostics
-        """
-        print("\n" + "="*70)
-        print("ALIGNMENT DIAGNOSTIC MODE")
-        print("="*70)
-        print("GT COCO: {}".format(truth_coco_path))
-        print("Pred COCO: {}".format(preds_coco_path))
-
-        # Load COCO files
-        truth_coco = COCO(str(truth_coco_path))
-        preds_coco = COCO(str(preds_coco_path))
-
-        # Check categories
-        gt_cats = truth_coco.dataset.get('categories', [])
-        pred_cats = preds_coco.dataset.get('categories', [])
-
-        print("\nCategory Analysis:")
-        print("  GT categories: {}".format(
-            [(c['id'], c['name']) for c in gt_cats]))
-        print("  Pred categories: {}".format(
-            [(c['id'], c['name']) for c in pred_cats]))
-
-        if gt_cats == pred_cats:
-            print("  Categories match")
-        else:
-            print("  WARNING: Category mismatch detected")
-
-        # Perform alignment (on copies to avoid modifying originals)
-        preds_coco_copy = COCO()
-        preds_coco_copy.dataset = preds_coco.dataset.copy()
-        preds_coco_copy.createIndex()
-
-        report = self._align_coco_datasets_by_name(truth_coco,
-                                                    preds_coco_copy)
-        report.print_report(verbose=True)
-
-        # Provide recommendations
-        print("Recommendations:")
-        if report.match_rate >= 0.98:
-            print("  Alignment looks good!")
-        elif report.match_rate >= 0.80:
-            print("  Match rate is acceptable but could be improved.")
-            print("  Check if some tiles were not generated in predictions.")
-        else:
-            print("  Match rate is poor. Possible issues:")
-            print("  - Different tiling strategies (grid vs polygon)")
-            print("  - Different tile naming conventions")
-            print("  - GT and predictions from different rasters")
-            print("  Try: AlignmentStrategy.EXACT_MATCH or regenerate "
-                  "predictions")
-
-        print("="*70 + "\n")
-        return report
-
     def _evaluate_class_agnostic_segmentation(self, truth_coco: COCO,
                                                preds_coco: COCO,
                                                max_dets: list) -> Dict:
@@ -717,21 +558,14 @@ class ClassifierCocoEvaluator:
         coco_eval.params.maxDets = max_dets
         coco_eval.evaluate()
         coco_eval.accumulate()
-        coco_eval.summarize()
 
-        metrics = {
-            'AP': coco_eval.stats[0],
-            'AP50': coco_eval.stats[1],
-            'AP75': coco_eval.stats[2],
-            'AR': coco_eval.stats[8],
-            'num_images': len(truth_copy.getImgIds()),
-            'num_truths': len(truth_copy.getAnnIds()),
-            'num_preds': len(pred_copy.getAnnIds()),
-        }
+        metrics = coco_eval.summarize_to_dict()
+        metrics['num_images'] = len(truth_copy.getImgIds())
+        metrics['num_truths'] = len(truth_copy.getAnnIds())
+        metrics['num_preds'] = len(pred_copy.getAnnIds())
 
         if hasattr(coco_eval, 'ious') and coco_eval.ious:
-            miou = self._compute_miou(coco_eval)
-            metrics['mIoU'] = miou
+            metrics['mIoU'] = self._compute_miou(coco_eval)
 
         return metrics
 
@@ -851,71 +685,70 @@ class ClassifierCocoEvaluator:
             elif score_field_to_use in ann:
                 ann['score'] = ann[score_field_to_use]
 
-class Summarize2COCOEval(COCOeval_faster):
-    def summarize_custom(self):
-        max_dets_index = len(self.params.maxDets) - 1
+    def diagnose_alignment(self, preds_coco_path: str,
+                           truth_coco_path: str) -> AlignmentReport:
+        """
+        Diagnose alignment between GT and predictions without evaluation.
 
-        def _summarize(ap=1, iouThr=None, areaRng='all', maxDets=100):
-            p = self.params
-            iStr = ' {:<18} {} @[ IoU={:<9} | area={:>6s} | maxDets={:>3d} ] = {:0.3f}'
-            titleStr = 'Average Precision' if ap == 1 else 'Average Recall'
-            typeStr = '(AP)' if ap == 1 else '(AR)'
-            iouStr = '{:0.2f}:{:0.2f}'.format(p.iouThrs[0], p.iouThrs[-1]) if iouThr is None else '{:0.2f}'.format(iouThr)
+        Args:
+            preds_coco_path: Path to predictions COCO file
+            truth_coco_path: Path to ground truth COCO file
 
-            aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
-            mind = [i for i, mDet in enumerate(p.maxDets) if mDet == maxDets]
-            if ap == 1:
-                s = self.eval['precision']
-                if iouThr is not None:
-                    t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[t]
-                s = s[:, :, :, aind, mind]
-            else:
-                s = self.eval['recall']
-                if iouThr is not None:
-                    t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[t]
-                s = s[:, :, aind, mind]
-            mean_s = np.mean(s[s > -1]) if len(s[s > -1]) > 0 else -1
-            stat_string = iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s)
-            print(stat_string)
-            return mean_s, stat_string
+        Returns:
+            AlignmentReport with detailed diagnostics
+        """
+        print("\n" + "="*70)
+        print("ALIGNMENT DIAGNOSTIC MODE")
+        print("="*70)
+        print("GT COCO: {}".format(truth_coco_path))
+        print("Pred COCO: {}".format(preds_coco_path))
 
-        def _summarizeDets():
-            stats = np.zeros((15,))
-            stats_strings = ['' for _ in range(15)]
+        # Load COCO files
+        truth_coco = COCO(str(truth_coco_path))
+        preds_coco = COCO(str(preds_coco_path))
 
-            stats[0], stats_strings[0] = _summarize(1, maxDets=self.params.maxDets[max_dets_index])
-            stats[1], stats_strings[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
-            stats[2], stats_strings[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
-            stats[3], stats_strings[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
-            stats[4], stats_strings[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
-            stats[5], stats_strings[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
-            stats[6], stats_strings[6] = _summarize(0, maxDets=self.params.maxDets[0])
-            stats[7], stats_strings[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8], stats_strings[8] = _summarize(0, maxDets=self.params.maxDets[2])
-            stats[9], stats_strings[9] = (_summarize(0, maxDets=self.params.maxDets[3])
-                                          if len(self.params.maxDets) > 3
-                                          else _summarize(0, maxDets=self.params.maxDets[2]))
-            stats[10], stats_strings[10] = _summarize(0, iouThr=.5, maxDets=self.params.maxDets[max_dets_index])
-            stats[11], stats_strings[11] = _summarize(0, iouThr=.75, maxDets=self.params.maxDets[max_dets_index])
-            stats[12], stats_strings[12] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[max_dets_index])
-            stats[13], stats_strings[13] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[max_dets_index])
-            stats[14], stats_strings[14] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[max_dets_index])
-            return stats, stats_strings
+        # Check categories
+        gt_cats = truth_coco.dataset.get('categories', [])
+        pred_cats = preds_coco.dataset.get('categories', [])
 
-        if not self.eval:
-            raise Exception('Please run accumulate() first')
-        
-        self.stats, stats_strings = _summarizeDets()
-        return stats_strings
+        print("\nCategory Analysis:")
+        print("  GT categories: {}".format(
+            [(c['id'], c['name']) for c in gt_cats]))
+        print("  Pred categories: {}".format(
+            [(c['id'], c['name']) for c in pred_cats]))
 
-    def summarize_to_dict(self):
-        self.summarize_custom()
-        stats = self.stats
-        metric_names = [
-            "AP", "AP50", "AP75", "AP_small", "AP_medium", "AP_large",
-            "AR_1", "AR_10", "AR_100", "AR", "AR50", "AR75", "AR_small", "AR_medium", "AR_large"
-        ]
-        metrics_dict = {name: float(value) for name, value in zip(metric_names, stats)}
-        return metrics_dict
+        if gt_cats == pred_cats:
+            print("  Categories match")
+        else:
+            print("  WARNING: Category mismatch detected")
+
+        # Perform alignment (on copies to avoid modifying originals)
+        preds_coco_copy = COCO()
+        preds_coco_copy.dataset = preds_coco.dataset.copy()
+        preds_coco_copy.createIndex()
+
+        report = align_coco_datasets_by_name(
+            truth_coco,
+            preds_coco_copy,
+            alignment_strategy=self.alignment_strategy,
+            return_report=True,
+        )
+        report.print_report(verbose=True)
+
+        # Provide recommendations
+        print("Recommendations:")
+        if report.match_rate >= 0.98:
+            print("  Alignment looks good!")
+        elif report.match_rate >= 0.80:
+            print("  Match rate is acceptable but could be improved.")
+            print("  Check if some tiles were not generated in predictions.")
+        else:
+            print("  Match rate is poor. Possible issues:")
+            print("  - Different tiling strategies (grid vs polygon)")
+            print("  - Different tile naming conventions")
+            print("  - GT and predictions from different rasters")
+            print("  Try: AlignmentStrategy.EXACT_MATCH or regenerate "
+                  "predictions")
+
+        print("="*70 + "\n")
+        return report

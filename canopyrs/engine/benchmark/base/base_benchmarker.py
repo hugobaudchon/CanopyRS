@@ -64,6 +64,8 @@ class BaseBenchmarker(ABC):
                               product_tiles_path: str | Path,
                               pipeline_config: PipelineConfig,
                               component_name: str,
+                              input_gpkg: str | Path | None = None,
+                              input_coco: str | Path | None = None,
                               output_folder: str | Path = None):
         """
         Run inference for one product and return paths to outputs.
@@ -78,6 +80,8 @@ class BaseBenchmarker(ABC):
         io_config = InferIOConfig(
             input_imagery=None,
             tiles_path=str(product_tiles_path),
+            input_gpkg=str(input_gpkg) if input_gpkg is not None else None,
+            input_coco=str(input_coco) if input_coco is not None else None,
             output_folder=str(output_folder),
         )
 
@@ -93,7 +97,12 @@ class BaseBenchmarker(ABC):
                 last_aggregator_component_id = component_id
 
         model_coco_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'coco')
-        model_gpkg_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'pre_aggregated_gpkg')
+
+        if component_name == 'classifier':
+            model_gpkg_file_type = 'gpkg'
+        else:
+            model_gpkg_file_type = 'pre_aggregated_gpkg'
+        model_gpkg_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, model_gpkg_file_type)
         if last_aggregator_component_id is not None:
             aggregator_output = pipeline.data_state.get_output_file('aggregator', last_aggregator_component_id, 'gpkg')
         else:
