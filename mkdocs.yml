@@ -30,7 +30,7 @@ plugins:
           options:
             docstring_style: google
             show_source: true
-            show_inherited_members: true
+            inherited_members: true
 
 nav:
   - Home: index.md
