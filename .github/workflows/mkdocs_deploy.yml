@@ -27,7 +27,7 @@ jobs:
       # 2. Install mike alongside mkdocs
       - name: Install dependencies
         run: |
-          pip install mkdocs-material mike
+          pip install mkdocs-material mike mkdocstrings[python]
 
       - name: Configure Git User
         run: |
