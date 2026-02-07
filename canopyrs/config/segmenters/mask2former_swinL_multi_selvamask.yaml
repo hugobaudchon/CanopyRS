@@ -1,0 +1,55 @@
+model: mask2former_detrex
+architecture: mask2former/configs/maskformer2_swin_large_IN21k_384_bs16_100ep.py
+checkpoint_path: https://huggingface.co/CanopyRS/mask2former-swin-l-384-multi-selvamask/resolve/main/model_best_mask2former_swinL_selvamask.pth
+augmentation_brightness: 0.2
+augmentation_brightness_prob: 0.5
+augmentation_contrast: 0.2
+augmentation_contrast_prob: 0.5
+augmentation_crop_fallback_to_augmentation_image_size: false
+augmentation_crop_min_intersection_ratio: 0.5
+augmentation_crop_prob: 1.0
+augmentation_drop_annotation_random_prob: 0.0
+augmentation_early_conditional_image_size: 2000
+augmentation_early_image_resize_test_only: null
+augmentation_flip_horizontal: true
+augmentation_flip_vertical: true
+augmentation_hue: 10
+augmentation_hue_prob: 0.3
+augmentation_image_size:
+- 1024
+- 1777
+augmentation_rotation: 30.0
+augmentation_rotation_prob: 0.5
+augmentation_saturation: 0.2
+augmentation_saturation_prob: 0.5
+augmentation_train_crop_size_range:
+- 666
+- 2666
+backbone_model_pretrained: true
+batch_size: 4
+box_nms_thresh: 0.5
+box_predictions_per_image: 500
+box_score_thresh: 0.05
+dataloader_num_workers: 4
+eval_epoch_interval: 3
+freeze_layers: 2
+grad_accumulation_steps: 1
+lr: 0.0001
+main_metric: segm/AP
+max_epochs: 800
+num_classes: 1
+scheduler_epochs_steps:
+- 640
+- 720
+scheduler_gamma: 0.1
+scheduler_type: WarmupMultiStepLR
+scheduler_warmup_steps: 100
+seed: 1
+test_dataset_names: []
+train_dataset_names:
+- extracted_segm_pp/selvamask
+train_log_interval: 10
+use_amp: true
+use_gradient_checkpointing: true
+valid_dataset_names:
+- extracted_segm_pp/selvamask

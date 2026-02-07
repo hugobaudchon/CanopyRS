@@ -19,6 +19,9 @@ extra:
   version:
     provider: mike
 
+extra_javascript:
+  - javascripts/copy-config.js
+
 plugins:
   - search
   - mkdocstrings:
@@ -34,14 +37,14 @@ plugins:
 
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quickstart: getting-started/quickstart.md
+  - Installation: getting-started/installation.md
+  - Quick Start: getting-started/quickstart.md
   - User Guide:
+    - Presets: user-guide/presets.md
+    - Model Zoo: user-guide/model-zoo.md
+    - Configuration: user-guide/configuration.md
     - Pipeline: user-guide/pipeline.md
     - Components: user-guide/components.md
-    - Configuration: user-guide/configuration.md
-    - Presets: user-guide/presets.md
     - Data: user-guide/data.md
     - Evaluation: user-guide/evaluation.md
     - Training: user-guide/training.md
