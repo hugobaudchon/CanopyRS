@@ -12,7 +12,7 @@ components_configs:
       tile_overlap: 0.75
       ground_resolution: 0.045
 
-  - detector: default_components/detector_multi_NQOS_best
+  - detector: detectors/dino_swinL_multi_NQOS.yaml
 
   - aggregator:
       nms_algorithm: 'iou'
@@ -25,13 +25,13 @@ components_configs:
 Each entry is either:
 
 - **Inline config** — parameters specified directly in the pipeline YAML
-- **Reference** — a path to a reusable component config in `canopyrs/config/default_components/`
+- **Reference** — a path to a reusable component config, for example a detector in `canopyrs/config/detectors/` or a segmenter in `canopyrs/config/segmenters/`. See our [Model Zoo](model-zoo.md).
 
 ## Component config files
 
-Reusable component configs live in `canopyrs/config/default_components/`. They can be referenced from any pipeline config by relative path.
+Reusable component configs live in `canopyrs/config/detectors/` and `canopyrs/config/segmenters/`. They can be referenced from any pipeline config by relative path. See our [Model Zoo](model-zoo.md) for the full list.
 
-Example detector config (`detector_multi_NQOS_best.yaml`):
+Example detector config (`detectors/dino_swinL_multi_NQOS.yaml`):
 
 ```yaml
 model: dino_detrex

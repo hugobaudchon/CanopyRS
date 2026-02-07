@@ -4,7 +4,7 @@ components_configs:
       tile_size: 1333
       tile_overlap: 0.75
       ground_resolution: 0.06
-  - detector: detectors/dino_r50_single_S
+  - detector: detectors/dino_r50_single_S.yaml
   - aggregator:
       nms_algorithm: 'iou'
       score_threshold: 0.4

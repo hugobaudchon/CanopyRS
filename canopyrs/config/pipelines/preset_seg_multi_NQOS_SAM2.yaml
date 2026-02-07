@@ -4,14 +4,14 @@ components_configs:
       tile_size: 1777
       tile_overlap: 0.75
       ground_resolution: 0.045
-  - detector: detectors/dino_swinL_multi_NQOS
+  - detector: detectors/dino_swinL_multi_NQOS.yaml
   - aggregator:
       nms_algorithm: 'iou'
       score_threshold: 0.5
       nms_threshold: 0.7
       edge_band_buffer_percentage: 0.05
       scores_weights: { 'detector_score': 1.0 }
-  - segmenter: segmenters/sam2_L
+  - segmenter: segmenters/sam2_L.yaml
   - aggregator:
       nms_algorithm: 'ioa-disambiguate'
       score_threshold: 0.05

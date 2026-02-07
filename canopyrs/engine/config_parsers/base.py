@@ -11,9 +11,12 @@ def get_config_path(config_name: str):
     # Old style: config_name is a folder under config/ containing pipeline.yaml
     if config_name in predefined_configs:
         config_path = Path(config_folder_path) / config_name / 'pipeline.yaml'
-    # Nested path: first segment is a known config folder (e.g. "detectors/dino_swinL_multi_NQOS")
+    # Nested path: first segment is a known config folder (e.g. "detectors/dino_swinL_multi_NQOS.yaml")
     elif config_name.split('/')[0] in predefined_configs:
-        config_path = Path(config_folder_path) / f'{config_name}.yaml'
+        if config_name.endswith('.yaml'):
+            config_path = Path(config_folder_path) / config_name
+        else:
+            config_path = Path(config_folder_path) / f'{config_name}.yaml'
     # New style: flat pipeline yaml in config/pipelines/ (e.g. "preset_det_multi_NQOS_dino_swinL.yaml")
     elif (Path(config_folder_path) / 'pipelines' / config_name).is_file():
         config_path = Path(config_folder_path) / 'pipelines' / config_name

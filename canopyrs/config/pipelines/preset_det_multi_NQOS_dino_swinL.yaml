@@ -4,7 +4,7 @@ components_configs:
       tile_size: 1777
       tile_overlap: 0.75
       ground_resolution: 0.045
-  - detector: detectors/dino_swinL_multi_NQOS
+  - detector: detectors/dino_swinL_multi_NQOS.yaml
   - aggregator:
       nms_algorithm: 'iou'
       score_threshold: 0.5
