@@ -209,6 +209,12 @@ class Pipeline:
             # Final cleanup of async tasks
             self.data_state.clean_side_processes()
 
+            # Save final GDF to root output folder if one was produced
+            if self.data_state.infer_gdf is not None:
+                final_gpkg_path = self._save_final_gpkg()
+                num_polygons = len(self.data_state.infer_gdf)
+                green_print(f"Final GDF containing {num_polygons} polygons saved to: {final_gpkg_path}")
+
             green_print("Pipeline finished")
 
         finally:
@@ -447,6 +453,13 @@ class Pipeline:
         gpkg_name = self._generate_gpkg_name(suffix)
         gpkg_path = component.output_path / gpkg_name
         gdf.to_file(gpkg_path, driver='GPKG')
+        return gpkg_path
+
+    def _save_final_gpkg(self) -> Path:
+        """Save final GeoDataFrame to root output folder."""
+        gpkg_name = self._generate_gpkg_name("final")
+        gpkg_path = self.output_path / gpkg_name
+        self.data_state.infer_gdf.to_file(gpkg_path, driver='GPKG')
         return gpkg_path
 
     def _generate_gpkg_name(self, suffix: str) -> str:
