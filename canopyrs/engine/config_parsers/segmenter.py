@@ -11,6 +11,13 @@ class SegmenterConfig(BaseConfig):
     image_batch_size: int = 1
     box_batch_size: Optional[int] = 250
     max_prompts_per_image: Optional[int] = 64
+
+    # might be used for maskrcnn
+    box_predictions_per_image: Optional[int] = 500
+    anchor_sizes: Optional[list] = [[32], [64], [128], [256], [512]]
+    aspect_ratios: Optional[tuple] = ((0.5, 1.0, 2.0),) * 5
+    box_score_thresh: Optional[float] = 0.05
+    box_nms_thresh: Optional[float] = 0.5
     
     # Inference post-processing
     pp_n_workers: int = 8
@@ -35,6 +42,7 @@ class SegmenterConfig(BaseConfig):
     main_metric: str = "val/mIoU"
     use_amp: bool = True
     dataloader_num_workers: int = 4
+    backbone_model_pretrained: Optional[bool] = True
 
     # Training logs
     train_log_interval: int = 50
