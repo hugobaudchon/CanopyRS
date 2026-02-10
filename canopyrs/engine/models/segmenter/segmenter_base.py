@@ -1,11 +1,23 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, List
 import multiprocessing
+import warnings
 import cv2
 import numpy as np
 import psutil
 import torch
 from torch.utils.data import DataLoader
+
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"torch\.utils\.checkpoint: the use_reentrant parameter should be passed explicitly.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"None of the inputs have requires_grad=True\. Gradients will be None"
+)
 from shapely import box
 from shapely.affinity import scale
 from tqdm import tqdm

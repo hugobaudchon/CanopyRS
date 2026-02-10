@@ -7,6 +7,7 @@ class SegmenterConfig(BaseConfig):
     model: str = 'sam2'
     architecture: Optional[str] = 'l'
     checkpoint_path: Optional[str] = None
+    num_classes: int = 1
     image_batch_size: int = 1
     box_batch_size: Optional[int] = 250
     max_prompts_per_image: Optional[int] = 64
@@ -43,6 +44,7 @@ class SegmenterConfig(BaseConfig):
     # Data Augmentation (compatible with AugmentationAdder from detector training)
     augmentation_image_size: List[int] = [1024, 1777]
     augmentation_early_conditional_image_size: int = 2000
+    augmentation_early_image_resize_test_only: Optional[int] = None  # allows evaluation at different image resolution for a given dataset and a model with a resize range (for example first resize to 800px to simulate 10cm/px, then resize to 1024px which is in model range of [1024, 1777]px)
     
     augmentation_flip_horizontal: bool = True
     augmentation_flip_vertical: bool = True
@@ -63,6 +65,8 @@ class SegmenterConfig(BaseConfig):
     augmentation_crop_min_intersection_ratio: float = 0.5
     augmentation_crop_prob: float = 0.5
     augmentation_crop_fallback_to_augmentation_image_size: bool = False
+
+    augmentation_drop_annotation_random_prob: float = 0.0        # for experiment where we randomly drop % of boxes to compare with detectree2 that kept images with min 40% of annotation cover
     
     # SAM2/3-specific training params
     weight_decay: float = 0.01

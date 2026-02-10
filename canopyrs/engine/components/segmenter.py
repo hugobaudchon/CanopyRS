@@ -101,7 +101,7 @@ class SegmenterComponent(BaseComponent):
             tiles_path: Path to directory containing tiles
             output_path: Where to save outputs
             infer_coco_path: Path to COCO file with detection boxes
-                             (required if the model needs box prompts)
+                             (required if the model needs box prompts, like SAM)
 
         Returns:
             DataState with segmentation results (access .infer_gdf for the GeoDataFrame)
