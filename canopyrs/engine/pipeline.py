@@ -624,7 +624,9 @@ def run_component(
     Run a single component standalone (wraps it in a Pipeline).
 
     This is a convenience function for users who want to run a single
-    component without manually creating a Pipeline.
+    component without manually creating a Pipeline. For a more discoverable
+    API with explicit signatures, use each component's ``run_standalone()``
+    classmethod instead.
 
     Args:
         component: The component to run
@@ -655,6 +657,31 @@ def run_component(
     """
     if output_path is None:
         raise ValueError("output_path is required for run_component()")
+
+    # Validate inputs against component requirements before creating Pipeline
+    available_state = {
+        key for key, value in {
+            StateKey.IMAGERY_PATH: imagery_path,
+            StateKey.TILES_PATH: tiles_path,
+            StateKey.INFER_GDF: infer_gdf,
+            StateKey.INFER_COCO_PATH: infer_coco_path,
+            StateKey.PRODUCT_NAME: product_name,
+        }.items() if value is not None
+    }
+    available_columns = set(infer_gdf.columns) if infer_gdf is not None else set()
+
+    errors = component.validate(
+        available_state=available_state,
+        available_columns=available_columns,
+        raise_on_error=False,
+    )
+    if errors:
+        error_msg = (
+            f"Cannot run '{component.name}' standalone - missing inputs:\n"
+            + "\n".join(f"  * {e}" for e in errors)
+            + f"\n\n{component.describe()}"
+        )
+        raise ComponentValidationError(error_msg)
 
     # Derive product name if not provided
     if product_name is None:

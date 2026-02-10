@@ -88,6 +88,42 @@ class AggregatorComponent(BaseComponent):
                 f"Add a segmenter before aggregator, or set segmenter_score_weight=0."
             )
 
+    @classmethod
+    def run_standalone(
+        cls,
+        config: AggregatorConfig,
+        infer_gdf: 'gpd.GeoDataFrame',
+        output_path: str,
+        product_name: str = "standalone",
+    ) -> 'DataState':
+        """
+        Run aggregator standalone on a GeoDataFrame of detections/segmentations.
+
+        Args:
+            config: Aggregator configuration
+            infer_gdf: GeoDataFrame with geometry, object_id, and tile_path columns
+            output_path: Where to save outputs
+            product_name: Name for output files (used in gpkg naming)
+
+        Returns:
+            DataState with aggregated results (access .infer_gdf for the GeoDataFrame)
+
+        Example:
+            result = AggregatorComponent.run_standalone(
+                config=AggregatorConfig(nms_threshold=0.5, ...),
+                infer_gdf=my_detections_gdf,
+                output_path='./output',
+            )
+            print(result.infer_gdf)
+        """
+        from canopyrs.engine.pipeline import run_component
+        return run_component(
+            component=cls(config),
+            output_path=output_path,
+            infer_gdf=infer_gdf,
+            product_name=product_name,
+        )
+
     @validate_requirements
     def __call__(self, data_state: DataState) -> ComponentResult:
         """

@@ -70,6 +70,39 @@ class DetectorComponent(BaseComponent):
         self.state_hints = dict(self.BASE_STATE_HINTS)
         self.column_hints = dict(self.BASE_COLUMN_HINTS)
 
+    @classmethod
+    def run_standalone(
+        cls,
+        config: DetectorConfig,
+        tiles_path: str,
+        output_path: str,
+    ) -> 'DataState':
+        """
+        Run detector standalone on pre-tiled imagery.
+
+        Args:
+            config: Detector configuration
+            tiles_path: Path to directory containing tiles
+            output_path: Where to save outputs
+
+        Returns:
+            DataState with detection results (access .infer_gdf for the GeoDataFrame)
+
+        Example:
+            result = DetectorComponent.run_standalone(
+                config=DetectorConfig(model='faster_rcnn_detectron2', ...),
+                tiles_path='./tiles',
+                output_path='./output',
+            )
+            print(result.infer_gdf)
+        """
+        from canopyrs.engine.pipeline import run_component
+        return run_component(
+            component=cls(config),
+            output_path=output_path,
+            tiles_path=tiles_path,
+        )
+
     @validate_requirements
     def __call__(self, data_state: DataState) -> ComponentResult:
         """
