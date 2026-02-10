@@ -10,7 +10,7 @@ Splits a large orthomosaic into smaller, overlapping tiles suitable for model in
 
 | Type | Description |
 |---|---|
-| `tile` | Unlabeled regular-grid tiles (input to detector) |
+| `tile` | Unlabeled regular-grid tiles (input to detector or segmenter) |
 | `tile_labeled` | Labeled tiles with COCO annotations (input to prompted segmenter) |
 | `polygon` | Per-polygon tiles (input to classifier) |
 

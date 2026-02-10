@@ -19,6 +19,9 @@ extra:
   version:
     provider: mike
 
+extra_css:
+  - stylesheets/extra.css
+
 extra_javascript:
   - javascripts/copy-config.js
 

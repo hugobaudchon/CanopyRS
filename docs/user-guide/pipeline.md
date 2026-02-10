@@ -39,7 +39,7 @@ Key state keys:
 
 COCO file generation is expensive and is queued as a background process after each component that produces one. The pipeline automatically waits for the relevant COCO file to finish before running any component that requires it — no manual coordination needed.
 
-## Standalone usage
+## Standalone component usage
 
 A single component can be run outside a pipeline using the `run_component()` helper:
 
