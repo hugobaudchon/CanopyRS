@@ -1,3 +1,4 @@
+# Model inference
 model: sam3
 architecture: l
 checkpoint_path: https://huggingface.co/CanopyRS/sam3-multi-selvabox-selvamask-FT/resolve/main/sam3_selvamask_ft_model_best.pt
@@ -8,3 +9,83 @@ pp_n_workers: 16
 pp_remove_rings: true
 pp_remove_small_geoms: 50
 pp_simplify_tolerance: 0.0
+
+# Parameters used for training
+data_root_path: 'TODO: change this for training!'
+train_dataset_names:
+  - 20240131_zf2block4_ms_m3m_rgb
+  - 20240613_tbsnewsite2_m3e_rgb
+  - 20241122_bcifairchildn_m3m_rgb
+valid_dataset_names:
+  - 20240131_zf2block4_ms_m3m_rgb
+  - 20240613_tbsnewsite2_m3e_rgb
+  - 20241122_bcifairchildn_m3m_rgb
+
+# Training
+seed: 42
+batch_size: 2
+max_epochs: 200
+lr_image_encoder: 5.0e-5
+lr_others: 3.0e-5
+
+weight_decay: 0.01
+max_prompts_per_image: 32
+# Freezing (only train mask decoder)
+freeze_image_encoder: false
+freeze_prompt_encoder: false
+freeze_mask_decoder: false
+# Box jitter
+box_noise_scale: 0.0
+
+#Use detector boxes as SAM prompt
+use_detector_boxes: True
+detector_config_path: 'TODO: change this for training!'
+detector_cache_dir: 'TODO: change this for training!'
+eval_pipeline_config_path: 'TODO: change this for training!'
+coco_eval_output_dir: 'TODO: change this for training!'
+
+# Augmentation (copy from detector)
+augmentation_brightness: 0.2
+augmentation_brightness_prob: 0.5
+augmentation_contrast: 0.2
+augmentation_contrast_prob: 0.5
+augmentation_crop_fallback_to_augmentation_image_size: false
+augmentation_crop_min_intersection_ratio: 0.5
+augmentation_crop_prob: 1.0
+augmentation_early_conditional_image_size: 2000
+augmentation_flip_horizontal: true
+augmentation_flip_vertical: true
+augmentation_hue: 10
+augmentation_hue_prob: 0.3
+augmentation_image_size:
+  - 1024
+  - 1777
+augmentation_rotation: 30
+augmentation_rotation_prob: 0.5
+augmentation_saturation: 0.2
+augmentation_saturation_prob: 0.5
+augmentation_train_crop_size_range:
+  - 666
+  - 2666
+
+# box_batch_size: 4 # TODO: We used this value for training
+
+loss_weight_mask: 0.0
+loss_weight_dice: 1.0
+loss_weight_iou: 1.0
+loss_iou_use_l1: true
+
+visualize_batches: False
+visualize_every_n_steps: 2 # Frequent visualization for debugging
+visualize_validation: False
+max_validation_vis_samples: 5
+visualize_path: 'TODO: change this for training!'
+
+# Hardware
+use_amp: true
+dataloader_num_workers: 2
+
+# Logging
+wandb_project: 'TODO: change this for training!'
+wandb_enabled: true
+train_output_path: 'TODO: change this for training!'

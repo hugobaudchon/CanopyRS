@@ -29,6 +29,7 @@ backbone_model_pretrained: true
 batch_size: 4
 box_nms_thresh: 0.5
 box_predictions_per_image: 500
+data_root_path: 'TODO: change this for training!'
 box_score_thresh: 0.05
 dataloader_num_workers: 4
 eval_epoch_interval: 3
@@ -49,7 +50,9 @@ test_dataset_names: []
 train_dataset_names:
 - extracted_segm_pp/selvamask
 train_log_interval: 10
+train_output_path: 'TODO: change this for training!'
 use_amp: true
 use_gradient_checkpointing: true
 valid_dataset_names:
 - extracted_segm_pp/selvamask
+wandb_project: 'TODO: change this for training!'
