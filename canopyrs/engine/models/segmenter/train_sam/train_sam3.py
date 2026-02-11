@@ -25,7 +25,7 @@ from canopyrs.engine.models.segmenter.train_sam.dataset import register_sam2_dat
 from canopyrs.engine.config_parsers import InferIOConfig, PipelineConfig
 from canopyrs.engine.config_parsers.base import get_config_path
 from canopyrs.engine.pipeline import Pipeline
-from canopyrs.engine.benchmark.detector.evaluator import CocoEvaluator
+from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator
 from copy import deepcopy
     
 def run_coco_evaluations(

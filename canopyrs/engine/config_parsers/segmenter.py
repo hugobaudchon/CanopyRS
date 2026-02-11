@@ -32,6 +32,7 @@ class SegmenterConfig(BaseConfig):
     data_root_path: str = "../selvamask"
     train_dataset_names: List[str] = None
     valid_dataset_names: List[str] = None
+    test_dataset_names: List[str] = []
     
     # Training hyperparameters
     seed: int = 42
@@ -40,9 +41,16 @@ class SegmenterConfig(BaseConfig):
     lr: float = 1e-5
     eval_epoch_interval: int = 2
     main_metric: str = "val/mIoU"
+    freeze_layers: Optional[int] = -1
+    grad_accumulation_steps: int = 1
     use_amp: bool = True
+    use_gradient_checkpointing: Optional[bool] = False
     dataloader_num_workers: int = 4
     backbone_model_pretrained: Optional[bool] = True
+    scheduler_type: str = 'WarmupMultiStepLR'
+    scheduler_epochs_steps: Optional[List[int]] = [10, 20, 30]
+    scheduler_gamma: Optional[float] = 0.1
+    scheduler_warmup_steps: Optional[int] = 1000
 
     # Training logs
     train_log_interval: int = 50
