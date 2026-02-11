@@ -156,221 +156,67 @@ def mock_model():
 
 
 # =============================================================================
-# Test Data Download Fixtures (for integration tests)
+# Test Raster Fixtures (local asset, no download)
 # =============================================================================
 
-# Cache directory for downloaded test data
+# Path to the test raster included in the repo
+TEST_RASTER_PATH = Path(__file__).parent.parent / "assets" / "20240130_zf2tower_m3m_rgb_test_crop.tif"
+
+# Cache directory for generated test artifacts (tiles, etc.)
 TEST_DATA_CACHE = Path.home() / ".cache" / "canopyrs_test_data"
 
 
 @pytest.fixture(scope="session")
-def bci50ha_small_labels():
+def test_raster():
     """
-    Download just the BCI50ha improved labels (25MB) for unit tests.
+    Path to the test raster (included in repo under assets/).
 
-    This is much smaller than the full dataset and doesn't require
-    downloading multi-GB raster files.
+    This is a small (~24MB) real orthomosaic crop with actual trees,
+    suitable for end-to-end pipeline testing without any downloads.
     """
-    import requests
-    import zipfile
-
-    cache_path = TEST_DATA_CACHE / "unit_tests"
-    labels_dir = cache_path / "bci50ha_labels"
-    labels_file = labels_dir / "BCI_50ha_2020_08_01_crownmap_improved.gpkg"
-
-    # Check if already downloaded
-    if labels_file.exists():
-        return labels_dir
-
-    try:
-        cache_path.mkdir(parents=True, exist_ok=True)
-
-        # Download just the improved labels zip (25MB)
-        zip_url = "https://ndownloader.figshare.com/files/43628040"
-        zip_path = cache_path / "labels.zip"
-
-        print("Downloading BCI50ha labels for unit tests (25MB)...")
-        response = requests.get(zip_url, stream=True)
-        response.raise_for_status()
-
-        with open(zip_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        # Extract
-        print("Extracting labels...")
-        labels_dir.mkdir(exist_ok=True)
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            zf.extractall(labels_dir)
-
-        # Clean up zip
-        zip_path.unlink()
-
-        # Find and move the gpkg to the root
-        gpkg_files = list(labels_dir.glob("**/*.shp"))
-        if gpkg_files:
-            # Convert shp to gpkg
-            import geopandas as gpd
-            gdf = gpd.read_file(gpkg_files[0])
-            gdf.to_file(labels_file, driver="GPKG")
-
-        return labels_dir
-    except Exception as e:
-        pytest.skip(f"Could not download BCI50ha labels: {e}")
+    if not TEST_RASTER_PATH.exists():
+        pytest.skip(f"Test raster not found: {TEST_RASTER_PATH}")
+    return TEST_RASTER_PATH
 
 
 @pytest.fixture(scope="session")
-def bci50ha_raw_data():
+def test_raster_tiles(test_raster):
     """
-    Download and cache BCI50ha 2020 dataset for integration tests.
+    Tiled version of the test raster for pipeline tests.
 
-    Only downloads 2020 raster and labels (not 2022) to save time and bandwidth.
-    Returns the path to the raw data, or skips if unavailable.
-    This fixture is session-scoped so download happens only once.
+    Tiles are cached between sessions to avoid re-tilerizing.
     """
-    import requests
-    import zipfile
-    import shutil
+    from canopyrs.engine.components.tilerizer import TilerizerComponent
+    from canopyrs.engine.config_parsers.tilerizer import TilerizerConfig
 
-    cache_path = TEST_DATA_CACHE / "raw"
-    dataset_path = cache_path / "panama_bci50ha"
+    cache_path = TEST_DATA_CACHE / "test_raster_tiles"
+    tiles_marker = cache_path / "_tiles_done"
 
-    # Check if already downloaded
-    raster_file = dataset_path / "BCI_50ha_2020_08_01_crownmap_raw.tif"
-    labels_file = dataset_path / "BCI_50ha_2020_08_01_crownmap_improved.gpkg"
-    if raster_file.exists() and labels_file.exists():
-        return dataset_path
+    # Check if already tilerized
+    if tiles_marker.exists():
+        # Find the tiles directory created by the tilerizer
+        tile_files = list(cache_path.glob("**/*.tif"))
+        if tile_files:
+            return cache_path
 
-    # Download only 2020 data using Figshare API
-    try:
-        dataset_path.mkdir(parents=True, exist_ok=True)
+    cache_path.mkdir(parents=True, exist_ok=True)
 
-        # Get file metadata from Figshare API
-        article_id = "24784053"
-        api_url = f"https://api.figshare.com/v2/articles/{article_id}"
-        response = requests.get(api_url)
-        response.raise_for_status()
-        data = response.json()
+    config = TilerizerConfig(
+        tile_size=512,
+        tile_overlap=0.25,
+        tile_type="tile",
+    )
 
-        # Download only 2020 files
-        files_to_download = [
-            'BCI_50ha_2020_08_01_crownmap_raw.zip',
-            'BCI_50ha_2020_08_01_crownmap_improved.zip',
-        ]
+    result = TilerizerComponent.run_standalone(
+        config=config,
+        imagery_path=str(test_raster),
+        output_path=str(cache_path),
+    )
 
-        for file_info in data.get('files', []):
-            file_name = file_info['name']
-            if file_name in files_to_download:
-                print(f"Downloading {file_name}...")
-                download_url = file_info['download_url']
-                local_file = dataset_path / file_name
+    # Mark as done for cache check
+    tiles_marker.touch()
 
-                # Download with progress
-                headers = {'User-Agent': 'Mozilla/5.0'}
-                resp = requests.get(download_url, stream=True, headers=headers)
-                resp.raise_for_status()
-                with open(local_file, 'wb') as f:
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        f.write(chunk)
-
-                # Extract
-                print(f"Extracting {file_name}...")
-                with zipfile.ZipFile(local_file, 'r') as zf:
-                    zf.extractall(dataset_path)
-                local_file.unlink()
-
-        # Find and rename raw raster
-        raw_files = list(dataset_path.glob('**/BCI_50ha_2020_08_01_global.tif'))
-        if raw_files:
-            raw_files[0].rename(raster_file)
-
-        # Find and convert improved shapefile to gpkg
-        shp_files = list(dataset_path.glob('**/BCI_50ha_2020_08_01_crownmap_improved.shp'))
-        if shp_files:
-            gdf = gpd.read_file(shp_files[0])
-            gdf.to_file(labels_file, driver='GPKG')
-
-        # Clean up extracted directories
-        for dir_name in ['BCI_50ha_2020_08_01_crownmap_improved', 'BCI_50ha_2020_08_01_crownmap_raw']:
-            dir_path = dataset_path / dir_name
-            if dir_path.exists():
-                shutil.rmtree(dir_path)
-
-        return dataset_path
-    except Exception as e:
-        pytest.skip(f"Could not download BCI50ha test data: {e}")
-
-
-@pytest.fixture(scope="session")
-def bci50ha_tiles(bci50ha_raw_data):
-    """
-    Create tiled version of BCI50ha 2020 data for pipeline tests.
-
-    Only tilerizes 2020 data to match what bci50ha_raw_data downloads.
-    Uses a small tile size for faster tests.
-    Session-scoped so tilerization happens only once.
-    """
-    import json
-    from geodataset.aoi import AOIFromPackageConfig
-    from canopyrs.data.detection.tilerize import tilerize_with_overlap
-
-    output_path = TEST_DATA_CACHE / "tiles"
-    tiles_path = output_path / "panama_bci50ha"
-
-    # Check if already tilerized (look for 2020 tiles specifically)
-    test_tiles_dir = tiles_path / "BCI_50ha_2020_08_01_crownmap" / "test"
-    if test_tiles_dir.exists() and any(test_tiles_dir.glob("*.tif")):
-        return tiles_path
-
-    try:
-        output_path.mkdir(parents=True, exist_ok=True)
-
-        # Get AOI and categories paths from BCI50ha dataset
-        from canopyrs.data.detection.raw_datasets.BCI50ha.bci50ha import BCI50haDataset
-        dataset = BCI50haDataset()
-
-        # Only process 2020 data
-        raster_name = "BCI_50ha_2020_08_01_crownmap"
-        raster_path = bci50ha_raw_data / f"{raster_name}_raw.tif"
-        labels_path = bci50ha_raw_data / f"{raster_name}_improved.gpkg"
-
-        # Check files exist
-        if not raster_path.exists() or not labels_path.exists():
-            pytest.skip(f"Required files not found: {raster_path}, {labels_path}")
-
-        # Load AOI for test fold
-        # The paths in dataset.aois are absolute (created from parent_folder in bci50ha.py)
-        aoi_path = dataset.aois[raster_name]["test"]
-        aois_gdf = gpd.read_file(str(aoi_path))
-        aois_config = AOIFromPackageConfig({"test": aois_gdf})
-
-        # Determine label column name
-        labels_gdf = gpd.read_file(labels_path)
-        if 'Latin' in labels_gdf.columns:
-            main_label_category_column_name = 'Latin'
-        else:
-            main_label_category_column_name = 'latin'
-
-        # Get categories path (also absolute from parent_folder)
-        categories_path = dataset.categories
-
-        # Tilerize just the 2020 data
-        tilerize_with_overlap(
-            raster_path=raster_path,
-            labels=labels_path,
-            main_label_category_column_name=main_label_category_column_name,
-            coco_categories_list=json.load(open(categories_path, 'rb'))['categories'],
-            aois_config=aois_config,
-            output_path=tiles_path,
-            ground_resolution=0.1,
-            scale_factor=None,
-            tile_size=1777,
-            tile_overlap=0.25
-        )
-
-        return tiles_path
-    except Exception as e:
-        pytest.skip(f"Could not tilerize BCI50ha test data: {e}")
+    return Path(result.tiles_path)
 
 
 # =============================================================================

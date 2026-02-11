@@ -1,71 +1,14 @@
 """
-Tests for BaseComponent and ComponentResult.
+Tests for BaseComponent validation logic.
 """
 
 import pytest
 
 from canopyrs.engine.components.base import (
     BaseComponent,
-    ComponentResult,
     ComponentValidationError,
 )
 from canopyrs.engine.constants import Col, StateKey
-
-
-class TestComponentResult:
-    """Tests for ComponentResult dataclass."""
-
-    def test_minimal_result(self, sample_gdf_minimal):
-        """ComponentResult can be created with just a GDF."""
-        result = ComponentResult(
-            gdf=sample_gdf_minimal,
-            produced_columns={Col.GEOMETRY},
-        )
-        assert result.gdf is not None
-        assert result.produced_columns == {Col.GEOMETRY}
-        assert result.save_gpkg is False
-        assert result.save_coco is False
-
-    def test_result_with_io_flags(self, sample_gdf_minimal):
-        """ComponentResult respects I/O flags."""
-        result = ComponentResult(
-            gdf=sample_gdf_minimal,
-            produced_columns={Col.GEOMETRY, Col.DETECTOR_SCORE},
-            save_gpkg=True,
-            save_coco=True,
-            coco_scores_column=Col.DETECTOR_SCORE,
-        )
-        assert result.save_gpkg is True
-        assert result.save_coco is True
-        assert result.coco_scores_column == Col.DETECTOR_SCORE
-
-    def test_result_with_state_updates(self, sample_gdf_minimal):
-        """ComponentResult can include state updates."""
-        result = ComponentResult(
-            gdf=sample_gdf_minimal,
-            produced_columns={Col.GEOMETRY},
-            state_updates={StateKey.TILES_PATH: "/new/path"},
-        )
-        assert result.state_updates == {StateKey.TILES_PATH: "/new/path"}
-
-
-class TestComponentValidationError:
-    """Tests for ComponentValidationError."""
-
-    def test_error_with_message(self):
-        """Error can be raised with message."""
-        with pytest.raises(ComponentValidationError) as exc_info:
-            raise ComponentValidationError("Test error")
-        assert "Test error" in str(exc_info.value)
-
-    def test_error_with_component_context(self):
-        """Error can include component context in message."""
-        with pytest.raises(ComponentValidationError) as exc_info:
-            raise ComponentValidationError(
-                "Component 'detector' validation failed: Missing required state"
-            )
-        assert "detector" in str(exc_info.value).lower()
-        assert "Missing required state" in str(exc_info.value)
 
 
 class TestBaseComponentValidation:

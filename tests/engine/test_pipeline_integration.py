@@ -1,56 +1,54 @@
 """
-Integration tests for Pipeline using real data.
+Integration tests for Pipeline using the test raster (assets/).
 
-These tests require downloading the BCI50ha dataset (~500MB).
+These tests use a real orthomosaic crop included in the repo (~24MB).
 They are marked with @pytest.mark.slow and can be skipped with:
     pytest -m "not slow"
-
-The data is cached in ~/.cache/canopyrs_test_data/ so subsequent runs are fast.
 """
 
 import pytest
 from pathlib import Path
 
+from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig
+from canopyrs.engine.config_parsers.base import get_config_path
+from canopyrs.engine.pipeline import Pipeline
+
 
 @pytest.mark.slow
-class TestPipelineWithBCI50ha:
-    """Integration tests using BCI50ha dataset."""
+class TestPipelineIntegration:
+    """Integration tests using the test raster asset."""
 
-    def test_bci50ha_data_downloaded(self, bci50ha_raw_data):
-        """Verify BCI50ha raw data is available."""
-        assert bci50ha_raw_data.exists()
+    def test_raster_available(self, test_raster):
+        """Verify test raster is available."""
+        import rasterio
 
-        # Check expected files exist
-        raster = bci50ha_raw_data / "BCI_50ha_2020_08_01_crownmap_raw.tif"
-        labels = bci50ha_raw_data / "BCI_50ha_2020_08_01_crownmap_improved.gpkg"
+        assert test_raster.exists()
 
-        assert raster.exists(), f"Raster not found: {raster}"
-        assert labels.exists(), f"Labels not found: {labels}"
+        with rasterio.open(test_raster) as src:
+            assert src.count >= 3, "Test raster must have at least 3 bands"
+            assert src.width > 0
+            assert src.height > 0
 
-    def test_bci50ha_tiles_created(self, bci50ha_tiles):
-        """Verify BCI50ha tiles are created."""
-        assert bci50ha_tiles.exists()
+    def test_tiles_created(self, test_raster_tiles):
+        """Verify test raster tiles are created."""
+        assert test_raster_tiles.exists()
 
-        # Check tiles exist
-        tiles = list(bci50ha_tiles.glob("**/*.tif"))
+        tiles = list(test_raster_tiles.glob("**/*.tif"))
         assert len(tiles) > 0, "No tiles found"
 
-    def test_pipeline_tilerizer_only(self, bci50ha_raw_data, tmp_path):
+    def test_pipeline_tilerizer_only(self, test_raster, tmp_path):
         """Test pipeline with just tilerizer component."""
-        from canopyrs.engine.pipeline import Pipeline
-        from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig, TilerizerConfig
-
-        raster_path = bci50ha_raw_data / "BCI_50ha_2020_08_01_crownmap_raw.tif"
+        from canopyrs.engine.config_parsers import TilerizerConfig
 
         io_config = InferIOConfig(
-            input_imagery=str(raster_path),
+            input_imagery=str(test_raster),
             tiles_path=None,
             output_folder=str(tmp_path / "output"),
         )
 
         tilerizer_config = TilerizerConfig(
-            tile_size=1777,
-            overlap=0.25,
+            tile_size=512,
+            tile_overlap=0.25,
             tile_type="tile",
         )
 
@@ -59,11 +57,6 @@ class TestPipelineWithBCI50ha:
         )
 
         pipeline = Pipeline.from_config(io_config, pipeline_config)
-
-        # Verify flow chart works
-        pipeline._print_flow_chart()
-
-        # Run pipeline
         pipeline()
 
         # Verify tiles were created
@@ -72,17 +65,16 @@ class TestPipelineWithBCI50ha:
         tiles = list(tiles_path.glob("**/*.tif"))
         assert len(tiles) > 0, "No tiles created"
 
-    def test_pipeline_validation_catches_missing_dependency(self, bci50ha_tiles, tmp_path):
+    def test_pipeline_validation_catches_missing_dependency(self, test_raster_tiles, tmp_path):
         """Test that pipeline validation catches missing component dependencies."""
-        from canopyrs.engine.pipeline import Pipeline
-        from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig, AggregatorConfig
+        from canopyrs.engine.config_parsers import AggregatorConfig
         from canopyrs.engine.components.base import ComponentValidationError
 
         # Try to create a pipeline with aggregator but no detector/segmenter
         # This should fail validation because aggregator needs INFER_GDF
         io_config = InferIOConfig(
             input_imagery=None,
-            tiles_path=str(bci50ha_tiles / "BCI_50ha_2020_08_01_crownmap" / "test"),
+            tiles_path=str(test_raster_tiles),
             output_folder=str(tmp_path / "output"),
         )
 
@@ -96,31 +88,13 @@ class TestPipelineWithBCI50ha:
         )
 
         # Pipeline creation should fail because aggregator needs INFER_GDF
-        # which is not produced by any previous component
         with pytest.raises(ComponentValidationError):
             Pipeline.from_config(io_config, pipeline_config)
 
 
-class TestPipelineWithBCI50haSmall:
-    """Unit tests using small BCI50ha labels (25MB download, fast)."""
-
-    def test_bci50ha_labels_available(self, bci50ha_small_labels):
-        """Verify BCI50ha labels can be loaded."""
-        import geopandas as gpd
-
-        labels_file = bci50ha_small_labels / "BCI_50ha_2020_08_01_crownmap_improved.gpkg"
-        assert labels_file.exists(), f"Labels file not found: {labels_file}"
-
-        # Load and verify basic properties
-        gdf = gpd.read_file(labels_file)
-        assert len(gdf) > 0, "Labels GeoDataFrame is empty"
-        assert 'geometry' in gdf.columns, "Missing geometry column"
-        print(f"Loaded {len(gdf)} labels from BCI50ha dataset")
-
-
 @pytest.mark.slow
 class TestPipelineWithSyntheticData:
-    """Integration tests using synthetic raster data (faster than BCI50ha)."""
+    """Integration tests using synthetic raster data (fastest)."""
 
     def test_synthetic_raster_created(self, synthetic_raster):
         """Verify synthetic raster fixture works."""
@@ -145,8 +119,7 @@ class TestPipelineWithSyntheticData:
 
     def test_tilerizer_with_synthetic_data(self, synthetic_raster, tmp_path):
         """Test tilerizer component with synthetic raster."""
-        from canopyrs.engine.pipeline import Pipeline
-        from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig, TilerizerConfig
+        from canopyrs.engine.config_parsers import TilerizerConfig
 
         io_config = InferIOConfig(
             input_imagery=str(synthetic_raster),
@@ -156,7 +129,7 @@ class TestPipelineWithSyntheticData:
 
         tilerizer_config = TilerizerConfig(
             tile_size=128,  # Small tiles for 256x256 image
-            overlap=0.25,
+            tile_overlap=0.25,
             tile_type="tile",
         )
 
@@ -172,3 +145,88 @@ class TestPipelineWithSyntheticData:
         assert tiles_path.exists()
         tiles = list(tiles_path.glob("**/*.tif"))
         assert len(tiles) > 0
+
+
+# =============================================================================
+# Model Inference Integration Tests
+# =============================================================================
+
+# Preset pipeline config names (resolved by PipelineConfig.from_yaml via get_config_path)
+DINO_SAM3_CONFIG = "preset_seg_multi_NQOS_selvamask_SAM3_FT_quality.yaml"
+MASKRCNN_CONFIG = "maskrcnn_test.yaml"
+FASTERRCNN_CONFIG = "fasterrcnn_test.yaml"
+
+
+def _run_pipeline_from_preset(preset_name: str, test_raster, tmp_path):
+    """Run a pipeline from a preset YAML config on the test raster."""
+    pipeline_config = PipelineConfig.from_yaml(get_config_path(preset_name))
+
+    io_config = InferIOConfig(
+        input_imagery=str(test_raster),
+        tiles_path=None,
+        output_folder=str(tmp_path / "output"),
+    )
+
+    pipeline = Pipeline.from_config(io_config, pipeline_config)
+    pipeline()
+    return pipeline
+
+
+@pytest.mark.slow
+class TestDinoSam3Pipeline:
+    """Integration test: DINO FT on SelvaMask + SAM3 FT (detector + segmenter)."""
+
+    def test_dino_sam3_inference(self, test_raster, tmp_path):
+        """Full DINO + SAM3 pipeline produces segmentation outputs."""
+        pipeline = _run_pipeline_from_preset(DINO_SAM3_CONFIG, test_raster, tmp_path)
+
+        # Pipeline should have completed with an infer_gdf
+        gdf = pipeline.data_state.infer_gdf
+        assert gdf is not None, "Pipeline did not produce an infer_gdf"
+        assert len(gdf) > 0, "Pipeline produced zero detections"
+
+        # Should have segmenter-produced geometry (polygons, not just bboxes)
+        assert "geometry" in gdf.columns
+
+        # Check output files exist (detector COCO, aggregator gpkg)
+        output_path = Path(pipeline.output_path)
+        assert output_path.exists()
+        coco_files = list(output_path.glob("**/*.json"))
+        gpkg_files = list(output_path.glob("**/*.gpkg"))
+        assert len(coco_files) > 0, "No COCO JSON files produced"
+        assert len(gpkg_files) > 0, "No GeoPackage files produced"
+
+
+@pytest.mark.slow
+class TestMaskRCNNPipeline:
+    """Integration test: Mask R-CNN pipeline (end-to-end segmenter)."""
+
+    def test_maskrcnn_inference(self, test_raster, tmp_path):
+        """Mask R-CNN pipeline produces segmentation outputs."""
+        pipeline = _run_pipeline_from_preset(MASKRCNN_CONFIG, test_raster, tmp_path)
+
+        gdf = pipeline.data_state.infer_gdf
+        assert gdf is not None, "Pipeline did not produce an infer_gdf"
+        assert len(gdf) > 0, "Pipeline produced zero detections"
+        assert "geometry" in gdf.columns
+
+        output_path = Path(pipeline.output_path)
+        gpkg_files = list(output_path.glob("**/*.gpkg"))
+        assert len(gpkg_files) > 0, "No GeoPackage files produced"
+
+
+@pytest.mark.slow
+class TestFasterRCNNPipeline:
+    """Integration test: Faster R-CNN pipeline (detection only)."""
+
+    def test_fasterrcnn_inference(self, test_raster, tmp_path):
+        """Faster R-CNN pipeline produces detection outputs."""
+        pipeline = _run_pipeline_from_preset(FASTERRCNN_CONFIG, test_raster, tmp_path)
+
+        gdf = pipeline.data_state.infer_gdf
+        assert gdf is not None, "Pipeline did not produce an infer_gdf"
+        assert len(gdf) > 0, "Pipeline produced zero detections"
+
+        output_path = Path(pipeline.output_path)
+        coco_files = list(output_path.glob("**/*.json"))
+        assert len(coco_files) > 0, "No COCO JSON files produced"
