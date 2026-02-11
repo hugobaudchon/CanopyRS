@@ -2,9 +2,15 @@
 wandb/
 pretrained_models/
 jobs/
+experiments/*
 experiments/dataset_statistics/*.png
 experiments/resolution/*/*.yaml
+experiments/multi_resolution/*/*.yaml
+config_old/*
 output/*
+*.png
+*.txt
+*.csv
 
 # Slurm temp files
 *.out

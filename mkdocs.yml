@@ -1,0 +1,66 @@
+site_name: CanopyRS
+site_description: A pipeline for processing high-resolution geospatial orthomosaics to detect, segment, and classify trees.
+site_url: https://hugobaudchon.github.io/CanopyRS/
+repo_url: https://github.com/hugobaudchon/CanopyRS
+
+theme:
+  name: material
+  palette:
+    primary: green
+    accent: teal
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - content.code.copy
+    - navigation.top
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/copy-config.js
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [.] 
+          
+          options:
+            docstring_style: google
+            show_source: true
+            inherited_members: true
+
+nav:
+  - Home: index.md
+  - Installation: getting-started/installation.md
+  - Quick Start: getting-started/quickstart.md
+  - User Guide:
+    - Presets: user-guide/presets.md
+    - Model Zoo: user-guide/model-zoo.md
+    - Configuration: user-guide/configuration.md
+    - Pipeline: user-guide/pipeline.md
+    - Components: user-guide/components.md
+    - Standalone Usage: user-guide/standalone.md
+    - Data: user-guide/data.md
+    - Evaluation: user-guide/evaluation.md
+    - Training: user-guide/training.md
+  - API Reference:
+    - Pipeline: api/pipeline.md
+    - Components:
+      - Base: api/components/base.md
+      - Tilerizer: api/components/tilerizer.md
+      - Detector: api/components/detector.md
+      - Segmenter: api/components/segmenter.md
+      - Aggregator: api/components/aggregator.md
+      - Classifier: api/components/classifier.md
+    - DataState: api/data-state.md
+  - Contributing: contributing.md

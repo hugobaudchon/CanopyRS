@@ -1,0 +1,4 @@
+model: 'detectree2'
+architecture: 'COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml'
+checkpoint_path: 'https://zenodo.org/records/15863800/files/250312_flexi.pth'
+batch_size: 8

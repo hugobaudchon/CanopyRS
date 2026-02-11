@@ -1,167 +1,164 @@
+"""
+ClassifierComponent with simplified architecture.
+
+Single __call__() method returns flattened DataFrame (no geometry).
+Pipeline handles merging into existing GDF and I/O.
+"""
+
 import warnings
-from typing import List, Any, Tuple, Set
-import geopandas as gpd
-import pandas as pd
 from pathlib import Path
+from typing import Set
+
+import pandas as pd
 
 from geodataset.dataset import InstanceSegmentationLabeledRasterCocoDataset
-from geodataset.utils import GeoPackageNameConvention
 
-from canopyrs.engine.components.base import BaseComponent
+from canopyrs.engine.constants import Col, StateKey, INFER_AOI_NAME
+from canopyrs.engine.components.base import BaseComponent, ComponentResult, validate_requirements
 from canopyrs.engine.config_parsers import ClassifierConfig
 from canopyrs.engine.data_state import DataState
 from canopyrs.engine.models.registry import CLASSIFIER_REGISTRY
 from canopyrs.engine.models.utils import collate_fn_infer_image_masks
-from canopyrs.engine.utils import generate_future_coco, object_id_column_name, infer_aoi_name, parse_product_name, \
-    tile_path_column_name
 
 
 class ClassifierComponent(BaseComponent):
-    """Component for classifying tiles"""
+    """
+    Classifies objects in polygon-tiled imagery.
+
+    Requirements:
+        - tiles_path: Directory containing polygon tiles
+        - infer_coco_path: COCO annotations with instance masks
+
+    Produces:
+        - Updated infer_gdf with classification results
+        - Columns: classifier_score, classifier_class, classifier_scores
+    """
+
     name = 'classifier'
 
-    def __init__(self, config: ClassifierConfig, parent_output_path: str, component_id: int):
+    BASE_REQUIRES_STATE = {StateKey.TILES_PATH, StateKey.INFER_COCO_PATH}
+    BASE_REQUIRES_COLUMNS: Set[str] = set()
+
+    BASE_PRODUCES_STATE = {StateKey.INFER_GDF, StateKey.INFER_COCO_PATH}
+    BASE_PRODUCES_COLUMNS = {Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES}
+
+    BASE_STATE_HINTS = {
+        StateKey.TILES_PATH: "Classifier needs polygon tiles. Add a tilerizer with tile_type='polygon'.",
+        StateKey.INFER_COCO_PATH: "Classifier needs COCO annotations from a polygon tilerizer.",
+    }
+
+    BASE_COLUMN_HINTS = {
+        Col.OBJECT_ID: "Classifier needs object IDs to merge results back to infer_gdf.",
+    }
+
+    def __init__(
+        self,
+        config: ClassifierConfig,
+        parent_output_path: str = None,
+        component_id: int = None
+    ):
         super().__init__(config, parent_output_path, component_id)
-        if config.model in CLASSIFIER_REGISTRY:
-            self.classifier = CLASSIFIER_REGISTRY[config.model](config)
-        else:
-            raise ValueError(f'Invalid classifier model {config.model}')
 
-    def __call__(self, data_state: DataState) -> DataState:
-        """Run classification on tiles"""
+        # Store model class (instantiate in __call__ to avoid loading during validation)
+        if config.model not in CLASSIFIER_REGISTRY:
+            raise ValueError(f'Invalid classifier model: {config.model}')
+        self._model_class = CLASSIFIER_REGISTRY.get(config.model)
 
-        if not data_state.tiles_path or not data_state.infer_coco_path:
-            raise ValueError("ClassifierComponent requires tiles_path and infer_coco_path from a previous (polygon) tilerizer.")
+        # Set requirements
+        self.requires_state = set(self.BASE_REQUIRES_STATE)
+        self.requires_columns = set(self.BASE_REQUIRES_COLUMNS)
+        self.produces_state = set(self.BASE_PRODUCES_STATE)
+        self.produces_columns = set(self.BASE_PRODUCES_COLUMNS)
 
-        # Create dataset from tile paths and associated coco
+        # Set hints
+        self.state_hints = dict(self.BASE_STATE_HINTS)
+        self.column_hints = dict(self.BASE_COLUMN_HINTS)
+
+    @classmethod
+    def run_standalone(
+        cls,
+        config: ClassifierConfig,
+        tiles_path: str,
+        infer_coco_path: str,
+        output_path: str,
+    ) -> 'DataState':
+        """
+        Run classifier standalone on polygon-tiled imagery.
+
+        Args:
+            config: Classifier configuration
+            tiles_path: Path to directory containing polygon tiles
+            infer_coco_path: Path to COCO annotations with instance masks
+            output_path: Where to save outputs
+
+        Returns:
+            DataState with classification results (access .infer_gdf for the GeoDataFrame)
+
+        Example:
+            result = ClassifierComponent.run_standalone(
+                config=ClassifierConfig(model='resnet50', ...),
+                tiles_path='./polygon_tiles',
+                infer_coco_path='./coco.json',
+                output_path='./output',
+            )
+            print(result.infer_gdf)
+        """
+        from canopyrs.engine.pipeline import run_component
+        return run_component(
+            component=cls(config),
+            output_path=output_path,
+            tiles_path=tiles_path,
+            infer_coco_path=infer_coco_path,
+        )
+
+    @validate_requirements
+    def __call__(self, data_state: DataState) -> ComponentResult:
+        """
+        Run classification on polygon tiles.
+
+        Returns flattened DataFrame (no geometry) with classification results.
+        Pipeline handles merging into existing GDF.
+        """
+        
+        classifier = self._model_class(self.config)
+
+        # Create dataset
         infer_ds = InstanceSegmentationLabeledRasterCocoDataset(
             root_path=[data_state.tiles_path, Path(data_state.infer_coco_path).parent],
             transform=None,
-            fold=infer_aoi_name,
-            other_attributes_names_to_pass=[object_id_column_name]
+            fold=INFER_AOI_NAME,
+            other_attributes_names_to_pass=[Col.OBJECT_ID]
         )
 
-        infer_result = self.classifier.infer(
-            infer_ds,
-            collate_fn_infer_image_masks
+        # Run inference
+        tiles_paths, class_scores, class_predictions, object_ids = classifier.infer(
+            infer_ds, collate_fn_infer_image_masks
         )
 
-        tiles_paths, class_scores, class_predictions, object_ids = infer_result
+        # Flatten outputs into DataFrame (no geometry - will merge into existing)
+        df = pd.DataFrame({
+            Col.OBJECT_ID: object_ids,
+            Col.TILE_PATH: tiles_paths,  # Include for fallback merge key
+            Col.CLASSIFIER_CLASS: class_predictions,
+            Col.CLASSIFIER_SCORE: [
+                scores[pred_idx] for scores, pred_idx in zip(class_scores, class_predictions)
+            ],
+            Col.CLASSIFIER_SCORES: class_scores,
+        })
 
-        # Use the combine_as_gdf method for consistent handling
-        results_gdf, columns_to_pass = self.combine_as_gdf(
-            data_state,
-            tiles_paths,
-            class_scores,
-            class_predictions,
-            object_ids
+        # Component-specific validation: warn about unclassified items
+        unclassified = df[Col.CLASSIFIER_CLASS].isnull().sum()
+        if unclassified > 0:
+            warnings.warn(f"{unclassified} items could not be classified.")
+
+        print(f"ClassifierComponent: Classified {len(df) - unclassified}/{len(df)} items.")
+
+        return ComponentResult(
+            gdf=df,  # DataFrame, not GeoDataFrame - no geometry
+            produced_columns={Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES},
+            save_gpkg=True,
+            gpkg_name_suffix="notaggregated",  # classifier saves final results
+            save_coco=True,
+            coco_scores_column=Col.CLASSIFIER_SCORE,
+            coco_categories_column=Col.CLASSIFIER_CLASS,
         )
-
-        # Generate COCO format data
-        future_coco = generate_future_coco(
-            future_key='infer_coco_path',
-            executor=data_state.background_executor,
-            component_name=self.name,
-            component_id=self.component_id,
-            description="Classifier inference",
-            gdf=results_gdf,
-            tiles_paths_column=tile_path_column_name,
-            polygons_column='geometry',
-            scores_column='classifier_score',
-            categories_column='classifier_class',
-            other_attributes_columns=columns_to_pass,
-            output_path=self.output_path,
-            use_rle_for_labels=False,
-            n_workers=4,
-            coco_categories_list=None
-        )
-
-        return self.update_data_state(data_state, results_gdf, columns_to_pass, future_coco)
-
-    def combine_as_gdf(self,
-                       data_state: DataState,
-                       tiles_paths: List[str],
-                       class_scores: List[List[float]],
-                       class_predictions: List[int],
-                       object_ids: List[Any]) -> Tuple[gpd.GeoDataFrame, Set[str]]:
-        """
-        Combines classifier outputs with the existing infer_gdf from data_state.
-        """
-
-        # Prepare classifier results for merging
-        classifier_data = {
-            object_id_column_name: object_ids,
-            'classifier_class': class_predictions,
-            'classifier_score': [scores[pred_idx] 
-                                 for scores, pred_idx in zip(class_scores, class_predictions)],
-            'classifier_scores': class_scores  # Store the full list of scores for all classes
-        }
-        results_df = pd.DataFrame(classifier_data)
-
-        new_columns = {'classifier_score', 'classifier_class', 'classifier_scores'}
-
-        if data_state.infer_gdf is not None:
-            # Merge results with the original infer_gdf
-            original_infer_gdf = data_state.infer_gdf.copy()
-            if all(obj_id is not None for obj_id in object_ids):
-                merged_gdf = original_infer_gdf.merge(results_df, on=object_id_column_name, how='left')
-            elif all(isinstance(tile_path, str) for tile_path in tiles_paths):
-                # If object IDs are not available, use tile paths for merging, as there should be a one-to-one correspondence with polygons being classified
-                results_df[tile_path_column_name] = tiles_paths
-                del results_df[object_id_column_name]  # Remove object_id column if it exists
-                merged_gdf = original_infer_gdf.merge(results_df, on=tile_path_column_name, how='left')
-                results_df[object_id_column_name] = list(range(len(results_df)))  # Add new object IDs
-                new_columns.add(object_id_column_name)
-            else:
-                raise ValueError(
-                    f"Neither object IDs nor tile paths are available for merging. "
-                    f"Please make sure your inputs contain either {object_id_column_name}"
-                    f" or {tile_path_column_name} columns/attributes."
-                )
-
-            merged_gdf = gpd.GeoDataFrame(merged_gdf, geometry='geometry', crs=original_infer_gdf.crs)  # df to gdf
-
-            # Check for unmerged items (polygons in infer_gdf that didn't get a classification result)
-            if len(merged_gdf) < len(original_infer_gdf):
-                warnings.warn(
-                    f"Warning: {len(original_infer_gdf) - len(merged_gdf)} polygons from infer_gdf were not"
-                    f" found in classifier results during merge."
-                )
-        else:
-            # If there are no infer_gdf yet, create a new GeoDataFrame with the results
-            merged_gdf = gpd.GeoDataFrame(results_df, geometry=None, crs=None)
-            warnings.warn("No infer_gdf found in data_state. The resulting gdf won't have a CRS.")
-        
-        unclassified_rows = merged_gdf['classifier_class'].isnull().sum()
-        if unclassified_rows > 0:
-             warnings.warn(f"Classifier: {unclassified_rows} polygons remain unclassified after merge (NaN in classifier_class).")
-
-        return merged_gdf, new_columns
-
-    def update_data_state(self,
-                          data_state: DataState,
-                          results_gdf: gpd.GeoDataFrame,
-                          columns_to_pass: set,
-                          future_coco: tuple) -> DataState:
-        """Update data state with classification results"""
-        # Register the component folder and outputs
-        data_state = self.register_outputs_base(data_state)
-
-        product_name, scale_factor, ground_resolution, aoi = parse_product_name(results_gdf[tile_path_column_name].iloc[0])
-        gpkg_name = GeoPackageNameConvention.create_name(
-            product_name=product_name,
-            fold=infer_aoi_name
-        )
-
-        gpkg_path = self.output_path / gpkg_name
-        results_gdf.to_file(gpkg_path, driver='GPKG')
-        if not results_gdf.empty:
-            data_state.register_output_file(self.name, self.component_id, 'gpkg', gpkg_path)
-            data_state.update_infer_gdf(results_gdf)
-        else:
-            print("Classifier: Results GDF is empty, data_state.infer_gdf not updated by classifier.")
-        data_state.infer_gdf_columns_to_pass = columns_to_pass
-        if future_coco is not None:
-            data_state.side_processes.append(future_coco)
-
-        return data_state

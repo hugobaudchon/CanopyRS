@@ -13,6 +13,7 @@ class InferIOConfig(BaseConfig):
 
     input_gpkg: Optional[str] = None
     input_coco: Optional[str] = None
+    infer_gdf_columns_to_pass: Optional[list[str]] = None
 
     aoi_config: str = 'generate'
     aoi_type: Optional[str] = 'band'

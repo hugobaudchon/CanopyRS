@@ -157,6 +157,54 @@ class Trainer(SimpleTrainer):
             self.grad_scaler.load_state_dict(state_dict["grad_scaler"])
 
 
+def log_model_param_stats(model, logger):
+    def _gather_params(module):
+        params = []
+        seen = set()
+        for param in module.parameters():
+            pid = id(param)
+            if pid in seen:
+                continue
+            seen.add(pid)
+            params.append(param)
+        return params
+
+    def _param_stats(params):
+        total = sum(p.numel() for p in params)
+        trainable = sum(p.numel() for p in params if p.requires_grad)
+        frozen = total - trainable
+        return total, trainable, frozen
+
+    def _log_stats(label, params):
+        total, trainable, frozen = _param_stats(params)
+        msg = f"{label} parameters - total: {total:,}, trainable: {trainable:,}, frozen: {frozen:,}"
+        if logger:
+            logger.info(msg)
+        print(msg)
+
+    model_params = _gather_params(model)
+    backbone_module = getattr(model, "backbone", None)
+    head_module = None
+    for attr in ("head", "roi_heads", "sem_seg_head", "bbox_head", "mask_head"):
+        if hasattr(model, attr):
+            head_module = getattr(model, attr)
+            break
+
+    backbone_params = _gather_params(backbone_module) if backbone_module else []
+    if head_module is not None:
+        head_params = _gather_params(head_module)
+    else:
+        backbone_ids = {id(p) for p in backbone_params}
+        head_params = [p for p in model_params if id(p) not in backbone_ids]
+
+    _log_stats("Model", model_params)
+    if backbone_params:
+        _log_stats("Backbone", backbone_params)
+    else:
+        logger.info("Backbone parameters - module not found")
+    _log_stats("Head", head_params)
+
+
 def do_test(cfg, model, eval_only=False):
     logger = logging.getLogger("train_detectron2")
 
@@ -198,6 +246,14 @@ def do_test(cfg, model, eval_only=False):
             wandb.log({"bbox/APs": ret_bbox["APs"]})
             wandb.log({"bbox/APm": ret_bbox["APm"]})
             wandb.log({"bbox/APl": ret_bbox["APl"]})
+            if "segm" in ret:
+                ret_segm = ret["segm"]
+                wandb.log({"segm/AP": ret_segm["AP"]})
+                wandb.log({"segm/AP50": ret_segm["AP50"]})
+                wandb.log({"segm/AP75": ret_segm["AP75"]})
+                wandb.log({"segm/APs": ret_segm["APs"]})
+                wandb.log({"segm/APm": ret_segm["APm"]})
+                wandb.log({"segm/APl": ret_segm["APl"]})
 
             # Logging epoch number
             if isinstance(cfg.dataloader.train.dataset.names, str):
@@ -211,7 +267,7 @@ def do_test(cfg, model, eval_only=False):
         return ret
 
 
-def do_train(args, cfg, config: DetectorConfig):
+def do_train(args, cfg, config: DetectorConfig, task):
     """
     Args:
         cfg: an object with the following attributes:
@@ -240,7 +296,6 @@ def do_train(args, cfg, config: DetectorConfig):
     optim = instantiate(cfg.optimizer)
 
     # build training loader
-    print(444, cfg.dataloader.train)
     try:
         train_loader = instantiate(cfg.dataloader.train)
     except TypeError as e:
@@ -260,6 +315,8 @@ def do_train(args, cfg, config: DetectorConfig):
         amp=cfg.train.amp.enabled,
         clip_grad_params=cfg.train.clip_grad.params if cfg.train.clip_grad.enabled else None,
     )
+
+    log_model_param_stats(model, logger)
 
     checkpointer = DetectionCheckpointer(
         model,
@@ -313,7 +370,8 @@ def do_train(args, cfg, config: DetectorConfig):
                             config=config,
                             train_log_interval=cfg.train.log_period,
                             wandb_project_name=cfg.train.wandb.params.project,
-                            wandb_model_name=cfg.train.wandb.params.name)
+                            wandb_model_name=cfg.train.wandb.params.name,
+                            task=task)
         ]
     )
 
@@ -328,7 +386,7 @@ def do_train(args, cfg, config: DetectorConfig):
 
 
 
-def train_detrex(config):
+def train_detrex(config, task):
     u = uuid.uuid4()
     now = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     slurm_job_id = os.environ.get('SLURM_JOB_ID')
@@ -343,7 +401,7 @@ def train_detrex(config):
         num_machines=1,
         machine_rank=0,
         dist_url="env://",
-        args=(config, model_name),
+        args=(config, model_name, task),
     )
 
 
@@ -351,10 +409,35 @@ def get_base_detrex_model_cfg(config):
     detrex_root = Path(next(iter(detrex.__path__))).resolve()
     if str(detrex_root) not in sys.path:
         sys.path.insert(0, str(detrex_root))
+
+    # fixing architecture path from old CanopyRS versions
+    if config.architecture == "dino-swin/dino_swin_large_384_5scale_36ep.py":
+        config.architecture = "dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py"
+
+    # loading base config
     cfg = LazyConfig.load(str(detrex_root / 'projects' / config.architecture))
     cfg.train.init_checkpoint = config.checkpoint_path
+
+    # dino
     if hasattr(cfg.model, 'num_classes'):
         cfg.model.num_classes = config.num_classes
+    elif hasattr(cfg.model, 'params') and hasattr(cfg.model.params, 'num_classes'):
+        cfg.model.params.num_classes = config.num_classes
+
+    # mask2former
+    if hasattr(cfg.model, "sem_seg_head") and hasattr(cfg.model.sem_seg_head, "num_classes"):
+        cfg.model.sem_seg_head.num_classes = config.num_classes
+
+    if (
+        hasattr(cfg.model, "sem_seg_head")
+        and hasattr(cfg.model.sem_seg_head, "transformer_predictor")
+        and hasattr(cfg.model.sem_seg_head.transformer_predictor, "num_classes")
+    ):
+        cfg.model.sem_seg_head.transformer_predictor.num_classes = config.num_classes
+
+    # optimizer
+    if hasattr(cfg.model, "criterion") and hasattr(cfg.model.criterion, "num_classes"):
+        cfg.model.criterion.num_classes = config.num_classes
 
     # Custom Augmentations
     augmentation_adder = AugmentationAdder()
@@ -368,18 +451,20 @@ def get_base_detrex_model_cfg(config):
     return cfg
 
 
-def _train_detrex_process(config, model_name):
+def _train_detrex_process(config, model_name, task):
     print("Setting up datasets...")
     d2_train_datasets_name = register_detection_dataset(
         root_path=[f"{config.data_root_path}/{path}" for path in config.train_dataset_names],
         fold="train",
-        force_binary_class=True if config.num_classes == 1 else False
+        force_binary_class=True if config.num_classes == 1 else False,
+        segmentation_only=False # sometimes model can be trained on both detection and segmentation datasets
     )
 
     d2_valid_datasets_name = register_detection_dataset(
         root_path=[f"{config.data_root_path}/{path}" for path in config.valid_dataset_names],
         fold="valid",
-        force_binary_class=True if config.num_classes == 1 else False
+        force_binary_class=True if config.num_classes == 1 else False,
+        segmentation_only=False # TODO change this and add parameter box_only_allowed instead to use this if set to False: (task == 'segmentation')  # evaluation should only happen on masks for segmentation task
     )
 
     dataset_length = len(DatasetCatalog.get(d2_train_datasets_name))
@@ -387,6 +472,11 @@ def _train_detrex_process(config, model_name):
     os.makedirs(output_path, exist_ok=True)
 
     cfg = get_base_detrex_model_cfg(config)
+
+    if hasattr(cfg.model, 'metadata'):
+        from detectron2.data import MetadataCatalog
+        metadata = MetadataCatalog.get(d2_train_datasets_name)
+        cfg.model.metadata = metadata
 
     cfg.dataloader.train.dataset.names = d2_train_datasets_name
     cfg.dataloader.test.dataset.names = d2_valid_datasets_name
@@ -436,7 +526,7 @@ def _train_detrex_process(config, model_name):
     config.to_yaml(os.path.join(output_path, "config.yaml"))
 
     args = default_argument_parser().parse_args([])
-    do_train(args, cfg, config)
+    do_train(args, cfg, config, task)
 
 
 def setup_mila_cluster_ddp():

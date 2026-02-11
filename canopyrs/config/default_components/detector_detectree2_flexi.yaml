@@ -1,4 +1,0 @@
-model: 'detectree2'
-architecture: 'COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml'
-checkpoint_path: '/home/hugo/Documents/CanopyRS/models/detectree2/250312_flexi.pth'
-batch_size: 8

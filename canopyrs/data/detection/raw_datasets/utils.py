@@ -13,8 +13,11 @@ def download_with_progress(url, output_file):
     :param url: URL to download the file from.
     :param output_file: Path to save the downloaded file.
     """
-    # Send a GET request to the URL
-    response = requests.get(url, stream=True)
+    # Send a GET request to the URL with browser-like headers
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    response = requests.get(url, stream=True, headers=headers, allow_redirects=True)
     response.raise_for_status()
 
     # Get the total file size from headers

@@ -1,11 +1,23 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, List
 import multiprocessing
+import warnings
 import cv2
 import numpy as np
 import psutil
 import torch
 from torch.utils.data import DataLoader
+
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"torch\.utils\.checkpoint: the use_reentrant parameter should be passed explicitly.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"None of the inputs have requires_grad=True\. Gradients will be None"
+)
 from shapely import box
 from shapely.affinity import scale
 from tqdm import tqdm
@@ -120,15 +132,22 @@ class SegmenterWrapperBase(ABC):
                     tile_idx: int,
                     n_masks_processed: int,
                     queue: multiprocessing.JoinableQueue):
+        
         # Scale down the masks to a fixed size to reduce memory footprint during postprocessing
         if self.config.pp_down_scale_masks_px and masks.shape[-1] > self.config.pp_down_scale_masks_px:
             resized_list = []
             for i in range(masks.shape[0]):
+                mask = masks[i]
+                if mask.dtype == bool:
+                    mask = mask.astype(np.uint8)
+
                 mask_resized = cv2.resize(
-                    masks[i],
+                    mask,
                     (self.config.pp_down_scale_masks_px, self.config.pp_down_scale_masks_px),
                     interpolation=cv2.INTER_LINEAR
                 )
+                if masks.dtype == bool:
+                    mask_resized = mask_resized > 0.5
                 resized_list.append(mask_resized)
 
             # Stack them back along the batch dimension if you want a single tensor

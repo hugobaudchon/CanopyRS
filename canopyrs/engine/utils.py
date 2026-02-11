@@ -174,6 +174,14 @@ def generate_coco(
         Path to the generated COCO file.
     """
 
+    # Ensure paths in the dataframe are JSON-serializable (PosixPath would break json.dump).
+    gdf = gdf.copy()
+    gdf[tiles_paths_column] = gdf[tiles_paths_column].apply(lambda v: str(v) if isinstance(v, Path) else v)
+    if other_attributes_columns:
+        for col in other_attributes_columns:
+            if col in gdf.columns:
+                gdf[col] = gdf[col].apply(lambda v: str(v) if isinstance(v, Path) else v)
+
     COCOGenerator.from_gdf(
         description=description,
         gdf=gdf,
@@ -273,4 +281,3 @@ def merge_coco_jsons(json_files: list[str or Path], output_file: str or Path):
     # Write the merged result to the output file
     with open(output_file, "w") as f:
         json.dump(merged, f, indent=2)
-

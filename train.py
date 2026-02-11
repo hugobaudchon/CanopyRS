@@ -2,9 +2,6 @@ import argparse
 import logging
 import warnings
 
-from canopyrs.engine.models.utils import set_all_seeds
-from canopyrs.engine.utils import init_spawn_method
-
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -24,16 +21,37 @@ warnings.filterwarnings(
     category=UserWarning,
     message="pkg_resources is deprecated as an API.*"
 )
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"torch\.utils\.checkpoint: the use_reentrant parameter should be passed explicitly.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"None of the inputs have requires_grad=True\. Gradients will be None"
+)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"The given NumPy array is not writable, and PyTorch does not support non-writable tensors.*"
+)
+
+from canopyrs.engine.models.utils import set_all_seeds
+from canopyrs.engine.utils import init_spawn_method
 
 detrex_logger = logging.getLogger("detrex.checkpoint.c2_model_loading")
 detrex_logger.disabled = True
 
 from canopyrs.engine.config_parsers import DetectorConfig
-from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import train_detectron2_fasterrcnn
+from canopyrs.engine.config_parsers import SegmenterConfig
+from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import train_detectron2
 from canopyrs.engine.models.detector.train_detectron2.train_detrex import train_detrex, eval_detrex
+from canopyrs.engine.models.segmenter.train_sam.train_sam2 import train_sam2
+from canopyrs.engine.models.segmenter.train_sam.train_sam3 import train_sam3
 
 
-def train_detector_main(args):
+def train_detector_main(args, task):
     config = DetectorConfig.from_yaml(args.config)
 
     if args.dataset:
@@ -42,18 +60,15 @@ def train_detector_main(args):
     if config.seed:
         set_all_seeds(config.seed)
 
-    if config.model == 'faster_rcnn_detectron2':
-        train_detectron2_fasterrcnn(config)
-    if config.model == 'retinanet_detectron2':
-        train_detectron2_fasterrcnn(config)
-    elif config.model == 'dino_detrex':
-        train_detrex(config)
+    if config.model in ['faster_rcnn_detectron2', 'retinanet_detectron2']:
+        train_detectron2(config, task)
+    elif config.model in ['dino_detrex']:
+        train_detrex(config, task)
     else:
-        raise ValueError("Invalid model type/name.")
+        raise ValueError(f"Unsupported detector model: '{config.model}'. Supported: 'faster_rcnn_detectron2', 'retinanet_detectron2', 'dino_detrex'.")
 
-
-def eval_detector_main(args):
-    config = DetectorConfig.from_yaml(args.config)
+def train_segmenter_main(args):
+    config = SegmenterConfig.from_yaml(args.config)
 
     if args.dataset:
         config.data_root_path = args.dataset
@@ -61,12 +76,16 @@ def eval_detector_main(args):
     if config.seed:
         set_all_seeds(config.seed)
 
-    if config.model == 'faster_rcnn_detectron2':
-        raise NotImplementedError("Evaluation for FasterRCNN is not yet implemented.")
-    elif config.model == 'dino_detrex':
-        eval_detrex(config, fold_name=args.eval_only_fold)
+    if config.model == 'sam2':
+        train_sam2(config)
+    elif config.model == 'sam3':
+        train_sam3(config)
+    elif config.model in ['mask_rcnn_detectron2', 'mask2former_detectron2']:
+        train_detectron2(config, task='segmentation')
+    elif config.model in ['maskdino_detrex', 'mask2former_detrex']:
+        train_detrex(config, task='segmentation')
     else:
-        raise ValueError("Invalid model type/name.")
+        raise ValueError(f"Unsupported segmenter model: '{config.model}'.")
 
 
 if __name__ == '__main__':
@@ -78,16 +97,10 @@ if __name__ == '__main__':
     parser.add_argument("-c", "--config", type=str, default='default', help="Name of a default, predefined config or path to the appropriate .yaml config file.")
     parser.add_argument("-d", "--dataset", type=str, help="Path to the root folder of the dataset to use for training a model. Will override whatever is in the yaml config file.")
 
-    parser.add_argument("--eval_only_fold", type=str, help="Whether to only evaluate the model. If defined, the value passed will be used as the fold name to find and load the appropriate data.")
-
     args = parser.parse_args()
 
     if args.model == "detector":
-        if args.eval_only_fold:
-            eval_detector_main(args)
-        else:
-            train_detector_main(args)
-
-
-
+        train_detector_main(args, task='detection')
+    elif args.model == "segmenter":
+        train_segmenter_main(args)
 

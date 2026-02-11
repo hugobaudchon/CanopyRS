@@ -37,6 +37,7 @@ class BasePreprocessedDataset(ABC):
         HFDatasetTools.download_and_extract_huggingface_dataset(
             hf_dataset_name=f'{hf_root}/{self.dataset_name}',
             root_output_path=root_output_path,
+            folds=folds,
             cleanup_hf_cache=True,
             cleanup_hf_cache_temp_dir=f"{root_output_path}/hf_cache_temp"
         )
@@ -131,19 +132,27 @@ class BasePreprocessedDataset(ABC):
                         and "ground_truth_gpkg" in self.raster_level_eval_inputs[fold][prod]
                         and "aoi_gpkg" in self.raster_level_eval_inputs[fold][prod]
                 ):
+                    
                     info = self.raster_level_eval_inputs[fold][prod]
-                    gt_gpkg_path = hf_hub_download(
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        revision="gpkg",
-                        filename=info["ground_truth_gpkg"]
-                    )
-                    aoi_gpkg_path = hf_hub_download(
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        revision="gpkg",
-                        filename=info["aoi_gpkg"]
-                    )
+                    if Path(root / loc / prod / info["ground_truth_gpkg"]).exists():
+                        gt_gpkg_path = str(root / loc / prod / info["ground_truth_gpkg"])
+                    else:
+                        gt_gpkg_path = hf_hub_download(
+                            repo_id=repo_id,
+                            repo_type="dataset",
+                            revision="gpkg",
+                            filename=info["ground_truth_gpkg"]
+                        )
+                    
+                    if Path(root / loc / prod / info["aoi_gpkg"]).exists():
+                        aoi_gpkg_path = str(root / loc / prod / info["aoi_gpkg"])
+                    else:
+                        aoi_gpkg_path = hf_hub_download(
+                            repo_id=repo_id,
+                            repo_type="dataset",
+                            revision="gpkg",
+                            filename=info["aoi_gpkg"]
+                        )
 
                 yield loc, prod, tile_dir, aoi_gpkg_path, gt_gpkg_path, gt_coco_path
 
@@ -445,7 +454,7 @@ class OamTcdDataset(BasePreprocessedDataset):
     test_n_tiles = 2527
     test_n_annotations = 56727
 
-    tile_level_eval_maxDets = 100
+    tile_level_eval_maxDets = 400
 
     locations = [
         'global_oamtcd'
@@ -520,4 +529,206 @@ class Detectree2Dataset(BasePreprocessedDataset):
                 'aoi_gpkg': 'detectree2_aoi_test.gpkg'
             }
         }
+    }
+
+
+@register_dataset
+class BAMForestDataset(BasePreprocessedDataset):
+    """BAMFORESTS converted to the same *preprocessed* layout used by NeonTreeEvaluation.
+
+        After running the prep script, the expected structure under `raw_data_root` is:
+            raw_data_root/
+                bamforests/
+                    BAMForest_train2023/
+                        tiles/train/*.tif
+                        BAMForest_train2023_coco_gr0p017_train.json
+                    BAMForest_val2023/
+                        tiles/valid/*.tif
+                        BAMForest_val2023_coco_gr0p017_valid.json
+                    BAMForest_TestSet1_2023/
+                        tiles/test/*.tif
+                        BAMForest_TestSet1_2023_coco_gr0p017_test.json
+                    BAMForest_TestSet2_2023/
+                        tiles/test/*.tif
+                        BAMForest_TestSet2_2023_coco_gr0p017_test.json
+
+    Tile filenames are expected to follow `TileNameConvention` so downstream components (e.g. aggregator)
+    can parse product/ground-resolution from tile names.
+    """
+
+    dataset_name = 'BAMForest'
+    license = 'See BAMFORESTS Readme (research use; contact authors for commercial use)'
+
+    # Inferred from GeoTIFF metadata (EPSG:25832; pixel size ~0.017m)
+    ground_resolution = 0.017
+    scale_factor = 1.0
+
+    train_tile_size = 2048
+    train_n_tiles = 1439
+    train_n_annotations = 58228
+
+    valid_tile_size = 2048
+    valid_n_tiles = 382
+    valid_n_annotations = 15177
+
+    test_tile_size = 2048
+    test_n_tiles = 635
+    test_n_annotations = 19040
+
+    tile_level_eval_maxDets = 400
+
+    locations = ['bamforests']
+    products_per_location = {
+        'bamforests': [
+            'BAMForest_train2023',
+            'BAMForest_val2023',
+            'BAMForest_TestSet1_2023',
+            'BAMForest_TestSet2_2023',
+        ]
+    }
+
+    # Tile-only dataset (no raster-level gpkg inputs). We still list products per fold so BasePreprocessedDataset.iter_fold
+    # knows which products belong to which fold (same pattern as NeonTreeEvaluation).
+    raster_level_eval_inputs = {
+        'train': {
+            'BAMForest_train2023': {},
+        },
+        'valid': {
+            'BAMForest_val2023': {},
+        },
+        'test': {
+            'BAMForest_TestSet1_2023': {},
+            'BAMForest_TestSet2_2023': {},
+        }
+    }
+
+@register_dataset
+class PanamaBCNMDataset(BasePreprocessedDataset):
+    dataset_name = 'PanamaBCNM'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.045
+    scale_factor = None
+
+    train_tile_size = None
+    train_n_tiles = None
+    train_n_annotations = None
+
+    valid_tile_size = None
+    valid_n_tiles = None
+    valid_n_annotations = None
+
+    test_tile_size = 1777
+    test_n_tiles = 1035
+    test_n_annotations = 28624
+
+    tile_level_eval_maxDets = 400
+
+    locations = [
+        'panama_bcnm'
+    ]
+
+    products_per_location = {
+        'panama_bcnm': [
+            '20241125_bcigiganteplot_m3e_rgb_cog',
+            '2024_07_16_orthowhole_bci_resfull_cropped_25haplot_cog',
+            '2024_07_16_orthowhole_bci_resfull_cropped_ava6haplot_cog',
+            '2024_07_16_orthowhole_bci_resfull_cropped_drayton6haplot_cog',
+            '2024_07_16_orthowhole_bci_resfull_cropped_pearson6haplot_cog',
+            '2024_07_16_orthowhole_bci_resfull_cropped_zetek6haplot_cog',
+            'bci_50ha_2024_11_12_cropped_cog'
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        'test': {
+            '20241125_bcigiganteplot_m3e_rgb_cog': {
+                'ground_truth_gpkg': 'BCNM_gigante_crownmap_2025.gpkg',
+                'aoi_gpkg': '20241125_bcigiganteplot_m3e_rgb_cog_aoi_gr0p045_test.gpkg'
+            },
+            '2024_07_16_orthowhole_bci_resfull_cropped_25haplot_cog': {
+                'ground_truth_gpkg': 'BCI_25ha_crownmap_2025.gpkg',
+                'aoi_gpkg': '2024_07_16_orthowhole_bci_resfull_cropped_25haplot_cog_aoi_gr0p045_test.gpkg'
+            },
+            '2024_07_16_orthowhole_bci_resfull_cropped_ava6haplot_cog': {
+                'ground_truth_gpkg': 'BCI_ava_crownmap_2025.gpkg',
+                'aoi_gpkg': '2024_07_16_orthowhole_bci_resfull_cropped_ava6haplot_cog_aoi_gr0p045_test.gpkg'
+            },
+            '2024_07_16_orthowhole_bci_resfull_cropped_drayton6haplot_cog': {
+                'ground_truth_gpkg': 'BCI_drayton_crownmap_2025.gpkg',
+                'aoi_gpkg': '2024_07_16_orthowhole_bci_resfull_cropped_drayton6haplot_cog_aoi_gr0p045_test.gpkg'
+            },
+            '2024_07_16_orthowhole_bci_resfull_cropped_pearson6haplot_cog': {
+                'ground_truth_gpkg': 'BCI_pearson_crownmap_2025.gpkg',
+                'aoi_gpkg': '2024_07_16_orthowhole_bci_resfull_cropped_pearson6haplot_cog_aoi_gr0p045_test.gpkg'
+            },
+            '2024_07_16_orthowhole_bci_resfull_cropped_zetek6haplot_cog': {
+                'ground_truth_gpkg': 'BCI_zetek_crownmap_2025.gpkg',
+                'aoi_gpkg': '2024_07_16_orthowhole_bci_resfull_cropped_zetek6haplot_cog_aoi_gr0p045_test.gpkg'
+            },
+            'bci_50ha_2024_11_12_cropped_cog': {
+                'ground_truth_gpkg': 'BCI_50ha_crownmap_2025.gpkg',
+                'aoi_gpkg': 'bci_50ha_2024_11_12_cropped_cog_aoi_gr0p045_test.gpkg'
+            }
+        }
+    }
+    
+@register_dataset
+class SelvaMaskDataset(BasePreprocessedDataset):
+    dataset_name = 'SelvaMask'
+    license = 'CC-BY-4.0'
+    ground_resolution = 0.045
+    scale_factor = None
+
+    train_tile_size = None                  # TODO add values here
+    train_n_tiles = None
+    train_n_annotations = None
+
+    valid_tile_size = None                  # TODO add values here
+    valid_n_tiles = None
+    valid_n_annotations = None
+
+    test_tile_size = None                  # TODO add values here
+    test_n_tiles = None
+    test_n_annotations = None
+
+    tile_level_eval_maxDets = 400
+
+    locations = ['selvamask']
+    products_per_location = {
+        'selvamask': [
+            '20240131_zf2block4_ms_m3m_rgb',
+            '20240613_tbsnewsite2_m3e_rgb',
+            '20241122_bcifairchildn_m3m_rgb',
+        ]
+    }
+
+    raster_level_eval_inputs = {
+        'valid': {
+            '20240131_zf2block4_ms_m3m_rgb': {
+                'ground_truth_gpkg': '20240131_zf2block4_ms_m3m_labels_masks.gpkg',
+                'aoi_gpkg': '20240131_zf2block4_ms_m3m_rgb_aoi_gr0p045_valid.gpkg',
+            },
+            '20240613_tbsnewsite2_m3e_rgb': {
+                'ground_truth_gpkg': '20240613_tbsnewsite2_m3e_labels_masks.gpkg',
+                'aoi_gpkg': '20240613_tbsnewsite2_m3e_rgb_aoi_gr0p045_valid.gpkg',
+            },
+            '20241122_bcifairchildn_m3m_rgb': {
+                'ground_truth_gpkg': '20241122_bcifairchildn_m3m_rgb_labels_masks.gpkg',
+                'aoi_gpkg': '20241122_bcifairchildn_m3m_rgb_aoi_gr0p045_valid.gpkg',
+            },
+        },
+        'test': {
+            '20240131_zf2block4_ms_m3m_rgb': {
+                'ground_truth_gpkg': '20240131_zf2block4_ms_m3m_labels_masks.gpkg',
+                'aoi_gpkg': '20240131_zf2block4_ms_m3m_rgb_aoi_gr0p045_test.gpkg',
+            },
+            '20240613_tbsnewsite2_m3e_rgb': {
+                'ground_truth_gpkg': '20240613_tbsnewsite2_m3e_labels_masks.gpkg',
+                'aoi_gpkg': '20240613_tbsnewsite2_m3e_rgb_aoi_gr0p045_test.gpkg',
+            },
+            '20241122_bcifairchildn_m3m_rgb': {
+                'ground_truth_gpkg': '20241122_bcifairchildn_m3m_rgb_labels_masks.gpkg',
+                'aoi_gpkg': '20241122_bcifairchildn_m3m_rgb_aoi_gr0p045_test.gpkg',
+            },
+        },
     }
