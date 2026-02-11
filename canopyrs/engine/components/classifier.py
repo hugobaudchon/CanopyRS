@@ -74,6 +74,43 @@ class ClassifierComponent(BaseComponent):
         self.state_hints = dict(self.BASE_STATE_HINTS)
         self.column_hints = dict(self.BASE_COLUMN_HINTS)
 
+    @classmethod
+    def run_standalone(
+        cls,
+        config: ClassifierConfig,
+        tiles_path: str,
+        infer_coco_path: str,
+        output_path: str,
+    ) -> 'DataState':
+        """
+        Run classifier standalone on polygon-tiled imagery.
+
+        Args:
+            config: Classifier configuration
+            tiles_path: Path to directory containing polygon tiles
+            infer_coco_path: Path to COCO annotations with instance masks
+            output_path: Where to save outputs
+
+        Returns:
+            DataState with classification results (access .infer_gdf for the GeoDataFrame)
+
+        Example:
+            result = ClassifierComponent.run_standalone(
+                config=ClassifierConfig(model='resnet50', ...),
+                tiles_path='./polygon_tiles',
+                infer_coco_path='./coco.json',
+                output_path='./output',
+            )
+            print(result.infer_gdf)
+        """
+        from canopyrs.engine.pipeline import run_component
+        return run_component(
+            component=cls(config),
+            output_path=output_path,
+            tiles_path=tiles_path,
+            infer_coco_path=infer_coco_path,
+        )
+
     @validate_requirements
     def __call__(self, data_state: DataState) -> ComponentResult:
         """

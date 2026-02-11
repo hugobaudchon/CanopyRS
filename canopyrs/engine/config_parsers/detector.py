@@ -28,12 +28,11 @@ class DetectorConfig(BaseConfig):
     seed: int = 42
     wandb_project: Optional[str] = None
 
-    augmentation_image_size: Union[int, Tuple[int, int]] = 1024     # Final image size for both training and evaluation. If a tuple, the image will be resized randomly within the range for training (with prob augmentation_train_crop_prob), and will be resized deterministically for evaluation/infer.
+    augmentation_image_size: Union[int, Tuple[int, int]] = [1024, 1777]     # Final image size for both training and evaluation. If a tuple, the image will be resized randomly within the range for training (with prob augmentation_train_crop_prob), and will be resized deterministically for evaluation/infer.
 
     augmentation_early_conditional_image_size: Optional[int] = None
     augmentation_early_image_resize_test_only: Optional[int] = None  # allows evaluation at different image resolution for a given dataset and a model with a resize range (for example first resize to 800px to simulate 10cm/px, then resize to 1024px which is in model range of [1024, 1777]px)
-    augmentation_train_crop_size_range: List[int] = [784, 2048]  # TODO implement: add support for floats too, ex: [0.6, 1.0] would crop between 60% and 100% of the image size
-    # augmentation_crop_min_size = 333    # TODO implement: Minimum size of the crop, useful if cropping with float range (ex: [0.6, 1.0]) and some datasets have very small images by default (NeonTree at 400x400px...)
+    augmentation_train_crop_size_range: List[int] = [666, 2666]  # TODO implement: add support for floats too, ex: [0.6, 1.0] would crop between 60% and 100% of the image size
     augmentation_crop_prob: float = 0.5
     augmentation_crop_fallback_to_augmentation_image_size: bool = True    # If True, if no crop is selected based on augmentation_crop_prob, the image is cropped to augmentation_image_size. If False, the original image is kept.
     augmentation_crop_min_intersection_ratio: float = 0.5

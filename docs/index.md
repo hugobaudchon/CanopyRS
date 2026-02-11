@@ -6,7 +6,7 @@ A pipeline for processing high-resolution geospatial orthomosaics to detect, seg
 
 ## What is CanopyRS?
 
-CanopyRS takes high-resolution aerial or satellite imagery and runs it through a modular component pipeline to produce per-tree detections, segmentations, and classifications. The pipeline is configurable via YAML, and ships with pre-trained models and preset configurations for common use cases.
+CanopyRS takes high-resolution aerial imagery and runs it through a modular component pipeline to produce per-tree detections, segmentations, and classifications. It supports state-of-the-art model architectures spanning both CNNs (Faster R-CNN, Mask R-CNN, RetinaNet) and transformers (DINO, Mask2Former, SAM 2, SAM 3). The pipeline is configurable via YAML, and ships with pre-trained models and preset configurations for common use cases.
 
 ## How it works
 

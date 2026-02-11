@@ -85,6 +85,43 @@ class SegmenterComponent(BaseComponent):
                 f"Add a detector before segmenter."
             )
 
+    @classmethod
+    def run_standalone(
+        cls,
+        config: SegmenterConfig,
+        tiles_path: str,
+        output_path: str,
+        infer_coco_path: str = None,
+    ) -> 'DataState':
+        """
+        Run segmenter standalone on pre-tiled imagery.
+
+        Args:
+            config: Segmenter configuration
+            tiles_path: Path to directory containing tiles
+            output_path: Where to save outputs
+            infer_coco_path: Path to COCO file with detection boxes
+                             (required if the model needs box prompts, like SAM)
+
+        Returns:
+            DataState with segmentation results (access .infer_gdf for the GeoDataFrame)
+
+        Example:
+            result = SegmenterComponent.run_standalone(
+                config=SegmenterConfig(model='sam2', ...),
+                tiles_path='./tiles',
+                output_path='./output',
+            )
+            print(result.infer_gdf)
+        """
+        from canopyrs.engine.pipeline import run_component
+        return run_component(
+            component=cls(config),
+            output_path=output_path,
+            tiles_path=tiles_path,
+            infer_coco_path=infer_coco_path,
+        )
+
     @validate_requirements
     def __call__(self, data_state: DataState) -> ComponentResult:
         """

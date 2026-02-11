@@ -39,20 +39,6 @@ Key state keys:
 
 COCO file generation is expensive and is queued as a background process after each component that produces one. The pipeline automatically waits for the relevant COCO file to finish before running any component that requires it — no manual coordination needed.
 
-## Standalone usage
+## Standalone component usage
 
-A single component can be run outside a pipeline using the `run_component()` helper:
-
-```python
-from canopyrs.engine.components.detector import DetectorComponent
-from canopyrs.engine.config_parsers import DetectorConfig
-
-config = DetectorConfig(model='dino_detrex', ...)
-detector = DetectorComponent(config)
-
-result = run_component(
-    detector,
-    output_path='./output',
-    tiles_path='./tiles'
-)
-```
+Each component can also be run individually outside a pipeline. See the [Standalone Usage](standalone.md) page for details and examples.

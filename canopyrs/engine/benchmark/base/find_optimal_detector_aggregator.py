@@ -47,7 +47,7 @@ def eval_single_aggregator(
         ])
 
         # Run the pipeline
-        pipeline = Pipeline(io_config, pipeline_config)
+        pipeline = Pipeline.from_config(io_config, pipeline_config, verbose=False)
         pipeline()
 
         # Get aggregator output from pipeline

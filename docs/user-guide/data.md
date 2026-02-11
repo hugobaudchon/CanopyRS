@@ -20,11 +20,21 @@ To download and extract datasets automatically for use with our benchmark or tra
 
 For example, to download SelvaBox and Detectree2 datasets:
 
-```bash
-python -m canopyrs.tools.detection.download_datasets \
-  -d SelvaBox Detectree2 \
-  -o <DATA_ROOT>
-```
+=== "Linux / macOS"
+
+    ```bash
+    python -m canopyrs.tools.detection.download_datasets \
+      -d SelvaBox Detectree2 \
+      -o <DATA_ROOT>
+    ```
+
+=== "Windows (PowerShell)"
+
+    ```powershell
+    python -m canopyrs.tools.detection.download_datasets `
+      -d SelvaBox Detectree2 `
+      -o <DATA_ROOT>
+    ```
 
 After extraction, the datasets will be in COCO format (the same as geodataset's tilerizers output).
 
@@ -56,7 +66,7 @@ For SelvaBox and Detectree2 datasets, the structure looks like this:
 
 Each additional dataset will add one or more locations folders.
 
-## Location folders by dataset
+## Example location folders by dataset
 
 - **SelvaBox**: `brazil_zf2`, `ecuador_tiputini`, `panama_aguasalud`
 - **Detectree2**: `malaysia_detectree2`

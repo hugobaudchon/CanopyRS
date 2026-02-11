@@ -107,6 +107,45 @@ class TilerizerComponent(BaseComponent):
                 f"tile_type='polygon' requires infer_gdf with polygons."
             )
 
+    @classmethod
+    def run_standalone(
+        cls,
+        config: TilerizerConfig,
+        imagery_path: str,
+        output_path: str,
+        infer_gdf: gpd.GeoDataFrame = None,
+        infer_aois_config: Optional[AOIConfig] = None,
+    ) -> 'DataState':
+        """
+        Run tilerizer standalone on raster imagery.
+
+        Args:
+            config: Tilerizer configuration (tile_type determines requirements)
+            imagery_path: Path to the raster file
+            output_path: Where to save outputs
+            infer_gdf: GeoDataFrame with labels/polygons
+                        (required for tile_type='tile_labeled' or 'polygon')
+            infer_aois_config: Area of Interest configuration (optional)
+
+        Returns:
+            DataState with tiling results (access .tiles_path for tile directory)
+
+        Example:
+            result = TilerizerComponent.run_standalone(
+                config=TilerizerConfig(tile_type='tile', tile_size=512, ...),
+                imagery_path='./raster.tif',
+                output_path='./output',
+            )
+            print(result.tiles_path)
+        """
+        from canopyrs.engine.pipeline import run_component
+        return run_component(
+            component=cls(config, infer_aois_config=infer_aois_config),
+            output_path=output_path,
+            imagery_path=imagery_path,
+            infer_gdf=infer_gdf,
+        )
+
     @validate_requirements
     def __call__(self, data_state: DataState) -> ComponentResult:
         """

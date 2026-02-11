@@ -104,7 +104,7 @@ def run_coco_evaluations(
         
         # Run pipeline
         print(f"[coco_eval] Running pipeline on {dataset_name}...")
-        pipeline = Pipeline(io_config, deepcopy(pipeline_config))
+        pipeline = Pipeline.from_config(io_config, deepcopy(pipeline_config))
         data_state = pipeline()
         
         # Get predictions COCO path (use raw detector output, not aggregated)

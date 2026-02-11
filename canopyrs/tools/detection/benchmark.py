@@ -94,6 +94,8 @@ def main():
             nms_threshold=args.nms_threshold,
             score_threshold=args.score_threshold,
             nms_algorithm='iou',
+            detector_score_weight=1.0,
+            segmenter_score_weight=0.0
         )
 
     bench.benchmark(

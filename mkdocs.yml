@@ -19,6 +19,17 @@ extra:
   version:
     provider: mike
 
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/copy-config.js
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
 plugins:
   - search
   - mkdocstrings:
@@ -34,19 +45,26 @@ plugins:
 
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quickstart: getting-started/quickstart.md
+  - Installation: getting-started/installation.md
+  - Quick Start: getting-started/quickstart.md
   - User Guide:
+    - Presets: user-guide/presets.md
+    - Model Zoo: user-guide/model-zoo.md
+    - Configuration: user-guide/configuration.md
     - Pipeline: user-guide/pipeline.md
     - Components: user-guide/components.md
-    - Configuration: user-guide/configuration.md
-    - Presets: user-guide/presets.md
+    - Standalone Usage: user-guide/standalone.md
     - Data: user-guide/data.md
     - Evaluation: user-guide/evaluation.md
     - Training: user-guide/training.md
   - API Reference:
     - Pipeline: api/pipeline.md
-    - Components: api/components.md
+    - Components:
+      - Base: api/components/base.md
+      - Tilerizer: api/components/tilerizer.md
+      - Detector: api/components/detector.md
+      - Segmenter: api/components/segmenter.md
+      - Aggregator: api/components/aggregator.md
+      - Classifier: api/components/classifier.md
     - DataState: api/data-state.md
   - Contributing: contributing.md
