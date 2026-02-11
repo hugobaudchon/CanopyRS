@@ -1,10 +1,9 @@
-name: Deploy Docs with Versions
+name: Deploy Docs
 
 on:
   push:
     branches:
       - main
-      - dev
 
 permissions:
   contents: write
@@ -13,38 +12,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Fetch deep history (Required for mike to update gh-pages branch)
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      # 2. Install mike alongside mkdocs
       - name: Install dependencies
         run: |
-          pip install mkdocs-material mike mkdocstrings[python]
+          pip install mkdocs-material mkdocstrings[python]
 
       - name: Configure Git User
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # 3. Deploy logic
-      # If 'main', deploy as the "latest" version and set it as the root redirect
-      - name: Deploy Main (Production)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          mike deploy --push --update-aliases latest
-          mike set-default --push latest
-
-      # If 'dev', deploy as "dev" version (set as default only if 'latest' doesn't exist yet)
-      - name: Deploy Dev (Staging)
-        if: github.ref == 'refs/heads/dev'
-        run: |
-          mike deploy --push dev
-          mike set-default --push dev
+      - name: Deploy docs
+        run: mkdocs gh-deploy --force
