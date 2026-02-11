@@ -195,7 +195,7 @@ def get_detector_predictions_for_dataset(
         )
         print(f"Processing tile directory: {tile_dir}")
         # Run pipeline
-        pipeline = Pipeline(io_config, config)
+        pipeline = Pipeline.from_config(io_config, config)
         output = pipeline()
 
         coco_path = None

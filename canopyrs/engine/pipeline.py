@@ -60,6 +60,7 @@ class Pipeline:
         components: List[BaseComponent],
         data_state: DataState,
         output_path: Path,
+        verbose: bool = True,
     ):
         """
         Initialize pipeline.
@@ -68,10 +69,12 @@ class Pipeline:
             components: List of component instances (already configured)
             data_state: Initial data state
             output_path: Base output directory
+            verbose: Whether to print the flow chart and status messages
         """
         self.components = components
         self.data_state = data_state
         self.output_path = Path(output_path)
+        self.verbose = verbose
         self.output_path.mkdir(parents=True, exist_ok=True)
 
         # Setup background executor for async COCO generation
@@ -84,11 +87,12 @@ class Pipeline:
             component.output_path = self.output_path / f"{i}_{component.name}"
 
         # Validate pipeline configuration immediately to catch errors early
-        self._print_flow_chart()
+        if self.verbose:
+            self._print_flow_chart()
         self._validate_pipeline(raise_on_error=True)
 
     @classmethod
-    def from_config(cls, io_config: InferIOConfig, config: PipelineConfig) -> 'Pipeline':
+    def from_config(cls, io_config: InferIOConfig, config: PipelineConfig, verbose: bool = True) -> 'Pipeline':
         """
         Create a Pipeline from configuration objects.
 
@@ -97,6 +101,7 @@ class Pipeline:
         Args:
             io_config: Input/output configuration
             config: Pipeline configuration with component configs
+            verbose: Whether to print the flow chart and status messages
 
         Returns:
             Configured Pipeline instance
@@ -173,6 +178,7 @@ class Pipeline:
             components=components,
             data_state=data_state,
             output_path=output_path,
+            verbose=verbose,
         )
 
     # -------------------------------------------------------------------------
@@ -211,9 +217,10 @@ class Pipeline:
 
             # Save final GDF to root output folder if one was produced
             if self.data_state.infer_gdf is not None:
+                green_print("Saving final GeoDataFrame...")
                 final_gpkg_path = self._save_final_gpkg()
                 num_polygons = len(self.data_state.infer_gdf)
-                green_print(f"Final GDF containing {num_polygons} polygons saved to: {final_gpkg_path}")
+                print(f"Final GDF containing {num_polygons} polygons saved to: {final_gpkg_path}")
 
             green_print("Pipeline finished")
 
@@ -512,19 +519,19 @@ class Pipeline:
         """
         try:
             if self.data_state.imagery_path:
-                green_print("Validating input raster bands...")
+                print("Validating input raster bands...")
                 validate_input_raster_or_tiles(
                     imagery_path=self.data_state.imagery_path,
                     strict_color_interp=strict_rgb_validation
                 )
-                green_print("Input raster validation passed")
+                print("Input raster validation passed")
             elif self.data_state.tiles_path:
-                green_print("Validating input tiles...")
+                print("Validating input tiles...")
                 validate_input_raster_or_tiles(
                     tiles_path=self.data_state.tiles_path,
                     strict_color_interp=strict_rgb_validation
                 )
-                green_print("Tile validation passed")
+                print("Tile validation passed")
         except RasterValidationError as e:
             # Convert to PipelineValidationError for consistency
             raise PipelineValidationError(str(e))

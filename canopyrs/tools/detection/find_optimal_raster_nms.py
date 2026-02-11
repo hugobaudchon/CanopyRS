@@ -107,6 +107,8 @@ def main():
 
     aggregator_config = AggregatorConfig(
         nms_algorithm='iou',
+        detector_score_weight=1.0,
+        segmenter_score_weight=0.0
     )
 
     try:

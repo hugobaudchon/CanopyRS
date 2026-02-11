@@ -81,16 +81,16 @@ class BaseBenchmarker(ABC):
             output_folder=str(output_folder),
         )
 
-        pipeline = Pipeline(io_config, pipeline_config)
+        pipeline = Pipeline.from_config(io_config, pipeline_config, verbose=False)
         pipeline()
 
         last_model_component_id = None
         last_aggregator_component_id = None
-        for component_id, (component_type, _) in enumerate(pipeline.config.components_configs):
-            if component_type == component_name:
-                last_model_component_id = component_id
-            if component_type == 'aggregator':
-                last_aggregator_component_id = component_id
+        for component in pipeline.components:
+            if component.name == component_name:
+                last_model_component_id = component.component_id
+            if component.name == 'aggregator':
+                last_aggregator_component_id = component.component_id
 
         model_coco_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'coco')
         model_gpkg_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'pre_aggregated_gpkg')

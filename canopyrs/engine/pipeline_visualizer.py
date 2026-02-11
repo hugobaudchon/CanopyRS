@@ -6,6 +6,7 @@ Separated from Pipeline class to keep execution logic focused.
 """
 
 import re
+import sys
 from typing import List, Set, Dict, Any
 
 from canopyrs.engine.components.base import BaseComponent
@@ -13,6 +14,16 @@ from canopyrs.engine.components.base import BaseComponent
 
 # Regex to strip ANSI escape codes for width calculation
 _ANSI_ESCAPE_RE = re.compile(r'\033\[[0-9;]*m')
+
+
+def _stdout_supports_unicode() -> bool:
+    """Check if stdout can encode Unicode box-drawing and block characters."""
+    try:
+        encoding = getattr(sys.stdout, 'encoding', None) or 'ascii'
+        '▬─│┼·'.encode(encoding)
+        return True
+    except (UnicodeEncodeError, LookupError):
+        return False
 
 
 def _fill_width(s: str, width: int) -> str:
@@ -42,15 +53,20 @@ class _Colors:
     GRAY = "\033[90m"
 
 
-# Colored block symbols for flow visualization
+# Colored block symbols for flow visualization (with ASCII fallback for Windows cp1252)
+_USE_UNICODE = _stdout_supports_unicode()
+
+
 class _Symbols:
     """Colored block symbols for the flow chart."""
-    AVAILABLE = f"{_Colors.GREEN}▬{_Colors.RESET}"    # Available at input
-    PRODUCED = f"{_Colors.BLUE}▬{_Colors.RESET}"      # Produced by component
-    REQUIRED = f"{_Colors.YELLOW}▬{_Colors.RESET}"    # Required and available
-    MISSING = f"{_Colors.RED}▬{_Colors.RESET}"        # Required but MISSING
-    PASSTHROUGH = f"{_Colors.GRAY}·{_Colors.RESET}"   # Passthrough
-    EMPTY = " "                                        # Not yet available
+    _BLOCK = '▬' if _USE_UNICODE else '#'
+    _DOT = '·' if _USE_UNICODE else '.'
+    AVAILABLE = f"{_Colors.GREEN}{_BLOCK}{_Colors.RESET}"    # Available at input
+    PRODUCED = f"{_Colors.BLUE}{_BLOCK}{_Colors.RESET}"      # Produced by component
+    REQUIRED = f"{_Colors.YELLOW}{_BLOCK}{_Colors.RESET}"    # Required and available
+    MISSING = f"{_Colors.RED}{_BLOCK}{_Colors.RESET}"        # Required but MISSING
+    PASSTHROUGH = f"{_Colors.GRAY}{_DOT}{_Colors.RESET}"     # Passthrough
+    EMPTY = " "                                               # Not yet available
 
 
 class PipelineFlowVisualizer:
@@ -90,7 +106,10 @@ class PipelineFlowVisualizer:
     def print(self) -> None:
         """Print the flow chart to stdout."""
         flow_tracker = self._track_flow()
-        self._render(flow_tracker)
+        try:
+            self._render(flow_tracker)
+        except UnicodeEncodeError:
+            pass  # Skip on terminals that can't display the chart (e.g. Windows subprocess workers)
 
     def _track_flow(self) -> Dict[str, Any]:
         """
@@ -205,6 +224,11 @@ class PipelineFlowVisualizer:
         state_flow = flow_tracker['state_flow']
         column_flow = flow_tracker['column_flow']
 
+        # Box-drawing characters (with ASCII fallback)
+        v_bar = '│' if _USE_UNICODE else '|'
+        h_bar = '─' if _USE_UNICODE else '-'
+        cross = '┼' if _USE_UNICODE else '+'
+
         # Calculate column widths
         row_label_width = max(
             max((len(k) for k in state_flow.keys()), default=10),
@@ -214,10 +238,10 @@ class PipelineFlowVisualizer:
         col_widths = [max(len(c), 3) for c in components]
 
         # Build header
-        header = f"{' ' * row_label_width}  │ " + ' │ '.join(
+        header = f"{' ' * row_label_width}  {v_bar} " + f' {v_bar} '.join(
             c.center(w) for c, w in zip(components, col_widths)
         )
-        separator = '─' * (row_label_width + 2) + '┼─' + '─┼─'.join('─' * w for w in col_widths) + '─'
+        separator = h_bar * (row_label_width + 2) + f'{cross}{h_bar}' + f'{h_bar}{cross}{h_bar}'.join(h_bar * w for w in col_widths) + h_bar
 
         print("\n" + "=" * len(header))
         print("PIPELINE FLOW CHART")
@@ -228,11 +252,11 @@ class PipelineFlowVisualizer:
 
         # Print state rows
         if state_flow:
-            print(f"{'STATE KEYS'.ljust(row_label_width)}  │ " + ' │ '.join(' ' * w for w in col_widths))
+            print(f"{'STATE KEYS'.ljust(row_label_width)}  {v_bar} " + f' {v_bar} '.join(' ' * w for w in col_widths))
             for key in sorted(state_flow.keys()):
                 values = state_flow[key]
                 self._pad_flow_list(values, len(components))
-                row = f"{key.ljust(row_label_width)}  │ " + ' │ '.join(
+                row = f"{key.ljust(row_label_width)}  {v_bar} " + f' {v_bar} '.join(
                     _fill_width(v, w) for v, w in zip(values, col_widths)
                 )
                 print(row)
@@ -240,11 +264,11 @@ class PipelineFlowVisualizer:
 
         # Print column rows
         if column_flow:
-            print(f"{'GDF COLUMNS'.ljust(row_label_width)}  │ " + ' │ '.join(' ' * w for w in col_widths))
+            print(f"{'GDF COLUMNS'.ljust(row_label_width)}  {v_bar} " + f' {v_bar} '.join(' ' * w for w in col_widths))
             for col in sorted(column_flow.keys()):
                 values = column_flow[col]
                 self._pad_flow_list(values, len(components))
-                row = f"{col.ljust(row_label_width)}  │ " + ' │ '.join(
+                row = f"{col.ljust(row_label_width)}  {v_bar} " + f' {v_bar} '.join(
                     _fill_width(v, w) for v, w in zip(values, col_widths)
                 )
                 print(row)
