@@ -8,18 +8,33 @@ The data is cached in ~/.cache/canopyrs_test_data/benchmarks/ so subsequent
 runs are faster.
 """
 
+import shutil
+import tempfile
+
 import pytest
 import pandas as pd
 from pathlib import Path
 
 from canopyrs.engine.config_parsers import (
-    DetectorConfig, SegmenterConfig, AggregatorConfig,
+    SegmenterConfig, AggregatorConfig,
 )
 from canopyrs.engine.config_parsers.base import get_config_path
 
 
 # Cache directory for benchmark test data
 TEST_DATA_CACHE = Path.home() / ".cache" / "canopyrs_test_data" / "benchmarks"
+
+
+@pytest.fixture
+def short_tmp():
+    """Short temp directory to avoid Windows MAX_PATH (260 char) issues.
+
+    Pytest's tmp_path can be very long (~85 chars before the test even starts),
+    and benchmark NMS search creates deeply nested subdirectories.
+    """
+    d = Path(tempfile.mkdtemp(prefix="crs_"))
+    yield d
+    shutil.rmtree(d, ignore_errors=True)
 
 # RF1 50:95 IoU thresholds
 RF1_50_95 = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
@@ -73,18 +88,10 @@ def selvamask_dataset():
 
 
 @pytest.fixture(scope="session")
-def dino_detector_config():
-    """DINO SwinL detector config (FT on SelvaMask)."""
-    return DetectorConfig.from_yaml(
-        get_config_path("detectors/dino_swinL_multi_NQOS_selvamask_FT.yaml")
-    )
-
-
-@pytest.fixture(scope="session")
-def sam3_segmenter_config():
-    """SAM3 segmenter config (FT on SelvaMask)."""
+def maskrcnn_segmenter_config():
+    """Mask R-CNN segmenter config (trained on SelvaMask)."""
     return SegmenterConfig.from_yaml(
-        get_config_path("segmenters/sam3_multi_selvamask_FT.yaml")
+        get_config_path("segmenters/maskrcnn_r50_multi_selvamask.yaml")
     )
 
 
@@ -116,14 +123,14 @@ class TestSelvaMaskDataset:
 
 @pytest.mark.slow
 class TestNMSGridSearch:
-    """Integration test: NMS parameter search using DINO+SAM3 on SelvaMask valid set."""
+    """Integration test: NMS parameter search using Mask R-CNN on SelvaMask valid set."""
 
     def test_find_optimal_nms_params(
-        self, selvamask_dataset, dino_detector_config, sam3_segmenter_config, tmp_path
+        self, selvamask_dataset, maskrcnn_segmenter_config, short_tmp
     ):
         """
         Run a small NMS grid search (5x5) on SelvaMask valid set using
-        the SegmenterBenchmarker with DINO as prompter + SAM3 segmenter.
+        the SegmenterBenchmarker with Mask R-CNN.
 
         Asserts the returned AggregatorConfig contains values that were
         actually in the search grid.
@@ -136,12 +143,12 @@ class TestNMSGridSearch:
 
         base_aggregator_config = AggregatorConfig(
             nms_algorithm='ioa-disambiguate',
-            scores_weights={'detector_score': 0.5, 'segmenter_score': 0.5},
+            scores_weights={'detector_score': 0.0, 'segmenter_score': 1.0},
             scores_weighting_method='weighted_geometric_mean',
             edge_band_buffer_percentage=0.05,
         )
 
-        output_dir = tmp_path / "nms_search"
+        output_dir = short_tmp / "nms"
         benchmarker = SegmenterBenchmarker(
             output_folder=str(output_dir),
             fold_name='valid',
@@ -150,14 +157,13 @@ class TestNMSGridSearch:
         )
 
         optimal_config = benchmarker.find_optimal_nms_iou_threshold(
-            segmenter_config=sam3_segmenter_config,
+            segmenter_config=maskrcnn_segmenter_config,
             base_aggregator_config=base_aggregator_config,
             dataset_names=['SelvaMask'],
             nms_iou_thresholds=nms_iou_thresholds,
             nms_score_thresholds=nms_score_thresholds,
             eval_at_ground_resolution=0.045,
             n_workers=8,
-            prompter_detector_config=dino_detector_config,
         )
 
         # Returned config must be an AggregatorConfig
@@ -191,13 +197,13 @@ class TestNMSGridSearch:
 
 @pytest.mark.slow
 class TestSegmenterBenchmark:
-    """Integration test: full benchmark with DINO+SAM3 using ioa-disambiguate and RF1 50:95."""
+    """Integration test: full benchmark with Mask R-CNN using ioa-disambiguate and RF1 50:95."""
 
-    def test_benchmark_dino_sam3(
-        self, selvamask_dataset, dino_detector_config, sam3_segmenter_config, tmp_path
+    def test_benchmark_maskrcnn(
+        self, selvamask_dataset, maskrcnn_segmenter_config, short_tmp
     ):
         """
-        Run a full benchmark on SelvaMask test set with DINO+SAM3,
+        Run a full benchmark on SelvaMask test set with Mask R-CNN,
         using ioa-disambiguate NMS and RF1 50:95 evaluation.
         """
         from canopyrs.engine.benchmark.segmenter.benchmark import SegmenterBenchmarker
@@ -206,12 +212,12 @@ class TestSegmenterBenchmark:
             nms_algorithm='ioa-disambiguate',
             score_threshold=0.5,
             nms_threshold=0.5,
-            scores_weights={'detector_score': 0.5, 'segmenter_score': 0.5},
+            scores_weights={'detector_score': 0.0, 'segmenter_score': 1.0},
             scores_weighting_method='weighted_geometric_mean',
             edge_band_buffer_percentage=0.05,
         )
 
-        output_dir = tmp_path / "benchmark_output"
+        output_dir = short_tmp / "bench"
         benchmarker = SegmenterBenchmarker(
             output_folder=str(output_dir),
             fold_name='test',
@@ -220,10 +226,9 @@ class TestSegmenterBenchmark:
         )
 
         tile_metrics_df, raster_metrics_df = benchmarker.benchmark(
-            segmenter_config=sam3_segmenter_config,
+            segmenter_config=maskrcnn_segmenter_config,
             aggregator_config=aggregator_config,
             dataset_names=['SelvaMask'],
-            prompter_detector_config=dino_detector_config,
         )
 
         # Tile-level metrics
