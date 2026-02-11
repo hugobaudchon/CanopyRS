@@ -257,9 +257,13 @@ class Pipeline:
             setattr(self.data_state, key, value)
 
         # Merge GDF if provided (this replaces the old update_infer_gdf call)
-        if result.gdf is not None and len(result.gdf) > 0:
-            merged_gdf = self._merge_result_gdf(result.gdf)
-            self.data_state.infer_gdf = merged_gdf
+        if result.gdf is not None:
+            if len(result.gdf) > 0:
+                merged_gdf = self._merge_result_gdf(result.gdf)
+                self.data_state.infer_gdf = merged_gdf
+            else:
+                warnings.warn(f"{component.name} returned an empty GeoDataFrame (0 results).")
+                self.data_state.infer_gdf = result.gdf
 
         # Update columns to pass based on what's actually in the merged GDF
         # (not just what the component claims to produce, since merge may add columns)

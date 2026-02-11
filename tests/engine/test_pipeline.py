@@ -245,3 +245,27 @@ class TestPipelineMergeLogic:
 
         with pytest.raises(ValueError, match="no valid merge key"):
             p._merge_result_gdf(pd.DataFrame({"unrelated": [1]}))
+
+    def test_empty_gdf_replaces_existing(self, make_pipeline):
+        """Empty result GDF replaces existing GDF (e.g. aggregator filters all detections)."""
+        existing = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(0, 0, 1, 1), box(1, 1, 2, 2)],
+            Col.OBJECT_ID: [0, 1],
+            Col.DETECTOR_SCORE: [0.9, 0.8],
+        }, geometry=Col.GEOMETRY)
+        p = make_pipeline([], DataState(infer_gdf=existing))
+
+        empty_gdf = gpd.GeoDataFrame(columns=[Col.GEOMETRY], geometry=Col.GEOMETRY)
+        component = _StubComponent("aggregator",
+            requires_state={StateKey.INFER_GDF},
+            produces_state={StateKey.INFER_GDF},
+        )
+        component.output_path = p.output_path
+        component.component_id = 0
+        result = ComponentResult(gdf=empty_gdf, save_coco=True, coco_scores_column="aggregator_score")
+
+        with pytest.warns(UserWarning, match="empty GeoDataFrame"):
+            p._process_result(component, result)
+
+        assert p.data_state.infer_gdf is not None
+        assert len(p.data_state.infer_gdf) == 0

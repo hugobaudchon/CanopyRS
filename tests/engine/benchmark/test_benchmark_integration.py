@@ -9,11 +9,20 @@ runs are faster.
 """
 
 import pytest
+import pandas as pd
 from pathlib import Path
+
+from canopyrs.engine.config_parsers import (
+    DetectorConfig, SegmenterConfig, AggregatorConfig,
+)
+from canopyrs.engine.config_parsers.base import get_config_path
 
 
 # Cache directory for benchmark test data
 TEST_DATA_CACHE = Path.home() / ".cache" / "canopyrs_test_data" / "benchmarks"
+
+# RF1 50:95 IoU thresholds
+RF1_50_95 = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
 
 
 @pytest.fixture(scope="session")
@@ -63,157 +72,177 @@ def selvamask_dataset():
         pytest.skip(f"Could not download SelvaMask dataset: {e}")
 
 
+@pytest.fixture(scope="session")
+def dino_detector_config():
+    """DINO SwinL detector config (FT on SelvaMask)."""
+    return DetectorConfig.from_yaml(
+        get_config_path("detectors/dino_swinL_multi_NQOS_selvamask_FT.yaml")
+    )
+
+
+@pytest.fixture(scope="session")
+def sam3_segmenter_config():
+    """SAM3 segmenter config (FT on SelvaMask)."""
+    return SegmenterConfig.from_yaml(
+        get_config_path("segmenters/sam3_multi_selvamask_FT.yaml")
+    )
+
+
+# =============================================================================
+# Dataset Smoke Tests
+# =============================================================================
+
 @pytest.mark.slow
-class TestDetectorBenchmark:
-    """Integration tests for detector benchmarking."""
+class TestSelvaMaskDataset:
+    """Verify SelvaMask dataset is available and well-structured."""
 
     def test_selvamask_dataset_available(self, selvamask_dataset):
         """Verify SelvaMask dataset is downloaded and structured correctly."""
-        # SelvaMask structure: selvamask/ contains raster folders directly
         location_dir = selvamask_dataset / "selvamask"
         assert location_dir.exists(), f"Expected location dir not found: {location_dir}"
 
-        # Check that there are some raster folders with test tiles
         raster_dirs = [d for d in location_dir.iterdir() if d.is_dir()]
         assert len(raster_dirs) > 0, "No raster folders found in SelvaMask"
 
-        # Check that at least one raster has test fold data
-        has_test_data = False
-        for raster_dir in raster_dirs:
-            test_tiles = list(raster_dir.glob("tiles/test/*.tif"))
-            if test_tiles:
-                has_test_data = True
-                break
-
+        has_test_data = any(
+            list(d.glob("tiles/test/*.tif")) for d in raster_dirs
+        )
         assert has_test_data, "No test tiles found in SelvaMask dataset"
-        print(f"SelvaMask dataset verified: {len(raster_dirs)} rasters available")
 
-    def test_benchmark_with_segmentation_config(self, selvamask_dataset, tmp_path):
-        """
-        Test benchmarking with default_segmentation_multi_NQOS_best_L config.
 
-        This is a smoke test that verifies the benchmark runs without errors.
-        We only run on one raster to keep the test fast.
-        """
-        from canopyrs.engine.benchmark.detector.benchmark import DetectorBenchmarker
-        from canopyrs.engine.config_parsers import DetectorConfig, AggregatorConfig, PipelineConfig
-
-        # Load the pipeline config to extract detector component config
-        project_root = Path(__file__).parent.parent.parent.parent
-        pipeline_config_path = project_root / "canopyrs" / "config" / "default_segmentation_multi_NQOS_best_L" / "pipeline.yaml"
-
-        if not pipeline_config_path.exists():
-            pytest.skip(f"Config file not found: {pipeline_config_path}")
-
-        # Load pipeline config and extract detector config reference
-        pipeline_config = PipelineConfig.from_yaml(str(pipeline_config_path))
-
-        # Find the detector component in the pipeline
-        detector_config_ref = None
-        for comp_name, comp_config in pipeline_config.components_configs:
-            if comp_name == 'detector':
-                # If it's a string reference, resolve it
-                if isinstance(comp_config, str):
-                    detector_config_path = project_root / "canopyrs" / "config" / f"{comp_config}.yaml"
-                    if not detector_config_path.exists():
-                        pytest.skip(f"Detector config not found: {detector_config_path}")
-                    detector_config = DetectorConfig.from_yaml(str(detector_config_path))
-                else:
-                    # It's already a config object
-                    detector_config = comp_config
-                break
-
-        if detector_config is None:
-            pytest.skip("No detector component found in pipeline config")
-
-        # Create output directory
-        output_dir = tmp_path / "benchmark_output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create benchmarker
-        benchmarker = DetectorBenchmarker(
-            output_folder=str(output_dir),
-            fold_name='test',
-            raw_data_root=str(selvamask_dataset),
-            eval_iou_threshold=0.75,  # Use RF1_75 metric
-        )
-
-        # Create aggregator config (using values from the pipeline config)
-        aggregator_config = AggregatorConfig(
-            nms_threshold=0.7,
-            score_threshold=0.3,
-            nms_algorithm='iou',
-        )
-
-        # Run benchmark on SelvaMask only
-        # Note: This will run the full pipeline including tilerizer, detector, aggregator
-        # and may take several minutes depending on hardware
-        try:
-            benchmarker.benchmark(
-                detector_config=detector_config,
-                aggregator_config=aggregator_config,
-                dataset_names=['SelvaMask'],
-            )
-
-            # Verify output files were created
-            # Check for tile-level metrics
-            tile_metrics = output_dir / "test" / "tile_level_metrics.csv"
-            assert tile_metrics.exists(), f"Tile metrics CSV not found at {tile_metrics}"
-
-            # Check for raster-level metrics (if aggregation was run)
-            raster_metrics = output_dir / "test" / "raster_level_metrics.csv"
-            assert raster_metrics.exists(), f"Raster metrics CSV not found at {raster_metrics}"
-
-            print(f"Benchmark completed successfully. Results in {output_dir}")
-
-        except Exception as e:
-            # If this is a CUDA/GPU error, skip the test
-            if "CUDA" in str(e) or "GPU" in str(e) or "out of memory" in str(e).lower():
-                pytest.skip(f"GPU/CUDA error (expected in CPU-only environment): {e}")
-            else:
-                raise
-
+# =============================================================================
+# NMS Grid Search Tests
+# =============================================================================
 
 @pytest.mark.slow
-class TestBenchmarkSmoke:
-    """Lightweight smoke tests for benchmark system."""
+class TestNMSGridSearch:
+    """Integration test: NMS parameter search using DINO+SAM3 on SelvaMask valid set."""
 
-    def test_benchmarker_initialization(self, selvamask_dataset, tmp_path):
-        """Test that benchmarker can be initialized with valid parameters."""
-        from canopyrs.engine.benchmark.detector.benchmark import DetectorBenchmarker
+    def test_find_optimal_nms_params(
+        self, selvamask_dataset, dino_detector_config, sam3_segmenter_config, tmp_path
+    ):
+        """
+        Run a small NMS grid search (5x5) on SelvaMask valid set using
+        the SegmenterBenchmarker with DINO as prompter + SAM3 segmenter.
 
-        output_dir = tmp_path / "bench_init"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        Asserts the returned AggregatorConfig contains values that were
+        actually in the search grid.
+        """
+        from canopyrs.engine.benchmark.segmenter.benchmark import SegmenterBenchmarker
 
-        benchmarker = DetectorBenchmarker(
+        # Small 5x5 grid
+        nms_iou_thresholds = [0.01, 0.05, 0.1, 0.2, 0.3]
+        nms_score_thresholds = [0.2, 0.35, 0.5, 0.65, 0.8]
+
+        base_aggregator_config = AggregatorConfig(
+            nms_algorithm='ioa-disambiguate',
+            scores_weights={'detector_score': 0.5, 'segmenter_score': 0.5},
+            scores_weighting_method='weighted_geometric_mean',
+            edge_band_buffer_percentage=0.05,
+        )
+
+        output_dir = tmp_path / "nms_search"
+        benchmarker = SegmenterBenchmarker(
+            output_folder=str(output_dir),
+            fold_name='valid',
+            raw_data_root=str(selvamask_dataset),
+            eval_iou_threshold=RF1_50_95,
+        )
+
+        optimal_config = benchmarker.find_optimal_nms_iou_threshold(
+            segmenter_config=sam3_segmenter_config,
+            base_aggregator_config=base_aggregator_config,
+            dataset_names=['SelvaMask'],
+            nms_iou_thresholds=nms_iou_thresholds,
+            nms_score_thresholds=nms_score_thresholds,
+            eval_at_ground_resolution=0.045,
+            n_workers=8,
+            prompter_detector_config=dino_detector_config,
+        )
+
+        # Returned config must be an AggregatorConfig
+        assert isinstance(optimal_config, AggregatorConfig)
+
+        # The chosen thresholds must be values from the search grid
+        assert optimal_config.nms_threshold in nms_iou_thresholds, (
+            f"Optimal nms_threshold {optimal_config.nms_threshold} not in grid {nms_iou_thresholds}"
+        )
+        assert optimal_config.score_threshold in nms_score_thresholds, (
+            f"Optimal score_threshold {optimal_config.score_threshold} not in grid {nms_score_thresholds}"
+        )
+
+        # Base config properties should be preserved
+        assert optimal_config.nms_algorithm == 'ioa-disambiguate'
+
+        # CSV results file should have been saved
+        csv_path = output_dir / "valid" / "NMS_search" / "optimal_nms_iou_threshold_search.csv"
+        assert csv_path.exists(), f"Grid search CSV not found at {csv_path}"
+
+        results_df = pd.read_csv(csv_path)
+        assert len(results_df) > 0, "Grid search CSV is empty"
+        assert 'nms_iou_threshold' in results_df.columns
+        assert 'nms_score_threshold' in results_df.columns
+        assert 'f1' in results_df.columns
+
+
+# =============================================================================
+# Benchmarking Tests
+# =============================================================================
+
+@pytest.mark.slow
+class TestSegmenterBenchmark:
+    """Integration test: full benchmark with DINO+SAM3 using ioa-disambiguate and RF1 50:95."""
+
+    def test_benchmark_dino_sam3(
+        self, selvamask_dataset, dino_detector_config, sam3_segmenter_config, tmp_path
+    ):
+        """
+        Run a full benchmark on SelvaMask test set with DINO+SAM3,
+        using ioa-disambiguate NMS and RF1 50:95 evaluation.
+        """
+        from canopyrs.engine.benchmark.segmenter.benchmark import SegmenterBenchmarker
+
+        aggregator_config = AggregatorConfig(
+            nms_algorithm='ioa-disambiguate',
+            score_threshold=0.5,
+            nms_threshold=0.5,
+            scores_weights={'detector_score': 0.5, 'segmenter_score': 0.5},
+            scores_weighting_method='weighted_geometric_mean',
+            edge_band_buffer_percentage=0.05,
+        )
+
+        output_dir = tmp_path / "benchmark_output"
+        benchmarker = SegmenterBenchmarker(
             output_folder=str(output_dir),
             fold_name='test',
             raw_data_root=str(selvamask_dataset),
-            eval_iou_threshold=0.75,
+            eval_iou_threshold=RF1_50_95,
         )
 
-        # Check basic attributes
-        assert benchmarker.fold_name == 'test'
-        assert benchmarker.output_folder == output_dir
-        assert benchmarker.raw_data_root == selvamask_dataset
+        tile_metrics_df, raster_metrics_df = benchmarker.benchmark(
+            segmenter_config=sam3_segmenter_config,
+            aggregator_config=aggregator_config,
+            dataset_names=['SelvaMask'],
+            prompter_detector_config=dino_detector_config,
+        )
 
-    def test_config_loading(self):
-        """Test that the segmentation pipeline config can be loaded."""
-        from canopyrs.engine.config_parsers import PipelineConfig
+        # Tile-level metrics
+        tile_csv = output_dir / "test" / "tile_level_metrics.csv"
+        assert tile_csv.exists(), f"Tile metrics CSV not found at {tile_csv}"
+        assert isinstance(tile_metrics_df, pd.DataFrame)
+        assert len(tile_metrics_df) > 0
 
-        project_root = Path(__file__).parent.parent.parent.parent
-        config_path = project_root / "canopyrs" / "config" / "default_segmentation_multi_NQOS_best_L" / "pipeline.yaml"
+        # Raster-level metrics
+        raster_csv = output_dir / "test" / "raster_level_metrics.csv"
+        assert raster_csv.exists(), f"Raster metrics CSV not found at {raster_csv}"
+        assert isinstance(raster_metrics_df, pd.DataFrame)
+        assert len(raster_metrics_df) > 0
 
-        if not config_path.exists():
-            pytest.skip(f"Config file not found: {config_path}")
+        # RF1 50:95 metrics should be present
+        assert 'f1' in raster_metrics_df.columns, "Missing f1 (averaged RF1) column"
+        assert 'precision' in raster_metrics_df.columns
+        assert 'recall' in raster_metrics_df.columns
 
-        pipeline_config = PipelineConfig.from_yaml(str(config_path))
-
-        # Verify config has expected attributes
-        assert hasattr(pipeline_config, 'components_configs')
-        assert len(pipeline_config.components_configs) > 0
-
-        # Check that it has a detector component
-        component_names = [name for name, _ in pipeline_config.components_configs]
-        assert 'detector' in component_names, "Pipeline should have a detector component"
-        print(f"Pipeline config loaded successfully with {len(component_names)} components: {component_names}")
+        # f1 values should be between 0 and 1
+        f1_values = raster_metrics_df['f1'].dropna()
+        assert (f1_values >= 0).all() and (f1_values <= 1).all(), "f1 values out of [0, 1] range"

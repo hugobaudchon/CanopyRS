@@ -364,39 +364,3 @@ class TestMergeTileAndRasterSummaries:
         assert 'precision_mean' in result.columns
 
 
-class TestBenchmarkerInitialization:
-    """Tests for BaseBenchmarker initialization and validation."""
-
-    def test_iou_threshold_single_value_normalized(self):
-        """Single IoU threshold is converted to list."""
-        # Can't instantiate abstract class directly, but we can test the logic
-        threshold = 0.75
-        if isinstance(threshold, (list, tuple)):
-            threshold_list = [float(t) for t in threshold]
-        else:
-            threshold_list = [float(threshold)]
-
-        assert threshold_list == [0.75]
-
-    def test_iou_threshold_list_preserved(self):
-        """List of IoU thresholds is preserved."""
-        thresholds = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
-
-        if isinstance(thresholds, (list, tuple)):
-            threshold_list = [float(t) for t in thresholds]
-        else:
-            threshold_list = [float(thresholds)]
-
-        assert len(threshold_list) == 10
-        assert threshold_list[0] == 0.5
-        assert threshold_list[-1] == 0.95
-
-    def test_fold_validation(self):
-        """Only 'test' and 'valid' folds are allowed."""
-        valid_folds = ['test', 'valid']
-
-        for fold in valid_folds:
-            assert fold in ['test', 'valid']
-
-        invalid_fold = 'train'
-        assert invalid_fold not in ['test', 'valid']

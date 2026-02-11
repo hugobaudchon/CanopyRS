@@ -39,5 +39,5 @@ The pipeline handles all I/O, state management, and background tasks. Components
 ### API reference
 
 - [Pipeline](api/pipeline.md) — pipeline orchestration
-- [Components](api/components.md) — component classes
+- [Components](api/components/base.md) — component classes
 - [DataState](api/data-state.md) — state management
