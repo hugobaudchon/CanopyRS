@@ -15,10 +15,6 @@ theme:
     - content.code.copy
     - navigation.top
 
-extra:
-  version:
-    provider: mike
-
 extra_css:
   - stylesheets/extra.css
 
