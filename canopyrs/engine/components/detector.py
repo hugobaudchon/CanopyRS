@@ -154,6 +154,7 @@ class DetectorComponent(BaseComponent):
         return ComponentResult(
             gdf=gdf,
             produced_columns=self.produces_columns,
+            objects_are_new=True,
             save_gpkg=True,
             gpkg_name_suffix="notaggregated",
             save_coco=True,

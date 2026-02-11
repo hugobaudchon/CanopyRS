@@ -269,3 +269,102 @@ class TestPipelineMergeLogic:
 
         assert p.data_state.infer_gdf is not None
         assert len(p.data_state.infer_gdf) == 0
+
+
+class TestObjectsAreNew:
+    """Tests for objects_are_new flag on ComponentResult."""
+
+    def test_new_objects_replace_existing_gdf(self, make_pipeline):
+        """objects_are_new=True: new GDF replaces existing, no merge attempted."""
+        existing = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(0, 0, 1, 1)],
+            Col.OBJECT_ID: [0],
+            Col.DETECTOR_SCORE: [0.9],
+        }, geometry=Col.GEOMETRY)
+        p = make_pipeline([], DataState(infer_gdf=existing))
+
+        # A second detector produces new, independent objects
+        new_gdf = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(10, 10, 11, 11), box(20, 20, 21, 21)],
+            Col.OBJECT_ID: [0, 1],  # Same IDs as existing — but these are new objects
+            Col.DETECTOR_SCORE: [0.7, 0.6],
+        }, geometry=Col.GEOMETRY)
+
+        component = _StubComponent("detector2")
+        component.output_path = p.output_path
+        component.component_id = 1
+        result = ComponentResult(gdf=new_gdf, objects_are_new=True)
+
+        p._process_result(component, result)
+
+        # Should have replaced, not merged — 2 rows, not 1
+        assert len(p.data_state.infer_gdf) == 2
+        # Geometry should be from the new GDF
+        assert p.data_state.infer_gdf.geometry.iloc[0].equals(box(10, 10, 11, 11))
+
+    def test_existing_objects_merge_into_gdf(self, make_pipeline):
+        """objects_are_new=False: result merges into existing GDF via merge key."""
+        existing = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(0, 0, 1, 1), box(1, 1, 2, 2)],
+            Col.OBJECT_ID: [0, 1],
+            Col.DETECTOR_SCORE: [0.9, 0.8],
+        }, geometry=Col.GEOMETRY)
+        p = make_pipeline([], DataState(infer_gdf=existing))
+
+        # Prompted segmenter refines geometry, keeps object_ids
+        refined_gdf = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(0.1, 0.1, 0.9, 0.9), box(1.1, 1.1, 1.9, 1.9)],
+            Col.OBJECT_ID: [0, 1],
+            Col.SEGMENTER_SCORE: [0.85, 0.75],
+        }, geometry=Col.GEOMETRY)
+
+        component = _StubComponent("segmenter")
+        component.output_path = p.output_path
+        component.component_id = 1
+        result = ComponentResult(gdf=refined_gdf, objects_are_new=False)
+
+        p._process_result(component, result)
+
+        # Should have merged — geometry replaced, detector_score preserved
+        assert len(p.data_state.infer_gdf) == 2
+        assert p.data_state.infer_gdf.geometry.iloc[0].equals(box(0.1, 0.1, 0.9, 0.9))
+        assert Col.DETECTOR_SCORE in p.data_state.infer_gdf.columns
+        assert Col.SEGMENTER_SCORE in p.data_state.infer_gdf.columns
+
+    def test_new_objects_no_existing_gdf(self, make_pipeline):
+        """objects_are_new=True with no existing GDF: sets directly."""
+        p = make_pipeline([])
+
+        gdf = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(0, 0, 1, 1)],
+            Col.DETECTOR_SCORE: [0.9],
+        }, geometry=Col.GEOMETRY)
+
+        component = _StubComponent("detector")
+        component.output_path = p.output_path
+        component.component_id = 0
+        result = ComponentResult(gdf=gdf, objects_are_new=True)
+
+        p._process_result(component, result)
+
+        assert len(p.data_state.infer_gdf) == 1
+        assert Col.OBJECT_ID in p.data_state.infer_gdf.columns
+
+    def test_existing_objects_no_existing_gdf_still_works(self, make_pipeline):
+        """objects_are_new=False with no existing GDF: falls through to set directly."""
+        p = make_pipeline([])
+
+        gdf = gpd.GeoDataFrame({
+            Col.GEOMETRY: [box(0, 0, 1, 1)],
+            Col.OBJECT_ID: [0],
+            Col.AGGREGATOR_SCORE: [0.9],
+        }, geometry=Col.GEOMETRY)
+
+        component = _StubComponent("aggregator")
+        component.output_path = p.output_path
+        component.component_id = 0
+        result = ComponentResult(gdf=gdf, objects_are_new=False)
+
+        p._process_result(component, result)
+
+        assert len(p.data_state.infer_gdf) == 1

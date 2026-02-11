@@ -25,7 +25,7 @@ The pipeline includes components for tiling, detecting, aggregating, and segment
 ## 🎉 News
 
 - **[2026-02-02]**: 📄 We released **[SelvaMask](https://arxiv.org/abs/2602.02426)**, a new preprint introducing a densely annotated dataset and benchmarking SOTA methods like SAM3!
-- **[2026-01-26]**: 🎉 **[SelvaBox](https://openreview.net/forum?id=GH7z1RURL6)** was accepted at ICLR 2026! Come see us in Rio de Janeiro this April!
+- **[2026-01-26]**: 🎉 Our paper **[SelvaBox](https://openreview.net/forum?id=GH7z1RURL6)**, which introduces CanopyRS, was accepted at ICLR 2026! Come see us in Rio de Janeiro this April!
 - **[2024-11-15]**: 🥇 Our team Limelight Rainforest won the $10M XPRIZE Rainforest competition, in part thanks to CanopyRS and SelvaBox!
 
 ## 🛠️ Quick Start

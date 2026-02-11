@@ -196,6 +196,7 @@ class AggregatorComponent(BaseComponent):
         return ComponentResult(
             gdf=result_gdf,
             produced_columns=columns_to_pass | {Col.AGGREGATOR_SCORE},
+            objects_are_new=False,
             save_gpkg=False,  # Aggregator already saves via geodataset
             save_coco=True,
             coco_scores_column=Col.AGGREGATOR_SCORE,

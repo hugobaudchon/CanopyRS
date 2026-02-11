@@ -14,8 +14,8 @@ A CanopyRS pipeline is a sequence of **components**, each responsible for one st
 
 1. **Tilerizer** — splits a large orthomosaic into overlapping tiles
 2. **Detector** — runs object detection on each tile
-3. **Segmenter** — refines detections into instance segmentation masks
-4. **Aggregator** — merges overlapping detections across tiles using NMS
+3. **Segmenter** — runs object segmentation on each tile or refines detections into instance segmentation masks (SAM models)
+4. **Aggregator** — merges overlapping detections across tiles using NMS to obtain raster-level predictions
 5. **Classifier** — classifies each detected tree
 
 The pipeline handles all I/O, state management, and background tasks. Components only implement their core logic.

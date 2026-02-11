@@ -185,6 +185,7 @@ class SegmenterComponent(BaseComponent):
         return ComponentResult(
             gdf=gdf,
             produced_columns=self.produces_columns,
+            objects_are_new=not self._model_class.REQUIRES_BOX_PROMPT,
             save_gpkg=True,
             gpkg_name_suffix="notaggregated",
             save_coco=True,

@@ -156,6 +156,7 @@ class ClassifierComponent(BaseComponent):
         return ComponentResult(
             gdf=df,  # DataFrame, not GeoDataFrame - no geometry
             produced_columns={Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES},
+            objects_are_new=False,
             save_gpkg=True,
             gpkg_name_suffix="notaggregated",  # classifier saves final results
             save_coco=True,
