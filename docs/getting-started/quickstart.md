@@ -2,6 +2,10 @@
 
 Run tree detection on a single orthomosaic in a few steps.
 
+## Sample raster
+
+A small test raster is included in the repository at `assets/20240130_zf2tower_m3m_rgb_test_crop.tif`. You can use it to try the commands below without needing your own data.
+
 ## Using a preset configuration
 
 CanopyRS ships with preset pipelines. The fastest way to get started is to use one of them directly via `infer.py`.
