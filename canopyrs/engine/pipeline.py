@@ -8,11 +8,13 @@ Design principles:
 4. Pre-run validation catches config errors before expensive processing
 5. Helper function for standalone component usage
 
-Merge rules (in _merge_result_gdf):
-- No existing GDF → set directly, assign object_ids if missing
-- Result has geometry → becomes base, merge in other columns from existing
-- Result has no geometry → merge attributes into existing
-- Merge key priority: object_id > tile_path (if unique) > error
+Merge rules:
+- objects_are_new=True (default) → replace existing GDF with new objects
+- objects_are_new=False → merge into existing GDF via _merge_result_gdf:
+  - No existing GDF → set directly, assign object_ids if missing
+  - Result has geometry → becomes base, merge in other columns from existing
+  - Result has no geometry → merge attributes into existing
+  - Merge key priority: object_id > tile_path (if unique) > error
 """
 
 import warnings
@@ -259,8 +261,13 @@ class Pipeline:
         # Merge GDF if provided (this replaces the old update_infer_gdf call)
         if result.gdf is not None:
             if len(result.gdf) > 0:
-                merged_gdf = self._merge_result_gdf(result.gdf)
-                self.data_state.infer_gdf = merged_gdf
+                if result.objects_are_new:
+                    # New objects: replace existing GDF entirely
+                    self.data_state.infer_gdf = self._set_as_new_gdf(result.gdf)
+                else:
+                    # Existing objects refined: merge into existing GDF
+                    merged_gdf = self._merge_result_gdf(result.gdf)
+                    self.data_state.infer_gdf = merged_gdf
             else:
                 warnings.warn(f"{component.name} returned an empty GeoDataFrame (0 results).")
                 self.data_state.infer_gdf = result.gdf
@@ -295,12 +302,15 @@ class Pipeline:
 
     def _merge_result_gdf(self, result_gdf: Union[gpd.GeoDataFrame, pd.DataFrame]) -> gpd.GeoDataFrame:
         """
-        Merge component output with existing infer_gdf.
+        Merge component output with existing infer_gdf (objects_are_new=False).
+
+        Only called when a component refines existing objects (e.g., prompted
+        segmenter replacing detector boxes with masks, or aggregator filtering).
 
         Rules:
         1. No existing GDF → set directly, assign object_ids if missing
         2. Result has geometry + valid merge key → becomes base, merge in other columns
-        3. Result has geometry + no merge key → full replacement (e.g., aggregator)
+        3. Result has geometry + no merge key → full replacement
         4. Result has no geometry → merge attributes into existing
         5. Merge key priority: object_id > tile_path (if unique)
 

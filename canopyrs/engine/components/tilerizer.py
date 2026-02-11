@@ -200,6 +200,7 @@ class TilerizerComponent(BaseComponent):
         return ComponentResult(
             gdf=None,  # Tilerizer doesn't modify the GDF
             produced_columns=columns_to_pass,
+            objects_are_new=False,
             state_updates={
                 StateKey.TILES_PATH: tiles_path,
                 StateKey.INFER_COCO_PATH: infer_coco_path,

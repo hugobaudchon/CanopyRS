@@ -104,6 +104,7 @@ class ComponentResult:
     # Core output data
     gdf: Optional[gpd.GeoDataFrame] = None
     produced_columns: Set[str] = field(default_factory=set)
+    objects_are_new: bool = True  # If True, GDF replaces existing; if False, merge into existing (if able to)
 
     # State updates (for non-GDF state like tiles_path)
     state_updates: Dict[str, Any] = field(default_factory=dict)
