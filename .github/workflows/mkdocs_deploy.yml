@@ -35,15 +35,16 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       # 3. Deploy logic
-      # If 'main', deploy as the "latest" version (default)
+      # If 'main', deploy as the "latest" version and set it as the root redirect
       - name: Deploy Main (Production)
         if: github.ref == 'refs/heads/main'
         run: |
-          # 'latest' is the version name, 'update-aliases' sets it as default
-          mike deploy --push --update-aliases latest 
+          mike deploy --push --update-aliases latest
+          mike set-default --push latest
 
-      # If 'dev', deploy as "dev" version
+      # If 'dev', deploy as "dev" version (set as default only if 'latest' doesn't exist yet)
       - name: Deploy Dev (Staging)
         if: github.ref == 'refs/heads/dev'
         run: |
           mike deploy --push dev
+          mike set-default --push dev
