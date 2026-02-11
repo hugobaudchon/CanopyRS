@@ -17,7 +17,7 @@ dependencies = [
     "faster-coco-eval>=1.6.5",
     "GDAL>=3.0.0,<=3.8.0",
     "geopandas==1.0.1",
-    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.6.4",
+    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.6.5",
     "hf_xet>=1.0.0",
     "numpy>=1.24.0,<2.0.0",
     "pandas>=2.2.0",
