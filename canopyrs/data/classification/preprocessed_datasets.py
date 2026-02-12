@@ -16,7 +16,7 @@ class BaseClassifierPreprocessedDataset:
             root_output_path: Union[str, Path],
             folds: List[str],
     ):
-        raise NotImplementedError
+        pass
 
     def iter_fold_classifier(
             self,
