@@ -111,12 +111,12 @@ for method_name in (
 print("\n=== 4. Removed methods gone from classifier ===")
 
 ce = ClassifierCocoEvaluator()
+
+# These were classifier-only methods that should be fully deleted
 for method_name in (
     "_evaluate_single_iou_type",
     "_evaluate_class_agnostic_segmentation",
     "_compute_classification_metrics",
-    "_compute_miou",
-    "_compute_bbox_iou",
     "_filter_by_min_gt_coverage",
     "_combine_scores",
     "_weighted_arithmetic_mean",
@@ -126,6 +126,16 @@ for method_name in (
         f"ClassifierCocoEvaluator.{method_name} removed",
         not hasattr(ce, method_name),
         "still exists" if hasattr(ce, method_name) else "",
+    )
+
+# These moved to CocoEvaluator and are now inherited (should exist)
+for method_name in (
+    "_compute_miou",
+    "_compute_bbox_iou",
+):
+    check(
+        f"ClassifierCocoEvaluator.{method_name} inherited from base",
+        hasattr(ce, method_name),
     )
 
 # ------------------------------------------------------------------
