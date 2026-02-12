@@ -7,18 +7,23 @@ This script supports two modes:
    pre-existing pipeline output folder to resolve tiles/input_coco/input_gpkg.
 """
 
+import sys
 from pathlib import Path
-
-from canopyrs.engine.benchmark.classifier.benchmark import (
-    ClassifierBenchmarker,
-)
-from canopyrs.engine.benchmark.classifier.evaluator import (
-    ClassifierCocoEvaluator,
-)
-from canopyrs.engine.config_parsers import ClassifierConfig
 
 
 def main():
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    from canopyrs.engine.benchmark.classifier.benchmark import (
+        ClassifierBenchmarker,
+    )
+    from canopyrs.engine.benchmark.classifier.evaluator import (
+        ClassifierCocoEvaluator,
+    )
+    from canopyrs.engine.config_parsers import ClassifierConfig
+
     # ========================================================================
     # CONFIGURE YOUR PATHS HERE
     # ========================================================================
@@ -46,9 +51,8 @@ def main():
     PREDICTIONS_COCO = ""
     GROUND_TRUTH_COCO = ""
     # Evaluation options
-    EVALUATE_CLASS_AGNOSTIC = True  # Set to True for full diagnostic
-    EVALUATE_BBOX = False           # Set to True to also check bbox metrics
-    MIN_GT_COVERAGE = 0.02          # 2% minimum GT mask coverage per tile
+    EVALUATE_CLASS_AGNOSTIC = True  # Full diagnostic
+    EVALUATE_BBOX = False           # Also check bbox metrics
     # ========================================================================
     # END CONFIGURATION
     # ========================================================================
@@ -97,15 +101,18 @@ def main():
 
     if RUN_WITH_BENCHMARKER:
         classifier_config = ClassifierConfig.from_yaml(path=CLASSIFIER_YAML)
+        classifier_config.pipeline_outputs_root = PIPELINE_OUTPUTS_ROOT
 
         benchmarker = ClassifierBenchmarker(
             output_folder=OUTPUT_FOLDER,
             fold_name="test",
             raw_data_root=RAW_DATA_ROOT,
-            pipeline_outputs_root=PIPELINE_OUTPUTS_ROOT,
         )
 
-        datasets = benchmarker._get_preprocessed_datasets(["QuebecTrees"])
+        datasets = benchmarker._get_preprocessed_datasets(
+            ["QuebecTrees"],
+            pipeline_outputs_root=PIPELINE_OUTPUTS_ROOT,
+        )
         dataset = datasets["QuebecTrees"]
 
         matched = False
@@ -146,7 +153,6 @@ def main():
                 truth_coco_path=str(truths_coco),
                 evaluate_class_agnostic=EVALUATE_CLASS_AGNOSTIC,
                 evaluate_bbox=EVALUATE_BBOX,
-                min_gt_coverage=MIN_GT_COVERAGE,
             )
             break
 
@@ -162,7 +168,6 @@ def main():
             truth_coco_path=GROUND_TRUTH_COCO,
             evaluate_class_agnostic=EVALUATE_CLASS_AGNOSTIC,
             evaluate_bbox=EVALUATE_BBOX,
-            min_gt_coverage=MIN_GT_COVERAGE,
         )
     # Print summary
     print("\n" + "=" * 70)

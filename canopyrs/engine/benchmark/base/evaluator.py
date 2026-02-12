@@ -1,3 +1,4 @@
+import copy
 import warnings
 from pathlib import Path
 
@@ -123,58 +124,243 @@ class CocoEvaluator:
                 return label
         return cls.size_labels[-1]
 
-    def tile_level(self,
-                   iou_type: str,
-                   preds_coco_path: str,
-                   truth_coco_path: str,
-                   max_dets: list[int] = (1, 10, 100),
-                   images_common_ground_resolution: float=None) -> dict:
+    def tile_level(
+            self,
+            iou_type: str,
+            preds_coco_path: str,
+            truth_coco_path: str,
+            max_dets: list = (1, 10, 100),
+            images_common_ground_resolution: float = None,
+    ) -> dict:
 
         truth_coco = COCO(str(truth_coco_path))
         preds_coco = COCO(str(preds_coco_path))
 
         for ann in truth_coco.dataset['annotations']:
             if 'score' in ann:
-                del ann['score']  # avoids crash when score is None (truth shouldn't have scores)
+                del ann['score']
 
         # Align predictions to truth based on file name
         align_coco_datasets_by_name(truth_coco, preds_coco)
 
-        # Set up and run COCO evaluation
+        return self._evaluate_coco(
+            truth_coco, preds_coco, iou_type, max_dets,
+            images_common_ground_resolution=(
+                images_common_ground_resolution
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Low-level helpers reusable by subclasses (classifier, etc.)
+    # ------------------------------------------------------------------
+
+    def _evaluate_coco(
+            self,
+            truth_coco,
+            preds_coco,
+            iou_type: str,
+            max_dets: list = (1, 10, 100),
+            images_common_ground_resolution: float = None,
+    ) -> dict:
+        """Evaluate pre-aligned COCO objects for a single IoU type.
+
+        Does **not** copy the inputs.  Callers that need to run
+        multiple evaluations on the same data should copy first.
+        """
         coco_evaluator = Summarize2COCOEval(
             cocoGt=truth_coco,
             cocoDt=preds_coco,
-            iouType=iou_type
+            iouType=iou_type,
         )
-        coco_evaluator.params.maxDets = max_dets
+        coco_evaluator.params.maxDets = list(max_dets)
 
         if images_common_ground_resolution is not None:
-            area_ranges = self._get_area_ranges_pixels_from_gsd(images_common_ground_resolution)
-            area_rng_list = [
+            ar = self._get_area_ranges_pixels_from_gsd(
+                images_common_ground_resolution)
+            coco_evaluator.params.areaRng = [
                 [0, 1e10],
-                [area_ranges['tiny'][0], area_ranges['tiny'][1]],
-                [area_ranges['small'][0], area_ranges['small'][1]],
-                [area_ranges['medium'][0], area_ranges['medium'][1]],
-                [area_ranges['large'][0], area_ranges['large'][1]],
-                [area_ranges['giant'][0], area_ranges['giant'][1]]
+                [ar['tiny'][0], ar['tiny'][1]],
+                [ar['small'][0], ar['small'][1]],
+                [ar['medium'][0], ar['medium'][1]],
+                [ar['large'][0], ar['large'][1]],
+                [ar['giant'][0], ar['giant'][1]],
             ]
-            area_rng_lbl = ['all', 'tiny', 'small', 'medium', 'large', 'giant']
-            coco_evaluator.params.areaRng = area_rng_list
-            coco_evaluator.params.areaRngLbl = area_rng_lbl
+            coco_evaluator.params.areaRngLbl = [
+                'all', 'tiny', 'small',
+                'medium', 'large', 'giant',
+            ]
+
         coco_evaluator.evaluate()
         coco_evaluator.accumulate()
 
-        # Get metrics as a dictionary and add some debug info
         metrics = coco_evaluator.summarize_to_dict()
-        num_images = len(truth_coco.dataset.get('images', []))
-        num_truths = len(truth_coco.dataset.get('annotations', []))
-        num_preds = len(preds_coco.dataset.get('annotations', []))
+        metrics['num_images'] = len(
+            truth_coco.dataset.get('images', []))
+        metrics['num_truths'] = len(
+            truth_coco.dataset.get('annotations', []))
+        metrics['num_preds'] = len(
+            preds_coco.dataset.get('annotations', []))
+        metrics['iou_type'] = iou_type
 
-        metrics['num_images'] = num_images
-        metrics['num_truths'] = num_truths
-        metrics['num_preds'] = num_preds
+        if (hasattr(coco_evaluator, 'ious')
+                and coco_evaluator.ious):
+            metrics['mIoU'] = self._compute_miou(
+                coco_evaluator)
 
         return metrics
+
+    @staticmethod
+    def _compute_miou(coco_evaluator) -> float:
+        """Mean IoU from a COCOeval object's *ious* dict."""
+        try:
+            all_ious = []
+            ious = getattr(coco_evaluator, 'ious', None)
+            if ious:
+                for _key, iou_matrix in ious.items():
+                    if isinstance(iou_matrix, np.ndarray):
+                        flat = iou_matrix.flatten()
+                        valid = flat[
+                            (flat > 0) & (flat <= 1)]
+                        all_ious.extend(valid.tolist())
+            if all_ious:
+                return float(np.mean(all_ious))
+            return 0.0
+        except (ValueError, TypeError) as exc:
+            print("Error computing mIoU: {}".format(exc))
+            return 0.0
+
+    def evaluate_class_agnostic(
+            self,
+            truth_coco,
+            preds_coco,
+            max_dets: list = (1, 10, 100),
+    ) -> dict:
+        """Segmentation eval ignoring category_id.
+
+        Deep-copies datasets, forces all category_id to 1,
+        then delegates to ``_evaluate_coco``.
+        """
+        truth_copy = COCO()
+        truth_copy.dataset = copy.deepcopy(
+            truth_coco.dataset)
+        pred_copy = COCO()
+        pred_copy.dataset = copy.deepcopy(
+            preds_coco.dataset)
+
+        one_cat = [
+            {'id': 1, 'name': 'object', 'supercategory': ''}
+        ]
+        truth_copy.dataset['categories'] = one_cat
+        pred_copy.dataset['categories'] = list(one_cat)
+
+        for ann in truth_copy.dataset.get(
+                'annotations', []):
+            ann['category_id'] = 1
+        for ann in pred_copy.dataset.get(
+                'annotations', []):
+            ann['category_id'] = 1
+
+        truth_copy.createIndex()
+        pred_copy.createIndex()
+
+        return self._evaluate_coco(
+            truth_copy, pred_copy, 'segm', max_dets)
+
+    def compute_classification_metrics(
+            self,
+            truth_coco,
+            preds_coco,
+    ) -> dict:
+        """Classification accuracy for matched instances.
+
+        Matches GT → pred by bbox IoU > 0.5, then checks
+        ``category_id`` agreement.
+        """
+        total_matches = 0
+        correct_class = 0
+        per_class_stats = {}
+
+        for img_id in truth_coco.getImgIds():
+            gt_anns = truth_coco.loadAnns(
+                truth_coco.getAnnIds(imgIds=img_id))
+            pred_anns = preds_coco.loadAnns(
+                preds_coco.getAnnIds(imgIds=img_id))
+
+            if not gt_anns or not pred_anns:
+                continue
+
+            for gt_ann in gt_anns:
+                gt_cat = gt_ann['category_id']
+                if gt_cat not in per_class_stats:
+                    per_class_stats[gt_cat] = {
+                        'total': 0, 'correct': 0,
+                    }
+
+                best_iou = 0.0
+                best_pred = None
+                for pred_ann in pred_anns:
+                    iou = self._compute_bbox_iou(
+                        gt_ann['bbox'],
+                        pred_ann['bbox'],
+                    )
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_pred = pred_ann
+
+                if best_iou > 0.5 and best_pred is not None:
+                    total_matches += 1
+                    per_class_stats[gt_cat]['total'] += 1
+                    if best_pred['category_id'] == gt_cat:
+                        correct_class += 1
+                        per_class_stats[gt_cat][
+                            'correct'] += 1
+
+        accuracy = (
+            correct_class / total_matches
+            if total_matches > 0 else 0.0
+        )
+
+        per_class_acc = {}
+        for cat_id, stats in per_class_stats.items():
+            per_class_acc[cat_id] = (
+                stats['correct'] / stats['total']
+                if stats['total'] > 0 else 0.0
+            )
+
+        return {
+            'overall_accuracy': accuracy,
+            'total_matched_instances': total_matches,
+            'correctly_classified': correct_class,
+            'per_class_accuracy': per_class_acc,
+            'per_class_counts': per_class_stats,
+        }
+
+    @staticmethod
+    def _compute_bbox_iou(box1, box2) -> float:
+        """IoU between two COCO-format bboxes [x, y, w, h]."""
+        x1_min, y1_min = box1[0], box1[1]
+        x1_max = x1_min + box1[2]
+        y1_max = y1_min + box1[3]
+
+        x2_min, y2_min = box2[0], box2[1]
+        x2_max = x2_min + box2[2]
+        y2_max = y2_min + box2[3]
+
+        xi_min = max(x1_min, x2_min)
+        yi_min = max(y1_min, y2_min)
+        xi_max = min(x1_max, x2_max)
+        yi_max = min(y1_max, y2_max)
+
+        if xi_max <= xi_min or yi_max <= yi_min:
+            return 0.0
+
+        intersection = (
+            (xi_max - xi_min) * (yi_max - yi_min))
+        area1 = box1[2] * box1[3]
+        area2 = box2[2] * box2[3]
+        union = area1 + area2 - intersection
+
+        return intersection / union if union > 0 else 0.0
 
     @staticmethod
     def raster_level_single_iou_threshold(iou_type: str,
@@ -523,8 +709,12 @@ def validate_and_repair_gdf(gdf: gpd.GeoDataFrame, name: str) -> gpd.GeoDataFram
 def align_coco_datasets_by_name(
     truth_coco: COCO,
     preds_coco: COCO,
-    alignment_strategy: AlignmentStrategy = AlignmentStrategy.EXACT_MATCH,
+    alignment_strategy: AlignmentStrategy = (
+        AlignmentStrategy.EXACT_MATCH),
     return_report: bool = False,
+    min_match_rate_warning: float = 0.0,
+    min_match_rate_error: float = 0.0,
+    verbose: bool = False,
 ) -> Optional[AlignmentReport]:
     if alignment_strategy == AlignmentStrategy.BASE_RSPLIT_1:
         def get_match_key(file_name: str) -> str:
@@ -538,7 +728,10 @@ def align_coco_datasets_by_name(
     gt_images = truth_coco.dataset.get('images', [])
     pred_images = preds_coco.dataset.get('images', [])
 
-    preds_by_key = {get_match_key(img['file_name']): img for img in pred_images}
+    preds_by_key = {
+        get_match_key(img['file_name']): img
+        for img in pred_images
+    }
     id_mapping = {}
     new_preds_images = []
     unmatched_gt = []
@@ -569,17 +762,39 @@ def align_coco_datasets_by_name(
     preds_coco.dataset['annotations'] = new_preds_annotations
     preds_coco.createIndex()
 
-    if not return_report:
-        return None
-
+    # --- match-rate validation (opt-in) -----------------------
     num_gt = len(gt_images)
     num_pred = len(pred_images)
     num_matched = len(id_mapping)
+    match_rate = (
+        num_matched / num_gt if num_gt > 0 else 0.0)
+
+    if (min_match_rate_error > 0
+            and match_rate < min_match_rate_error):
+        raise AlignmentError(
+            "Critical alignment failure: only {:.1%} of "
+            "GT tiles matched predictions "
+            "(threshold: {:.1%}).".format(
+                match_rate, min_match_rate_error))
+
+    if (min_match_rate_warning > 0
+            and match_rate < min_match_rate_warning):
+        warnings.warn(
+            "Low alignment rate: {:.1%} of GT tiles "
+            "matched (threshold: {:.1%}). "
+            "{} GT tiles have no predictions.".format(
+                match_rate, min_match_rate_warning,
+                len(unmatched_gt)),
+            LowMatchRateWarning,
+        )
+
+    if not return_report:
+        return None
+
     num_gt_without_pred = len(unmatched_gt)
     num_pred_outside_gt = num_pred - num_matched
-    match_rate = num_matched / num_gt if num_gt > 0 else 0.0
 
-    return AlignmentReport(
+    report = AlignmentReport(
         num_gt_images=num_gt,
         num_pred_images=num_pred,
         num_matched=num_matched,
@@ -587,10 +802,17 @@ def align_coco_datasets_by_name(
         num_pred_outside_gt=num_pred_outside_gt,
         match_rate=match_rate,
         unmatched_gt_files=unmatched_gt,
-        gt_filename_samples=[img['file_name'] for img in gt_images[:3]],
-        pred_filename_samples=[img['file_name'] for img in pred_images[:3]],
+        gt_filename_samples=[
+            img['file_name'] for img in gt_images[:3]],
+        pred_filename_samples=[
+            img['file_name'] for img in pred_images[:3]],
         strategy_used=alignment_strategy.value,
     )
+
+    if verbose:
+        report.print_report(verbose=True)
+
+    return report
 
 def filter_min_overlap(gdf, aoi_geom, min_frac=0.4):
     from shapely.validation import make_valid

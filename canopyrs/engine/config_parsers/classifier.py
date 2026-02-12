@@ -13,6 +13,17 @@ class ClassifierConfig(BaseConfig):
     freeze_layers: int = Field(0, description="Number of layers to freeze")
     batch_size: int = Field(8, description="Batch size for inference")
     class_names: Optional[List[str]] = Field(None, description="Names of output classes")
+    categories_config_path: Optional[str] = Field(
+        None,
+        description="Path to canonical categories JSON (benchmark only)",
+    )
+    pipeline_outputs_root: Optional[str] = Field(
+        None,
+        description=(
+            "Root folder of existing pipeline outputs"
+            " (benchmark only)"
+        ),
+    )
 
     @validator('model')
     def validate_model(cls, v):

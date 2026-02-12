@@ -1,6 +1,5 @@
 from pathlib import Path
-import json
-from typing import Optional, Dict, Union, List
+from typing import Optional, Union, List
 
 import pandas as pd
 
@@ -18,9 +17,7 @@ class ClassifierBenchmarker(BaseBenchmarker):
                  output_folder: PathLike,
                  fold_name: str,
                  raw_data_root: PathLike,
-                 eval_iou_threshold: Union[float, List[float]] = 0.75,
-                 categories_config_path: Optional[PathLike] = None,
-                 pipeline_outputs_root: Optional[PathLike] = None):
+                 eval_iou_threshold: Union[float, List[float]] = 0.75):
         super().__init__(
             output_folder=output_folder,
             fold_name=fold_name,
@@ -28,35 +25,36 @@ class ClassifierBenchmarker(BaseBenchmarker):
             eval_iou_threshold=eval_iou_threshold,
         )
 
-        self.pipeline_outputs_root = (
-            Path(pipeline_outputs_root)
-            if pipeline_outputs_root is not None
-            else None
-        )
-
-        if categories_config_path and Path(categories_config_path).exists():
-            with open(categories_config_path, 'r', encoding='utf-8') as f:
-                self.canonical_categories = json.load(f)
-        else:
-            self.canonical_categories = []
-
-    def _get_preprocessed_datasets(self, dataset_names: Union[str, List[str]]):
+    def _get_preprocessed_datasets(
+        self,
+        dataset_names: Union[str, List[str]],
+        pipeline_outputs_root: Optional[PathLike] = None,
+    ):
         datasets = {}
         dataset_names_list = (
             [dataset_names]
             if isinstance(dataset_names, str)
             else list(dataset_names)
         )
+        resolved_root = (
+            Path(pipeline_outputs_root)
+            if pipeline_outputs_root is not None
+            else None
+        )
         for dataset_name in dataset_names_list:
             assert dataset_name in DATASET_REGISTRY, (
-                f'Dataset {dataset_name} not supported. Supported datasets are '
-                f'{DATASET_REGISTRY.keys()}.'
+                f'Dataset {dataset_name} not supported. '
+                f'Supported: {DATASET_REGISTRY.keys()}.'
             )
             datasets[dataset_name] = DATASET_REGISTRY[dataset_name]()
 
-            if hasattr(datasets[dataset_name], 'pipeline_outputs_root'):
+            if (
+                resolved_root is not None
+                and hasattr(datasets[dataset_name],
+                            'pipeline_outputs_root')
+            ):
                 datasets[dataset_name].pipeline_outputs_root = (
-                    self.pipeline_outputs_root
+                    resolved_root
                 )
 
             datasets[dataset_name].verify_dataset(
@@ -98,15 +96,15 @@ class ClassifierBenchmarker(BaseBenchmarker):
         )
         return model_coco, model_gpkg
 
-    def benchmark_single_run(self,
-                             run_name: str,
-                             product_tiles_path: PathLike,
-                             classifier_config: ClassifierConfig,
-                             truth_coco_path: PathLike,
-                             input_gpkg: Optional[PathLike],
-                             input_coco: Optional[PathLike],
-                             score_combination: Optional[Dict] = None,
-                             min_gt_coverage: float = 0.0):
+    def benchmark_single_run(
+            self,
+            run_name: str,
+            product_tiles_path: PathLike,
+            classifier_config: ClassifierConfig,
+            truth_coco_path: PathLike,
+            input_gpkg: Optional[PathLike],
+            input_coco: Optional[PathLike],
+    ):
         evaluator = ClassifierCocoEvaluator(verbose=True)
 
         run_output_folder = self.output_folder / self.fold_name / run_name
@@ -125,8 +123,6 @@ class ClassifierBenchmarker(BaseBenchmarker):
             preds_coco_path=str(preds_coco_path),
             truth_coco_path=str(truth_coco_path),
             evaluate_class_agnostic=True,
-            score_combination=score_combination,
-            min_gt_coverage=min_gt_coverage,
         )
 
         record = self._flatten_instance_segmentation_results(results)
@@ -145,33 +141,39 @@ class ClassifierBenchmarker(BaseBenchmarker):
             )
         return dataset.iter_fold_classifier(self.raw_data_root, fold=fold)
 
-    def benchmark(self,
-                  classifier_config: ClassifierConfig,
-                  dataset_names: Union[str, List[str]],
-                  score_combination: Optional[Dict] = None,
-                  min_gt_coverage: float = 0.0):
+    def benchmark(
+            self,
+            classifier_config: ClassifierConfig,
+            dataset_names: Union[str, List[str]],
+    ):
         classification_df = self._benchmark_classification_only(
             classifier_config=classifier_config,
             dataset_names=dataset_names,
-            score_combination=score_combination,
-            min_gt_coverage=min_gt_coverage,
+            pipeline_outputs_root=(
+                classifier_config.pipeline_outputs_root
+            ),
         )
 
         instance_df = self._benchmark_instance_segmentation(
             classifier_config=classifier_config,
             dataset_names=dataset_names,
-            score_combination=score_combination,
-            min_gt_coverage=min_gt_coverage,
+            pipeline_outputs_root=(
+                classifier_config.pipeline_outputs_root
+            ),
         )
 
         return classification_df, instance_df
 
-    def _benchmark_classification_only(self,
-                                       classifier_config: ClassifierConfig,
-                                       dataset_names: Union[str, List[str]],
-                                       score_combination: Optional[Dict],
-                                       min_gt_coverage: float):
-        datasets = self._get_preprocessed_datasets(dataset_names)
+    def _benchmark_classification_only(
+            self,
+            classifier_config: ClassifierConfig,
+            dataset_names: Union[str, List[str]],
+            pipeline_outputs_root: Optional[PathLike] = None,
+    ):
+        datasets = self._get_preprocessed_datasets(
+            dataset_names,
+            pipeline_outputs_root=pipeline_outputs_root,
+        )
         evaluator = ClassifierCocoEvaluator(verbose=True)
 
         all_metrics = []
@@ -205,8 +207,6 @@ class ClassifierBenchmarker(BaseBenchmarker):
                 metrics = evaluator.classification_only(
                     preds_coco_path=str(preds_coco_json),
                     truth_coco_path=str(truths_coco),
-                    score_combination=score_combination,
-                    min_gt_coverage=min_gt_coverage,
                 )
                 metrics['location'] = location
                 metrics['product_name'] = product_name
@@ -231,8 +231,6 @@ class ClassifierBenchmarker(BaseBenchmarker):
             dataset_metrics = evaluator.classification_only(
                 preds_coco_path=str(merged_preds_coco_path),
                 truth_coco_path=str(merged_truths_coco_path),
-                score_combination=score_combination,
-                min_gt_coverage=min_gt_coverage,
             )
             dataset_metrics['location'] = dataset_name
             dataset_metrics['product_name'] = 'average_over_rasters'
@@ -247,12 +245,16 @@ class ClassifierBenchmarker(BaseBenchmarker):
         metrics_df.to_csv(metrics_file, index=False)
         return metrics_df
 
-    def _benchmark_instance_segmentation(self,
-                                         classifier_config: ClassifierConfig,
-                                         dataset_names: Union[str, List[str]],
-                                         score_combination: Optional[Dict],
-                                         min_gt_coverage: float):
-        datasets = self._get_preprocessed_datasets(dataset_names)
+    def _benchmark_instance_segmentation(
+            self,
+            classifier_config: ClassifierConfig,
+            dataset_names: Union[str, List[str]],
+            pipeline_outputs_root: Optional[PathLike] = None,
+    ):
+        datasets = self._get_preprocessed_datasets(
+            dataset_names,
+            pipeline_outputs_root=pipeline_outputs_root,
+        )
         evaluator = ClassifierCocoEvaluator(verbose=True)
 
         all_metrics = []
@@ -275,8 +277,6 @@ class ClassifierBenchmarker(BaseBenchmarker):
                     preds_coco_path=str(preds_coco_json),
                     truth_coco_path=str(truths_coco),
                     evaluate_class_agnostic=True,
-                    score_combination=score_combination,
-                    min_gt_coverage=min_gt_coverage,
                 )
 
                 record = self._flatten_instance_segmentation_results(results)
@@ -296,8 +296,6 @@ class ClassifierBenchmarker(BaseBenchmarker):
                 preds_coco_path=str(merged_preds_coco_path),
                 truth_coco_path=str(merged_truths_coco_path),
                 evaluate_class_agnostic=True,
-                score_combination=score_combination,
-                min_gt_coverage=min_gt_coverage,
             )
             dataset_record = self._flatten_instance_segmentation_results(dataset_results)
             dataset_record['location'] = dataset_name
