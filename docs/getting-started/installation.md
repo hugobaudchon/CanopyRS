@@ -4,7 +4,7 @@
 
 - **OS:** Linux (Ubuntu 22.04 recommended). Windows 10 is also supported but might be trickier to setup. MacOS is untested.
 - **Python:** 3.10
-- **CUDA:** 12.6 — You can install CUDA by following the VIDIA CUDA installation [guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), or directly downloading it from this [link](https://developer.nvidia.com/cuda-12-6-0-download-archive). The command `nvcc --version` should show version 12.6.
+- **CUDA:** 12.6 — You can install CUDA by following the NVIDIA CUDA installation [guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), or directly downloading it from this [link](https://developer.nvidia.com/cuda-12-6-0-download-archive). The command `nvcc --version` should show version 12.6.
 
 ## Step-by-step
 
