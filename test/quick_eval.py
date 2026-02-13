@@ -27,12 +27,12 @@ def main():
     # ========================================================================
     # CONFIGURE YOUR PATHS HERE
     # ========================================================================
-    RUN_WITH_BENCHMARKER = True
+    RUN_WITH_BENCHMARKER = False
 
-    TARGET_PRODUCT_NAME = "2021_09_02_sbl_z3_rgb_cog"
+    TARGET_PRODUCT_NAME = "20210902_sblz3_p4rtk_rgb"
 
     RAW_DATA_ROOT = (
-        "/network/scratch/a/arthur.ouaknine/data/quebec_trees_preprocessed"
+        "/home/mila/a/arthur.ouaknine/scratch/data/"
     )
     PIPELINE_OUTPUTS_ROOT = (
         "/network/scratch/a/arthur.ouaknine/temp/"
@@ -44,12 +44,11 @@ def main():
     )
 
     CLASSIFIER_YAML = (
-        "/network/scratch/a/arthur.ouaknine/code/CanopyRS/"
-        "config/pipeline_w_classification/classifier.yaml"
+        "/home/mila/a/arthur.ouaknine/code/CanopyRS/config/pipeline_w_classification/classifier.yaml"
     )
 
-    PREDICTIONS_COCO = ""
-    GROUND_TRUTH_COCO = ""
+    PREDICTIONS_COCO = "/network/scratch/a/arthur.ouaknine/temp/quebec_trees/quebectree_z3_predicted_jan26/2021-09-02-sbl-z3-rgb-cog/2021_09_02_sbl_z3_rgb_cog/2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
+    GROUND_TRUTH_COCO = "/network/scratch/a/arthur.ouaknine/temp/quebec_trees/20210902_sblz3_p4rtk_rgb/20210902_sblz3_p4rtk_rgb/2021-09-02-sbl-z3-rgb-cog/2021_09_02_sbl_z3_rgb_cog/2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
     # Evaluation options
     EVALUATE_CLASS_AGNOSTIC = True  # Full diagnostic
     EVALUATE_BBOX = False           # Also check bbox metrics
