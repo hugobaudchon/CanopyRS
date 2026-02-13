@@ -5,7 +5,7 @@ import pandas as pd
 
 from canopyrs.engine.benchmark.base.base_benchmarker import BaseBenchmarker
 from canopyrs.engine.benchmark.classifier.evaluator import ClassifierCocoEvaluator
-from canopyrs.engine.config_parsers import ClassifierConfig, PipelineConfig
+from canopyrs.engine.config_parsers import ClassifierConfig, PipelineConfig, TilerizerConfig
 from canopyrs.engine.utils import merge_coco_jsons
 from canopyrs.data.classification.preprocessed_datasets import DATASET_REGISTRY
 
@@ -76,52 +76,82 @@ class ClassifierBenchmarker(BaseBenchmarker):
     def _infer_classifier_single_product(
             self,
             product_name: str,
-            product_tiles_path: PathLike,
+            product_tiles_path: Optional[PathLike],
             classifier_config: ClassifierConfig,
             input_gpkg: Optional[PathLike],
             input_coco: Optional[PathLike],
+            tilerizer_config: Optional[TilerizerConfig] = None,
+            input_imagery: Optional[PathLike] = None,
             output_folder: Optional[PathLike] = None,
     ):
-        pipeline_config = PipelineConfig(
-            components_configs=[('classifier', classifier_config)]
+        if tilerizer_config is not None:
+            pipeline_config = PipelineConfig(
+                components_configs=[
+                    ('tilerizer', tilerizer_config),
+                    ('classifier', classifier_config),
+                ]
+            )
+        else:
+            pipeline_config = PipelineConfig(
+                components_configs=[
+                    ('classifier', classifier_config),
+                ]
+            )
+
+        model_coco, model_gpkg, _, tilerizer_coco = (
+            self._infer_single_product(
+                product_name=product_name,
+                product_tiles_path=product_tiles_path,
+                pipeline_config=pipeline_config,
+                component_name='classifier',
+                input_gpkg=input_gpkg,
+                input_coco=input_coco,
+                input_imagery=input_imagery,
+                output_folder=output_folder,
+            )
         )
-        model_coco, model_gpkg, _ = self._infer_single_product(
-            product_name=product_name,
-            product_tiles_path=product_tiles_path,
-            pipeline_config=pipeline_config,
-            component_name='classifier',
-            input_gpkg=input_gpkg,
-            input_coco=input_coco,
-            output_folder=output_folder,
-        )
-        return model_coco, model_gpkg
+        return model_coco, model_gpkg, tilerizer_coco
 
     def benchmark_single_run(
             self,
             run_name: str,
-            product_tiles_path: PathLike,
+            product_tiles_path: Optional[PathLike],
             classifier_config: ClassifierConfig,
             truth_coco_path: PathLike,
             input_gpkg: Optional[PathLike],
             input_coco: Optional[PathLike],
+            tilerizer_config: Optional[TilerizerConfig] = None,
+            input_imagery: Optional[PathLike] = None,
     ):
         evaluator = ClassifierCocoEvaluator(verbose=True)
 
         run_output_folder = self.output_folder / self.fold_name / run_name
         run_output_folder.mkdir(parents=True, exist_ok=True)
 
-        preds_coco_path, _ = self._infer_classifier_single_product(
-            product_name=run_name,
-            product_tiles_path=product_tiles_path,
-            classifier_config=classifier_config,
-            input_gpkg=input_gpkg,
-            input_coco=input_coco,
-            output_folder=run_output_folder,
+        preds_coco_path, _, tilerizer_coco = (
+            self._infer_classifier_single_product(
+                product_name=run_name,
+                product_tiles_path=product_tiles_path,
+                classifier_config=classifier_config,
+                input_gpkg=input_gpkg,
+                input_coco=input_coco,
+                tilerizer_config=tilerizer_config,
+                input_imagery=input_imagery,
+                output_folder=run_output_folder,
+            )
+        )
+
+        # When tilerizer ran, its output COCO (with GT labels)
+        # serves as ground truth for alignment.
+        effective_truth = (
+            str(tilerizer_coco)
+            if tilerizer_coco is not None
+            else str(truth_coco_path)
         )
 
         results = evaluator.tile_level(
             preds_coco_path=str(preds_coco_path),
-            truth_coco_path=str(truth_coco_path),
+            truth_coco_path=effective_truth,
             evaluate_class_agnostic=True,
         )
 
@@ -141,17 +171,33 @@ class ClassifierBenchmarker(BaseBenchmarker):
             )
         return dataset.iter_fold_classifier(self.raw_data_root, fold=fold)
 
+    def _resolve_tilerizer_config(
+            self,
+            classifier_config: ClassifierConfig,
+    ) -> Optional[TilerizerConfig]:
+        if classifier_config.tilerizer_config_path is not None:
+            return TilerizerConfig.from_yaml(
+                path=classifier_config.tilerizer_config_path,
+            )
+        return None
+
     def benchmark(
             self,
             classifier_config: ClassifierConfig,
             dataset_names: Union[str, List[str]],
     ):
+        tilerizer_config = self._resolve_tilerizer_config(
+            classifier_config,
+        )
+
         classification_df = self._benchmark_classification_only(
             classifier_config=classifier_config,
             dataset_names=dataset_names,
             pipeline_outputs_root=(
                 classifier_config.pipeline_outputs_root
             ),
+            tilerizer_config=tilerizer_config,
+            input_imagery=classifier_config.input_imagery,
         )
 
         instance_df = self._benchmark_instance_segmentation(
@@ -160,6 +206,8 @@ class ClassifierBenchmarker(BaseBenchmarker):
             pipeline_outputs_root=(
                 classifier_config.pipeline_outputs_root
             ),
+            tilerizer_config=tilerizer_config,
+            input_imagery=classifier_config.input_imagery,
         )
 
         return classification_df, instance_df
@@ -169,6 +217,8 @@ class ClassifierBenchmarker(BaseBenchmarker):
             classifier_config: ClassifierConfig,
             dataset_names: Union[str, List[str]],
             pipeline_outputs_root: Optional[PathLike] = None,
+            tilerizer_config: Optional[TilerizerConfig] = None,
+            input_imagery: Optional[PathLike] = None,
     ):
         datasets = self._get_preprocessed_datasets(
             dataset_names,
@@ -195,25 +245,34 @@ class ClassifierBenchmarker(BaseBenchmarker):
                     / 'tile_predictions'
                     / product_name
                 )
-                preds_coco_json, _ = self._infer_classifier_single_product(
-                    product_name=product_name,
-                    product_tiles_path=tiles_path,
-                    classifier_config=classifier_config,
-                    input_gpkg=input_gpkg,
-                    input_coco=input_coco,
-                    output_folder=product_output_folder,
+                preds_coco_json, _, tilerizer_coco = (
+                    self._infer_classifier_single_product(
+                        product_name=product_name,
+                        product_tiles_path=tiles_path,
+                        classifier_config=classifier_config,
+                        input_gpkg=input_gpkg,
+                        input_coco=input_coco,
+                        tilerizer_config=tilerizer_config,
+                        input_imagery=input_imagery,
+                        output_folder=product_output_folder,
+                    )
                 )
 
+                effective_truth = (
+                    str(tilerizer_coco)
+                    if tilerizer_coco is not None
+                    else str(truths_coco)
+                )
                 metrics = evaluator.classification_only(
                     preds_coco_path=str(preds_coco_json),
-                    truth_coco_path=str(truths_coco),
+                    truth_coco_path=effective_truth,
                 )
                 metrics['location'] = location
                 metrics['product_name'] = product_name
                 all_metrics.append(metrics)
 
                 dataset_preds_cocos.append(str(preds_coco_json))
-                dataset_truths_cocos.append(str(truths_coco))
+                dataset_truths_cocos.append(effective_truth)
 
             merged_preds_coco_path = (
                 self.output_folder
@@ -250,6 +309,8 @@ class ClassifierBenchmarker(BaseBenchmarker):
             classifier_config: ClassifierConfig,
             dataset_names: Union[str, List[str]],
             pipeline_outputs_root: Optional[PathLike] = None,
+            tilerizer_config: Optional[TilerizerConfig] = None,
+            input_imagery: Optional[PathLike] = None,
     ):
         datasets = self._get_preprocessed_datasets(
             dataset_names,
@@ -264,18 +325,32 @@ class ClassifierBenchmarker(BaseBenchmarker):
 
             for (location, product_name, tiles_path, input_gpkg, input_coco,
                  truths_coco) in self._iter_fold_classifier(dataset, fold='test'):
-                preds_coco_json, _ = self._infer_classifier_single_product(
-                    product_name=product_name,
-                    product_tiles_path=tiles_path,
-                    classifier_config=classifier_config,
-                    input_gpkg=input_gpkg,
-                    input_coco=input_coco,
-                    output_folder=self.output_folder / self.fold_name / 'tile_predictions' / product_name,
+                preds_coco_json, _, tilerizer_coco = (
+                    self._infer_classifier_single_product(
+                        product_name=product_name,
+                        product_tiles_path=tiles_path,
+                        classifier_config=classifier_config,
+                        input_gpkg=input_gpkg,
+                        input_coco=input_coco,
+                        tilerizer_config=tilerizer_config,
+                        input_imagery=input_imagery,
+                        output_folder=(
+                            self.output_folder
+                            / self.fold_name
+                            / 'tile_predictions'
+                            / product_name
+                        ),
+                    )
                 )
 
+                effective_truth = (
+                    str(tilerizer_coco)
+                    if tilerizer_coco is not None
+                    else str(truths_coco)
+                )
                 results = evaluator.tile_level(
                     preds_coco_path=str(preds_coco_json),
-                    truth_coco_path=str(truths_coco),
+                    truth_coco_path=effective_truth,
                     evaluate_class_agnostic=True,
                 )
 
@@ -285,7 +360,7 @@ class ClassifierBenchmarker(BaseBenchmarker):
                 all_metrics.append(record)
 
                 dataset_preds_cocos.append(str(preds_coco_json))
-                dataset_truths_cocos.append(str(truths_coco))
+                dataset_truths_cocos.append(effective_truth)
 
             merged_preds_coco_path = self.output_folder / self.fold_name / f"{dataset_name}_merged_preds_coco.json"
             merged_truths_coco_path = self.output_folder / self.fold_name / f"{dataset_name}_merged_truths_coco.json"

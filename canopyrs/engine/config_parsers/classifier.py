@@ -24,6 +24,20 @@ class ClassifierConfig(BaseConfig):
             " (benchmark only)"
         ),
     )
+    tilerizer_config_path: Optional[str] = Field(
+        None,
+        description=(
+            "Path to tilerizer YAML config for re-tilerizing GT"
+            " before classification (benchmark only)"
+        ),
+    )
+    input_imagery: Optional[str] = Field(
+        None,
+        description=(
+            "Path to raw raster imagery, required when"
+            " tilerizer_config_path is set (benchmark only)"
+        ),
+    )
 
     @validator('model')
     def validate_model(cls, v):

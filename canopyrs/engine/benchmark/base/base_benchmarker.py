@@ -61,25 +61,27 @@ class BaseBenchmarker(ABC):
 
     def _infer_single_product(self,
                               product_name: str,
-                              product_tiles_path: str | Path,
+                              product_tiles_path: str | Path | None,
                               pipeline_config: PipelineConfig,
                               component_name: str,
                               input_gpkg: str | Path | None = None,
                               input_coco: str | Path | None = None,
+                              input_imagery: str | Path | None = None,
                               output_folder: str | Path = None):
         """
         Run inference for one product and return paths to outputs.
         
         pipeline_config: Pre-configured PipelineConfig from child class
         component_name: 'detector' or 'segmenter' - used to retrieve output files
+        input_imagery: Path to raw raster (required when pipeline includes a tilerizer)
         """
 
         if output_folder is None:
             output_folder = self.output_folder / self.fold_name / product_name
 
         io_config = InferIOConfig(
-            input_imagery=None,
-            tiles_path=str(product_tiles_path),
+            input_imagery=str(input_imagery) if input_imagery is not None else None,
+            tiles_path=str(product_tiles_path) if product_tiles_path is not None else None,
             input_gpkg=str(input_gpkg) if input_gpkg is not None else None,
             input_coco=str(input_coco) if input_coco is not None else None,
             output_folder=str(output_folder),
@@ -108,7 +110,15 @@ class BaseBenchmarker(ABC):
         else:
             aggregator_output = None
 
-        return model_coco_output, model_gpkg_output, aggregator_output
+        # Retrieve tilerizer COCO if a tilerizer was in the pipeline
+        tilerizer_coco_output = None
+        for component_id, (component_type, _) in enumerate(pipeline.config.components_configs):
+            if component_type == 'tilerizer':
+                tilerizer_coco = pipeline.data_state.get_output_file('tilerizer', component_id, 'infer_coco')
+                if tilerizer_coco is not None:
+                    tilerizer_coco_output = tilerizer_coco
+
+        return model_coco_output, model_gpkg_output, aggregator_output, tilerizer_coco_output
 
     def _find_optimal_nms_iou_threshold(self,
                                         pipeline_config: PipelineConfig,
@@ -140,7 +150,7 @@ class BaseBenchmarker(ABC):
         tiles_roots: list[str] = []
         for dataset_name, dataset in datasets.items():
             for location, product_name, tiles_path, aoi_gpkg, truths_gpkg, truths_coco in dataset.iter_fold(self.raw_data_root, fold="valid"):
-                _, model_gpkg_output, _ = self._infer_single_product(
+                _, model_gpkg_output, _, _ = self._infer_single_product(
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     pipeline_config=pipeline_config,
@@ -243,7 +253,7 @@ class BaseBenchmarker(ABC):
                     # Create pipeline without aggregator (pop the last component since it's the aggregator)
                     pipeline_config = PipelineConfig(components_configs=pipeline_config_with_aggregator.components_configs[:-1])
 
-                preds_coco_json, _, preds_aggregated_gpkg = self._infer_single_product(
+                preds_coco_json, _, preds_aggregated_gpkg, _ = self._infer_single_product(
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     pipeline_config=pipeline_config,
