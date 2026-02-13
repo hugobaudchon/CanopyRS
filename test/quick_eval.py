@@ -22,7 +22,7 @@ def main():
     from canopyrs.engine.benchmark.classifier.evaluator import (
         ClassifierCocoEvaluator,
     )
-    from canopyrs.engine.config_parsers import ClassifierConfig
+    from canopyrs.engine.config_parsers import ClassifierConfig, TilerizerConfig
 
     # ========================================================================
     # CONFIGURE YOUR PATHS HERE
@@ -44,11 +44,36 @@ def main():
     )
 
     CLASSIFIER_YAML = (
-        "/home/mila/a/arthur.ouaknine/code/CanopyRS/config/pipeline_w_classification/classifier.yaml"
+        "/home/mila/a/arthur.ouaknine/code/CanopyRS/"
+        "config/pipeline_w_classification/classifier.yaml"
+    )
+    TILERIZER_YAML = (
+        "/home/mila/a/arthur.ouaknine/code/CanopyRS/"
+        "config/pipeline_w_classification/"
+        "tilerizer_classifier.yaml"
+    )
+    INPUT_IMAGERY = (
+        "/network/scratch/a/arthur.ouaknine/data/"
+        "quebec_trees/rasters/"
+        "2021-09-02-sbl-z3-rgb-cog.tif"
     )
 
-    PREDICTIONS_COCO = "/network/scratch/a/arthur.ouaknine/temp/quebec_trees/quebectree_z3_predicted_jan26/2021-09-02-sbl-z3-rgb-cog/2021_09_02_sbl_z3_rgb_cog/2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
-    GROUND_TRUTH_COCO = "/network/scratch/a/arthur.ouaknine/temp/quebec_trees/20210902_sblz3_p4rtk_rgb/20210902_sblz3_p4rtk_rgb/2021-09-02-sbl-z3-rgb-cog/2021_09_02_sbl_z3_rgb_cog/2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
+    PREDICTIONS_COCO = (
+        "/network/scratch/a/arthur.ouaknine/temp/"
+        "quebec_trees/quebectree_z3_predicted_jan26/"
+        "2021-09-02-sbl-z3-rgb-cog/"
+        "2021_09_02_sbl_z3_rgb_cog/"
+        "2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
+    )
+    GROUND_TRUTH_COCO = (
+        "/network/scratch/a/arthur.ouaknine/temp/"
+        "quebec_trees/20210902_sblz3_p4rtk_rgb/"
+        "20210902_sblz3_p4rtk_rgb/"
+        "2021-09-02-sbl-z3-rgb-cog/"
+        "2021_09_02_sbl_z3_rgb_cog/"
+        "2021_09_02_sbl_z3_rgb_cog_coco_sf0p8_test.json"
+    )
+
     # Evaluation options
     EVALUATE_CLASS_AGNOSTIC = True  # Full diagnostic
     EVALUATE_BBOX = False           # Also check bbox metrics
@@ -102,6 +127,15 @@ def main():
         classifier_config = ClassifierConfig.from_yaml(path=CLASSIFIER_YAML)
         classifier_config.pipeline_outputs_root = PIPELINE_OUTPUTS_ROOT
 
+        tilerizer_config = None
+        if TILERIZER_YAML and Path(TILERIZER_YAML).exists():
+            tilerizer_config = TilerizerConfig.from_yaml(
+                path=TILERIZER_YAML,
+            )
+            print(f"Tilerizer config loaded: {TILERIZER_YAML}")
+
+        input_imagery = INPUT_IMAGERY if INPUT_IMAGERY else None
+
         benchmarker = ClassifierBenchmarker(
             output_folder=OUTPUT_FOLDER,
             fold_name="test",
@@ -136,20 +170,30 @@ def main():
                 / product_name
             )
 
-            preds_coco_path, _preds_gpkg_path = (
+            preds_coco_path, _preds_gpkg_path, tilerizer_coco = (
                 benchmarker._infer_classifier_single_product(
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     classifier_config=classifier_config,
                     input_gpkg=input_gpkg,
                     input_coco=input_coco,
+                    tilerizer_config=tilerizer_config,
+                    input_imagery=input_imagery,
                     output_folder=run_output_folder,
                 )
             )
 
+            # When tilerizer ran, its output COCO (with GT
+            # labels) serves as ground truth for alignment.
+            effective_truth = (
+                str(tilerizer_coco)
+                if tilerizer_coco is not None
+                else str(truths_coco)
+            )
+
             results = evaluator.tile_level(
                 preds_coco_path=str(preds_coco_path),
-                truth_coco_path=str(truths_coco),
+                truth_coco_path=effective_truth,
                 evaluate_class_agnostic=EVALUATE_CLASS_AGNOSTIC,
                 evaluate_bbox=EVALUATE_BBOX,
             )
