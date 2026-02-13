@@ -105,6 +105,15 @@ class ClassifierComponent(BaseComponent):
             original_infer_gdf = data_state.infer_gdf.copy()
             if all(obj_id is not None for obj_id in object_ids):
                 merged_gdf = original_infer_gdf.merge(results_df, on=object_id_column_name, how='left')
+                # Update tile paths with the actual tiles used during
+                # inference (important when a tilerizer re-created tiles
+                # with different parameters than the original pipeline).
+                if tile_path_column_name in merged_gdf.columns:
+                    path_map = dict(zip(object_ids, tiles_paths))
+                    updated = merged_gdf[object_id_column_name].map(path_map)
+                    merged_gdf[tile_path_column_name] = updated.fillna(
+                        merged_gdf[tile_path_column_name]
+                    )
             elif all(isinstance(tile_path, str) for tile_path in tiles_paths):
                 # If object IDs are not available, use tile paths for merging, as there should be a one-to-one correspondence with polygons being classified
                 results_df[tile_path_column_name] = tiles_paths
