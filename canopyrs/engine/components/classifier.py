@@ -158,7 +158,7 @@ class ClassifierComponent(BaseComponent):
             produced_columns={Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES},
             objects_are_new=False,
             save_gpkg=True,
-            gpkg_name_suffix="notaggregated",  # classifier saves final results
+            gpkg_name_suffix="gpkg",  # classifier saves final results
             save_coco=True,
             coco_scores_column=Col.CLASSIFIER_SCORE,
             coco_categories_column=Col.CLASSIFIER_CLASS,

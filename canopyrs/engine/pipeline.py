@@ -289,7 +289,7 @@ class Pipeline:
         # Save GeoPackage if requested (use merged GDF from data_state)
         if result.save_gpkg and self.data_state.infer_gdf is not None and len(self.data_state.infer_gdf) > 0:
             gpkg_path = self._save_gpkg(component, self.data_state.infer_gdf, result.gpkg_name_suffix)
-            file_type = 'gpkg' if result.gpkg_name_suffix == 'aggregated' else 'pre_aggregated_gpkg'
+            file_type = 'gpkg' if result.gpkg_name_suffix in ('aggregated', 'gpkg') else 'pre_aggregated_gpkg'
             self.data_state.register_output_file(
                 component.name, component.component_id, file_type, gpkg_path
             )
