@@ -27,7 +27,7 @@ def main():
     # ========================================================================
     # CONFIGURE YOUR PATHS HERE
     # ========================================================================
-    RUN_WITH_BENCHMARKER = False
+    RUN_WITH_BENCHMARKER = True
 
     TARGET_PRODUCT_NAME = "20210902_sblz3_p4rtk_rgb"
 
