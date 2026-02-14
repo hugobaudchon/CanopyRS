@@ -4,7 +4,7 @@
 
 - **OS:** Linux (Ubuntu 22.04 recommended). Windows 10 is also supported but might be trickier to setup. MacOS is untested.
 - **Python:** 3.10
-- **CUDA:** 12.6 — You can install CUDA by following the [NVIDIA CUDA installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html). The command `nvcc --version` should show version 12.6.
+- **CUDA:** 12.6 — You can install CUDA by following the NVIDIA CUDA installation [guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), or directly downloading it from this [link](https://developer.nvidia.com/cuda-12-6-0-download-archive). The command `nvcc --version` should show version 12.6.
 
 ## Step-by-step
 
@@ -46,6 +46,19 @@ git submodule update --init --recursive
 python -m pip install -e .
 python -m pip install --no-build-isolation -e ./detrex/detectron2 -e ./detrex
 ```
+
+## SAM 3 — Hugging Face access request
+
+SAM 3 is a gated model hosted by Meta on Hugging Face. If you plan to use SAM 3 (either directly or through a SAM 3 preset), you must **request access before your first run**:
+
+1. Go to the [facebook/sam3](https://huggingface.co/facebook/sam3) model page on Hugging Face.
+2. Click **"Request access"** and accept Meta's license terms.
+3. Make sure you are logged in to Hugging Face on your machine:
+   ```bash
+   huggingface-cli login
+   ```
+
+Without this step, any pipeline using SAM 3 will fail when trying to download the base model weights.
 
 ## Known issues
 
