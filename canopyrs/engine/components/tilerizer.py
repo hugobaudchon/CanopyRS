@@ -65,6 +65,10 @@ class TilerizerComponent(BaseComponent):
     ):
         super().__init__(config, parent_output_path, component_id)
         self.infer_aois_config = infer_aois_config
+        if config.temp_dir is not None:
+            self.temp_path = Path(config.temp_dir)
+        else:
+            self.temp_path = Path(self.parent_output_path) / "tmp"
 
         # Validate tile_type
         if config.tile_type not in ['tile', 'tile_labeled', 'polygon']:
@@ -227,6 +231,7 @@ class TilerizerComponent(BaseComponent):
             ignore_tiles_without_labels=self.config.ignore_tiles_without_labels,
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=list(columns_to_pass),
+            temp_dir=str(self.temp_path)
         )
         coco_paths = tilerizer.generate_coco_dataset()
         return tilerizer.tiles_path, coco_paths.get(INFER_AOI_NAME)
@@ -242,6 +247,7 @@ class TilerizerComponent(BaseComponent):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
+            temp_dir=str(self.temp_path)
         )
         tilerizer.generate_tiles()
         return tilerizer.tiles_path, None
@@ -262,6 +268,7 @@ class TilerizerComponent(BaseComponent):
             main_label_category_column_name=self.config.main_label_category_column_name,
             other_labels_attributes_column_names=list(columns_to_pass),
             coco_n_workers=self.config.coco_n_workers,
+            temp_dir=str(self.temp_path)
         )
         coco_paths = tilerizer.generate_coco_dataset()
         return tilerizer.tiles_folder_path, coco_paths.get(INFER_AOI_NAME)
