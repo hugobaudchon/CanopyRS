@@ -24,7 +24,7 @@ The pipeline includes components for tiling, detecting, aggregating, and segment
 
 ## 🎉 News
 
-- **[2026-02-02]**: 📄 We released **[SelvaMask](https://arxiv.org/abs/2602.02426)**, a new preprint introducing a densely annotated dataset and benchmarking SOTA methods like SAM3!
+- **[2026-02-02]**: 📄 We released **[SelvaMask](https://arxiv.org/abs/2602.02426)**, a new preprint introducing a densely annotated tropical tree crown instance segmentation dataset and benchmarking SOTA methods like SAM3!
 - **[2026-01-26]**: 🎉 Our paper **[SelvaBox](https://openreview.net/forum?id=GH7z1RURL6)**, which introduces CanopyRS, was accepted at ICLR 2026! Come see us in Rio de Janeiro this April!
 - **[2024-11-15]**: 🥇 Our team Limelight Rainforest won the $10M XPRIZE Rainforest competition, in part thanks to CanopyRS and SelvaBox!
 
@@ -44,17 +44,15 @@ The full documentation covers:
 - [**API Reference**](https://hugobaudchon.github.io/CanopyRS/api/pipeline/) — programmatic usage
 
 ## 📚 Citation
-If you use CanopyRS or SelvaBox in your research, please cite our paper (arXiv preprint):
+If you use CanopyRS or SelvaBox in your research, please cite our paper (accepted at ICLR 2026):
 
 ```bibtex
-@misc{baudchon2025selvaboxhighresolutiondatasettropical,
-      title={SelvaBox: A high-resolution dataset for tropical tree crown detection},
-      author={Hugo Baudchon and Arthur Ouaknine and Martin Weiss and Mélisande Teng and Thomas R. Walla and Antoine Caron-Guay and Christopher Pal and Etienne Laliberté},
-      year={2025},
-      eprint={2507.00170},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2507.00170},
+@inproceedings{baudchon2026selvabox,
+  title={SelvaBox: A high-resolution dataset for tropical tree crown detection},
+  author={Hugo Baudchon and Arthur Ouaknine and Martin Weiss and M{\'e}lisande Teng and Thomas R. Walla and Antoine Caron-Guay and Christopher Pal and Etienne Lalibert{\'e}},
+  booktitle={The Fourteenth International Conference on Learning Representations},
+  year={2026},
+  url={https://openreview.net/forum?id=GH7z1RURL6}
 }
 ```
 
