@@ -407,6 +407,9 @@ def train_detrex(config, task):
 
 def get_base_detrex_model_cfg(config):
     detrex_root = Path(next(iter(detrex.__path__))).resolve()
+    # Depending on environment it might pick up the wrong detrex path
+    if not (detrex_root / 'projects').exists() and (detrex_root.parent / 'projects').exists():
+        detrex_root = detrex_root.parent
     if str(detrex_root) not in sys.path:
         sys.path.insert(0, str(detrex_root))
 
