@@ -155,7 +155,7 @@ class ClassifierComponent(BaseComponent):
 
         return ComponentResult(
             gdf=df,  # DataFrame, not GeoDataFrame - no geometry
-            produced_columns={Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES},
+            produced_columns=self.produces_columns,
             objects_are_new=False,
             save_gpkg=True,
             gpkg_name_suffix="gpkg",  # classifier saves final results
