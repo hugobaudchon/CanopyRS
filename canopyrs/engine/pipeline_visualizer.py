@@ -32,7 +32,16 @@ def _fill_width(s: str, width: int) -> str:
     visible_char = _ANSI_ESCAPE_RE.sub('', s)
     if not visible_char or visible_char == ' ':
         return ' ' * width
-    # Extract color codes (everything before and after the visible char)
+    # Handle two-color split (e.g., REQ_AND_PROD: half yellow, half blue)
+    if len(visible_char) == 2:
+        half1 = width // 2
+        half2 = width - half1
+        # Find the two colored segments
+        parts = re.findall(r'(\033\[[0-9;]*m)(.+?)(?=\033)', s)
+        reset = _Colors.RESET
+        if len(parts) == 2:
+            return parts[0][0] + parts[0][1] * half1 + parts[1][0] + parts[1][1] * half2 + reset
+    # Single-color: repeat the character
     match = re.match(r'(\033\[[0-9;]*m)?(.+?)(\033\[[0-9;]*m)?$', s)
     if match:
         prefix = match.group(1) or ''
@@ -64,6 +73,7 @@ class _Symbols:
     AVAILABLE = f"{_Colors.GREEN}{_BLOCK}{_Colors.RESET}"    # Available at input
     PRODUCED = f"{_Colors.BLUE}{_BLOCK}{_Colors.RESET}"      # Produced by component
     REQUIRED = f"{_Colors.YELLOW}{_BLOCK}{_Colors.RESET}"    # Required and available
+    REQ_AND_PROD = f"{_Colors.YELLOW}{_BLOCK}{_Colors.BLUE}{_BLOCK}{_Colors.RESET}"  # Required + produced
     MISSING = f"{_Colors.RED}{_BLOCK}{_Colors.RESET}"        # Required but MISSING
     PASSTHROUGH = f"{_Colors.GRAY}{_DOT}{_Colors.RESET}"     # Passthrough
     EMPTY = " "                                               # Not yet available
@@ -80,6 +90,7 @@ class PipelineFlowVisualizer:
         Green  ▬ = available at input
         Blue   ▬ = produced by this component
         Yellow ▬ = required and available (consumed)
+        Yellow+Blue ▬▬ = required and produced (consumed + updated)
         Red    ▬ = required but MISSING (error!)
         Gray   · = passthrough
         (empty)  = not yet available
@@ -173,8 +184,11 @@ class PipelineFlowVisualizer:
             if key not in flow_tracker['state_flow']:
                 flow_tracker['state_flow'][key] = [_Symbols.EMPTY] * len(flow_tracker['components'])
             self._pad_flow_list(flow_tracker['state_flow'][key], len(flow_tracker['components']))
-            # Mark as produced unless already marked as required/missing
-            if flow_tracker['state_flow'][key][-1] not in (_Symbols.MISSING, _Symbols.REQUIRED):
+            # Mark as produced, or combined if already required
+            current = flow_tracker['state_flow'][key][-1]
+            if current == _Symbols.REQUIRED:
+                flow_tracker['state_flow'][key][-1] = _Symbols.REQ_AND_PROD
+            elif current != _Symbols.MISSING:
                 flow_tracker['state_flow'][key][-1] = _Symbols.PRODUCED
 
     def _track_column_requirements(
@@ -202,8 +216,11 @@ class PipelineFlowVisualizer:
             if col not in flow_tracker['column_flow']:
                 flow_tracker['column_flow'][col] = [_Symbols.EMPTY] * len(flow_tracker['components'])
             self._pad_flow_list(flow_tracker['column_flow'][col], len(flow_tracker['components']))
-            # Mark as produced unless already marked as required/missing
-            if flow_tracker['column_flow'][col][-1] not in (_Symbols.MISSING, _Symbols.REQUIRED):
+            # Mark as produced, or combined if already required
+            current = flow_tracker['column_flow'][col][-1]
+            if current == _Symbols.REQUIRED:
+                flow_tracker['column_flow'][col][-1] = _Symbols.REQ_AND_PROD
+            elif current != _Symbols.MISSING:
                 flow_tracker['column_flow'][col][-1] = _Symbols.PRODUCED
 
     def _pad_flow_list(self, flow_list: List[str], target_length: int) -> None:
@@ -213,7 +230,8 @@ class PipelineFlowVisualizer:
             # After available, produced, required, or passthrough, the item is still available
             flow_list.append(
                 _Symbols.PASSTHROUGH if prev_val in (
-                    _Symbols.AVAILABLE, _Symbols.PASSTHROUGH, _Symbols.PRODUCED, _Symbols.REQUIRED
+                    _Symbols.AVAILABLE, _Symbols.PASSTHROUGH, _Symbols.PRODUCED,
+                    _Symbols.REQUIRED, _Symbols.REQ_AND_PROD
                 )
                 else _Symbols.EMPTY
             )
@@ -245,7 +263,7 @@ class PipelineFlowVisualizer:
 
         print("\n" + "=" * len(header))
         print("PIPELINE FLOW CHART")
-        print(f"Legend: {_Symbols.AVAILABLE}=input  {_Symbols.PRODUCED}=produced  {_Symbols.REQUIRED}=required  {_Symbols.MISSING}=MISSING!  {_Symbols.PASSTHROUGH}=passthrough")
+        print(f"Legend: {_Symbols.AVAILABLE}=input  {_Symbols.PRODUCED}=produced  {_Symbols.REQUIRED}=required  {_Symbols.REQ_AND_PROD}=required+produced  {_Symbols.MISSING}=MISSING!  {_Symbols.PASSTHROUGH}=passthrough")
         print("=" * len(header))
         print(header)
         print(separator)

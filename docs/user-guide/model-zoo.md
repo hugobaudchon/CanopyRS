@@ -42,6 +42,8 @@ These models take bounding boxes as input and produce a mask for each box. Chain
 | `segmenters/sam2_L.yaml` | SAM&nbsp;2&nbsp;Large | SA-1B (foundation model) | [Meta](https://github.com/facebookresearch/sam2) | [YAML](https://github.com/hugobaudchon/CanopyRS/blob/main/canopyrs/config/segmenters/sam2_L.yaml) |
 | `segmenters/sam3_multi_selvamask_FT.yaml` | SAM&nbsp;3 | SA-1B, fine-tuned on SelvaMask | [HuggingFace (CanopyRS)](https://huggingface.co/CanopyRS/sam3-multi-selvabox-selvamask-FT) | [YAML](https://github.com/hugobaudchon/CanopyRS/blob/main/canopyrs/config/segmenters/sam3_multi_selvamask_FT.yaml) |
 
+> **Note:** SAM 3 requires a Hugging Face access request from Meta before first use. See [Installation — SAM 3 access request](../getting-started/installation.md#sam-3--hugging-face-access-request) for details.
+
 ### Unprompted segmenters
 
 These models perform end-to-end instance segmentation without requiring bounding box prompts.

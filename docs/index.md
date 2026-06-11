@@ -26,6 +26,7 @@ The pipeline handles all I/O, state management, and background tasks. Components
 
 - [Installation](getting-started/installation.md) — get CanopyRS running
 - [Quickstart](getting-started/quickstart.md) — run inference in minutes
+- [Google Colab tutorial](https://colab.research.google.com/drive/1UIJiLVpyeg8_-GUKDrqPKuT3RL8QMPdo) — try CanopyRS on a free hosted GPU, no local setup required
 
 ### User guide
 

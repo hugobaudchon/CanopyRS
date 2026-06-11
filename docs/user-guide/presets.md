@@ -8,6 +8,8 @@ We provide different preset configs depending on your GPU resources and use case
 
 ### Instance Segmentation (SAM&nbsp;3)
 
+> **Note:** SAM 3 requires a Hugging Face access request from Meta before first use. See [Installation — SAM 3 access request](../getting-started/installation.md#sam-3--hugging-face-access-request) for details.
+
 | Config file | Architecture | Train dataset(s) | Performance/Requirements | Quality | Description |
 |---|---|---|---|---|---|
 | `preset_seg_multi_NQOS_selvamask_SAM3_FT_quality.yaml` | DINO&nbsp;+&nbsp;Swin&#8209;L&nbsp;384&nbsp;+&nbsp;SAM&nbsp;3 | Multi-resolution, multi-dataset (NeonTrees, QuebecTrees, OAM-TCD, SelvaBox), fine-tuned on SelvaMask | ~10 GB GPU memory | Best | **(Recommended for best quality)** SelvaMask fine-tuned DINO detector and SAM 3 segmenter at high resolution (4.5 cm/px GSD) for best quality. |
