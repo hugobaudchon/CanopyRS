@@ -169,25 +169,33 @@ for param in (
     )
 
 # ------------------------------------------------------------------
-# 7. ClassifierConfig has new fields
+# 7. pipeline_outputs_root is a ClassifierBenchmarker constructor arg
+#    (run-level path, not a ClassifierConfig field)
 # ------------------------------------------------------------------
-print("\n=== 7. ClassifierConfig fields ===")
+print("\n=== 7. ClassifierBenchmarker pipeline_outputs_root ===")
 
 try:
+    import inspect
     from canopyrs.engine.config_parsers.classifier import (
         ClassifierConfig,
     )
-    fields = ClassifierConfig.__fields__
-    for field_name in (
-        "categories_config_path",
-        "pipeline_outputs_root",
-    ):
-        check(
-            f"ClassifierConfig.{field_name} exists",
-            field_name in fields,
-        )
+    from canopyrs.engine.benchmark.classifier.benchmark import (
+        ClassifierBenchmarker,
+    )
+
+    check(
+        "ClassifierConfig.pipeline_outputs_root removed",
+        "pipeline_outputs_root" not in ClassifierConfig.__fields__,
+    )
+    init_params = inspect.signature(
+        ClassifierBenchmarker.__init__
+    ).parameters
+    check(
+        "ClassifierBenchmarker.__init__ accepts pipeline_outputs_root",
+        "pipeline_outputs_root" in init_params,
+    )
 except Exception as exc:
-    check("ClassifierConfig import", False, str(exc))
+    check("ClassifierBenchmarker import", False, str(exc))
 
 # ------------------------------------------------------------------
 # 8. Dead code files are deleted

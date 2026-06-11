@@ -101,12 +101,12 @@ def main():
 
     if RUN_WITH_BENCHMARKER:
         classifier_config = ClassifierConfig.from_yaml(path=CLASSIFIER_YAML)
-        classifier_config.pipeline_outputs_root = PIPELINE_OUTPUTS_ROOT
 
         benchmarker = ClassifierBenchmarker(
             output_folder=OUTPUT_FOLDER,
             fold_name="test",
             raw_data_root=RAW_DATA_ROOT,
+            pipeline_outputs_root=PIPELINE_OUTPUTS_ROOT,
         )
 
         datasets = benchmarker._get_preprocessed_datasets(

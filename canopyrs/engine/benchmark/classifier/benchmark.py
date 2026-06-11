@@ -17,12 +17,18 @@ class ClassifierBenchmarker(BaseBenchmarker):
                  output_folder: PathLike,
                  fold_name: str,
                  raw_data_root: PathLike,
+                 pipeline_outputs_root: Optional[PathLike] = None,
                  eval_iou_threshold: Union[float, List[float]] = 0.75):
         super().__init__(
             output_folder=output_folder,
             fold_name=fold_name,
             raw_data_root=raw_data_root,
             eval_iou_threshold=eval_iou_threshold,
+        )
+        self.pipeline_outputs_root = (
+            Path(pipeline_outputs_root)
+            if pipeline_outputs_root is not None
+            else None
         )
 
     def _get_preprocessed_datasets(
@@ -149,17 +155,13 @@ class ClassifierBenchmarker(BaseBenchmarker):
         classification_df = self._benchmark_classification_only(
             classifier_config=classifier_config,
             dataset_names=dataset_names,
-            pipeline_outputs_root=(
-                classifier_config.pipeline_outputs_root
-            ),
+            pipeline_outputs_root=self.pipeline_outputs_root,
         )
 
         instance_df = self._benchmark_instance_segmentation(
             classifier_config=classifier_config,
             dataset_names=dataset_names,
-            pipeline_outputs_root=(
-                classifier_config.pipeline_outputs_root
-            ),
+            pipeline_outputs_root=self.pipeline_outputs_root,
         )
 
         return classification_df, instance_df
