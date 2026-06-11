@@ -12,7 +12,8 @@ from pathlib import Path
 from canopyrs.engine.config_parsers import ClassifierConfig
 from huggingface_hub import hf_hub_download
 
-from torchmetrics import F1Score
+# Only used by the commented-out training scaffolding (see _evaluate below).
+# from torchmetrics import F1Score
 
 
 class ClassifierWrapperBase(ABC):
@@ -129,17 +130,6 @@ class ClassifierWrapperBase(ABC):
 
         return tiles_paths, class_scores, class_predictions, object_ids_from_dl
 
-
-class TorchTrainerClassifierWrapperBase(ClassifierWrapperBase):
-    """Extended base class for classifiers with training capability"""
-
-    def __init__(self, config: ClassifierConfig):
-        """Initialize the trainable classifier wrapper"""
-        super().__init__(config)
-
-        # Add metrics for evaluation
-        # TODO: add f1, accuracy, recall, precision
-
     def load_checkpoint(self, checkpoint_path):
         """
         Load model weights from a checkpoint file.
@@ -180,42 +170,50 @@ class TorchTrainerClassifierWrapperBase(ClassifierWrapperBase):
             self.model.load_state_dict(state_dict)
             print("Succeed to load checkpoint by modifying keys!")
 
-    def _evaluate(self, data_loader, epoch=None):
-        """Run evaluation on validation data"""
-        # TODO: include all metrics with torchmetrics
-        # F1, accuracy, recall, precision
-        self.model.eval()
-        f1_metric = F1Score(task="multiclass",
-                            num_classes=self.num_classes,
-                            average='micro',
-                            multidim_average="global").to(self.config.device)
-        all_preds = []
-        all_targets = []
-
-        with torch.no_grad():
-            desc = f"Epoch {epoch + 1} (scoring)" if epoch is not None else "Scoring"
-            for images, targets in tqdm(data_loader, desc=desc, leave=True):
-                # Move data to device
-                if isinstance(images, list):
-                    images = [img.to(self.device) for img in images]
-                else:
-                    images = images.to(self.device)
-
-                targets = targets.to(self.device)
-
-                # Run forward pass
-                outputs = self.model(images)
-                _, predicted = torch.max(outputs, 1)
-
-                all_preds.append(predicted.cpu())
-                all_targets.append(targets.cpu())
-
-        # Calculate F1 score
-        all_preds = torch.stack(all_preds)
-        all_targets = torch.stack(all_targets)
-        f1_score = f1_metric(all_preds, all_targets)
-
-        return {"f1": f1_score}, all_preds, all_targets
+    # ------------------------------------------------------------------
+    # Training/eval scaffolding — NOT wired up in CanopyRS.
+    # This was the only method of the former `TorchTrainerClassifierWrapperBase`.
+    # It is broken as written (references `self.num_classes` and
+    # `self.config.device`, neither of which is ever set) and is called by
+    # nothing. Kept here, commented, as a starting point if classifier
+    # training is ported into this repo. See git history for context.
+    # ------------------------------------------------------------------
+    # def _evaluate(self, data_loader, epoch=None):
+    #     """Run evaluation on validation data"""
+    #     # TODO: include all metrics with torchmetrics
+    #     # F1, accuracy, recall, precision
+    #     self.model.eval()
+    #     f1_metric = F1Score(task="multiclass",
+    #                         num_classes=self.num_classes,
+    #                         average='micro',
+    #                         multidim_average="global").to(self.config.device)
+    #     all_preds = []
+    #     all_targets = []
+    #
+    #     with torch.no_grad():
+    #         desc = f"Epoch {epoch + 1} (scoring)" if epoch is not None else "Scoring"
+    #         for images, targets in tqdm(data_loader, desc=desc, leave=True):
+    #             # Move data to device
+    #             if isinstance(images, list):
+    #                 images = [img.to(self.device) for img in images]
+    #             else:
+    #                 images = images.to(self.device)
+    #
+    #             targets = targets.to(self.device)
+    #
+    #             # Run forward pass
+    #             outputs = self.model(images)
+    #             _, predicted = torch.max(outputs, 1)
+    #
+    #             all_preds.append(predicted.cpu())
+    #             all_targets.append(targets.cpu())
+    #
+    #     # Calculate F1 score
+    #     all_preds = torch.stack(all_preds)
+    #     all_targets = torch.stack(all_targets)
+    #     f1_score = f1_metric(all_preds, all_targets)
+    #
+    #     return {"f1": f1_score}, all_preds, all_targets
 
 
 def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):
