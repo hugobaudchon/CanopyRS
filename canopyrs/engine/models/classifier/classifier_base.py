@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from typing import List, Tuple, Dict
 
 import numpy as np
@@ -7,10 +6,9 @@ import torch
 from geodataset.dataset import InstanceSegmentationLabeledRasterCocoDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from pathlib import Path
 
 from canopyrs.engine.config_parsers import ClassifierConfig
-from huggingface_hub import hf_hub_download
+from canopyrs.engine.models.utils import load_state_dict_with_key_repair
 
 # Only used by the commented-out training scaffolding (see _evaluate below).
 # from torchmetrics import F1Score
@@ -131,112 +129,12 @@ class ClassifierWrapperBase(ABC):
         return tiles_paths, class_scores, class_predictions, object_ids_from_dl
 
     def load_checkpoint(self, checkpoint_path):
-        """
-        Load model weights from a checkpoint file.
+        """Load model weights from a checkpoint file.
+
+        Resolves Hugging Face URLs and falls back to key-renaming on a key
+        mismatch. See ``models.utils.load_state_dict_with_key_repair``.
 
         Args:
             checkpoint_path: Path to the checkpoint file
         """
-        if not checkpoint_path:
-            return
-
-        checkpoint_path = Path(checkpoint_path)
-        if 'huggingface.co' in checkpoint_path.parts:   # TODO merge this with the one in DetectorWrapperBase as a single function
-            # Handle HuggingFace model loading
-            if "huggingface.co" not in checkpoint_path.as_posix():
-                raise ValueError("The provided Path does not contain a valid Hugging Face URL.")
-
-            path = Path(str(checkpoint_path).replace("\\", "/").split("huggingface.co/")[-1])
-            if "resolve" not in path.parts:
-                raise ValueError("The provided Path is not in the expected Hugging Face format.")
-
-            repo_id = "/".join(path.parts[:2])
-            filename = path.name
-            checkpoint_path = hf_hub_download(repo_id=repo_id, filename=filename)
-
-        # Load the checkpoint
-        try:
-            checkpoint = torch.load(checkpoint_path)
-            # if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            #     self.model.load_state_dict(checkpoint['model_state_dict'])
-            # elif isinstance(checkpoint, dict) and 'model' in checkpoint:
-            #     self.model.load_state_dict(checkpoint['model'])
-            # else:
-            self.model.load_state_dict(checkpoint)
-            print(f"Successfully loaded checkpoint from {checkpoint_path}")
-        except RuntimeError:
-            print("Error loading checkpoint, will try to rename state dict keys.")
-            state_dict = try_rename_state_dict_keys_with_model(checkpoint_path)
-            self.model.load_state_dict(state_dict)
-            print("Succeed to load checkpoint by modifying keys!")
-
-    # ------------------------------------------------------------------
-    # Training/eval scaffolding — NOT wired up in CanopyRS.
-    # This was the only method of the former `TorchTrainerClassifierWrapperBase`.
-    # It is broken as written (references `self.num_classes` and
-    # `self.config.device`, neither of which is ever set) and is called by
-    # nothing. Kept here, commented, as a starting point if classifier
-    # training is ported into this repo. See git history for context.
-    # ------------------------------------------------------------------
-    # def _evaluate(self, data_loader, epoch=None):
-    #     """Run evaluation on validation data"""
-    #     # TODO: include all metrics with torchmetrics
-    #     # F1, accuracy, recall, precision
-    #     self.model.eval()
-    #     f1_metric = F1Score(task="multiclass",
-    #                         num_classes=self.num_classes,
-    #                         average='micro',
-    #                         multidim_average="global").to(self.config.device)
-    #     all_preds = []
-    #     all_targets = []
-    #
-    #     with torch.no_grad():
-    #         desc = f"Epoch {epoch + 1} (scoring)" if epoch is not None else "Scoring"
-    #         for images, targets in tqdm(data_loader, desc=desc, leave=True):
-    #             # Move data to device
-    #             if isinstance(images, list):
-    #                 images = [img.to(self.device) for img in images]
-    #             else:
-    #                 images = images.to(self.device)
-    #
-    #             targets = targets.to(self.device)
-    #
-    #             # Run forward pass
-    #             outputs = self.model(images)
-    #             _, predicted = torch.max(outputs, 1)
-    #
-    #             all_preds.append(predicted.cpu())
-    #             all_targets.append(targets.cpu())
-    #
-    #     # Calculate F1 score
-    #     all_preds = torch.stack(all_preds)
-    #     all_targets = torch.stack(all_targets)
-    #     f1_score = f1_metric(all_preds, all_targets)
-    #
-    #     return {"f1": f1_score}, all_preds, all_targets
-
-
-def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):
-    # Structure the OrderedDict keys to match requirements
-    checkpoint = torch.load(checkpoint_state_dict_path, weights_only=True)
-    if "model" in checkpoint.keys():
-        # Case where other attributes are stored in the checkpoint
-        checkpoint = checkpoint["model"]
-    # Create a new OrderedDict with the keys prefixed with "model."
-    new_state_dict = OrderedDict()
-    if all(s.startswith("model.") for s in checkpoint.keys()):
-        # try removing the 'model.' prefix
-        for key, value in checkpoint.items():
-            new_key = key[6:]
-            new_state_dict[new_key] = value
-    elif all(s.startswith("module.") for s in checkpoint.keys()):
-        # try removing the 'model.' prefix
-        for key, value in checkpoint.items():
-            new_key = key[7:]
-            new_state_dict[new_key] = value
-    else:
-        # try adding the 'model.' prefix
-        for key, value in checkpoint.items():
-            new_key = 'model.' + key  # Prefix "model." to each key
-            new_state_dict[new_key] = value
-    return new_state_dict
+        load_state_dict_with_key_repair(self.model, checkpoint_path)
