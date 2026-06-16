@@ -1,0 +1,2 @@
+components_configs:
+  - classifier: classifiers/canopyrs_classifier_dinov3_vit_small_512px_quebec.yaml

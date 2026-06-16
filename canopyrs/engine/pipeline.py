@@ -17,6 +17,7 @@ Merge rules:
   - Merge key priority: object_id > tile_path (if unique) > error
 """
 
+import shutil
 import warnings
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
@@ -33,10 +34,12 @@ from canopyrs.engine.constants import Col, StateKey, INFER_AOI_NAME
 from canopyrs.engine.components.base import BaseComponent, ComponentResult, ComponentValidationError
 from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig
 from canopyrs.engine.data_state import DataState
+from canopyrs.engine.persistence import RunState
+from canopyrs.engine.resume import seed_from_run, prepare_resume
 from canopyrs.engine.pipeline_visualizer import PipelineFlowVisualizer
 from canopyrs.engine.raster_validation import validate_input_raster_or_tiles, RasterValidationError
 from canopyrs.engine.utils import (
-    generate_future_coco, green_print, get_component_folder_name,
+    generate_future_coco, green_print,
     parse_tilerizer_aoi_config, object_id_column_name, tile_path_column_name
 )
 
@@ -63,6 +66,7 @@ class Pipeline:
         data_state: DataState,
         output_path: Path,
         verbose: bool = True,
+        resume_done_ids: Optional[Set[int]] = None,
     ):
         """
         Initialize pipeline.
@@ -72,6 +76,8 @@ class Pipeline:
             data_state: Initial data state
             output_path: Base output directory
             verbose: Whether to print the flow chart and status messages
+            resume_done_ids: When resuming, the component ids already fully done (skipped in the
+                run loop). None means a fresh run (status file is (re)initialized).
         """
         self.components = components
         self.data_state = data_state
@@ -88,13 +94,19 @@ class Pipeline:
             component.component_id = i
             component.output_path = self.output_path / f"{i}_{component.name}"
 
+        # The run's resumable state. Resume orchestration (snapshot restore, hash checks,
+        # cross-folder relink) happens in from_config; here it just records progress.
+        self._state = RunState(self.output_path, self.components, resume_done_ids)
+
         # Validate pipeline configuration immediately to catch errors early
         if self.verbose:
             self._print_flow_chart()
         self._validate_pipeline(raise_on_error=True)
 
     @classmethod
-    def from_config(cls, io_config: InferIOConfig, config: PipelineConfig, verbose: bool = True) -> 'Pipeline':
+    def from_config(cls, io_config: InferIOConfig, config: PipelineConfig, verbose: bool = True,
+                    resume_from: Optional[str] = None,
+                    initialize_from: Optional[str] = None) -> 'Pipeline':
         """
         Create a Pipeline from configuration objects.
 
@@ -104,6 +116,12 @@ class Pipeline:
             io_config: Input/output configuration
             config: Pipeline configuration with component configs
             verbose: Whether to print the flow chart and status messages
+            resume_from: Path to a previous run's output folder to resume (same config). Skips
+                components already fully done, continuing from where it stopped. May equal
+                io_config.output_folder (in-place) or differ (cross-folder: done component folders
+                are symlinked and paths rebased).
+            initialize_from: Path to a previous run's output folder whose outputs seed the inputs
+                of this (new-config) pipeline. Components restart at id 0.
 
         Returns:
             Configured Pipeline instance
@@ -174,6 +192,15 @@ class Pipeline:
             infer_gdf_columns_to_pass=infer_gdf_columns_to_pass,
         )
 
+        # Seed from a previous run, if requested.
+        if resume_from and initialize_from:
+            raise ValueError("Pass only one of resume_from / initialize_from, not both.")
+        resume_done_ids = None
+        if initialize_from:
+            seed_from_run(Path(initialize_from), data_state, restore_registries=False)
+        elif resume_from:
+            resume_done_ids = prepare_resume(Path(resume_from), output_path, components, data_state)
+
         green_print("Pipeline initialized")
 
         return cls(
@@ -181,6 +208,7 @@ class Pipeline:
             data_state=data_state,
             output_path=output_path,
             verbose=verbose,
+            resume_done_ids=resume_done_ids,
         )
 
     # -------------------------------------------------------------------------
@@ -203,16 +231,33 @@ class Pipeline:
 
         try:
             for component in self.components:
+                cid = component.component_id
+
+                # Resume: skip components already fully done (their state/registries were restored
+                # in from_config); re-run anything else, discarding any dirty partial output.
+                if self._state.is_done(cid):
+                    green_print(f"Skipping {component.name} (already done, resumed)")
+                    continue
+                if self._state.resuming:
+                    self._clean_component_dir(component)
+
                 green_print(f"Running {component.name}...")
+                self._state.mark_running(cid)
+                try:
+                    self._wait_for_required_state(component)
 
-                self._wait_for_required_state(component)
+                    # Run component - returns ComponentResult
+                    component.output_path.mkdir(parents=True, exist_ok=True)
+                    result = component(self.data_state)
 
-                # Run component - returns ComponentResult
-                component.output_path.mkdir(parents=True, exist_ok=True)
-                result = component(self.data_state)
+                    # Pipeline handles all I/O and state updates
+                    self._process_result(component, result)
 
-                # Pipeline handles all I/O and state updates
-                self._process_result(component, result)
+                    # Snapshot state + track this component's async side outputs (non-blocking)
+                    self._state.mark_done(component, self.data_state)
+                except Exception:
+                    self._state.mark_error(cid)
+                    raise
 
             # Final cleanup of async tasks
             self.data_state.clean_side_processes()
@@ -228,6 +273,10 @@ class Pipeline:
 
         finally:
             self.background_executor.shutdown(wait=True)
+
+        # All side processes have completed and their callbacks have run (shutdown joined the
+        # executor's management thread). Defensively flip any still-pending side statuses to done.
+        self._state.finalize()
 
         return self.data_state
 
@@ -299,6 +348,12 @@ class Pipeline:
             future_coco = self._queue_coco_generation(component, result)
             if future_coco:
                 self.data_state.side_processes.append(future_coco)
+
+    def _clean_component_dir(self, component: BaseComponent) -> None:
+        """Discard a component's (possibly dirty, partial) output dir before re-running on resume."""
+        path = component.output_path
+        if path and Path(path).exists() and not Path(path).is_symlink():
+            shutil.rmtree(path)
 
     def _merge_result_gdf(self, result_gdf: Union[gpd.GeoDataFrame, pd.DataFrame]) -> gpd.GeoDataFrame:
         """

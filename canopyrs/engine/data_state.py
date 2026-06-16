@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -7,24 +7,48 @@ import geopandas as gpd
 from canopyrs.engine.utils import get_component_folder_name, object_id_column_name
 
 
+# Each field declares a "persist" role used by the resume/initialize machinery:
+#   - "input":     restored when resuming AND when initializing a new pipeline (the input slice).
+#                  infer_gdf belongs here too, but being a GeoDataFrame it is stored/recovered via
+#                  a reused gpkg reference (gdf_ref) rather than serialized into state.json.
+#   - "registry":  output registries; restored on resume only
+#   - "transient": never persisted (runtime objects, output location)
 @dataclass
 class DataState:
-    imagery_path: str = None
-    parent_output_path: str = None
-    product_name: str = None  # Derived from imagery filename or "tiled_input" if only tiles
+    imagery_path: str = field(default=None, metadata={"persist": "input"})
+    parent_output_path: str = field(default=None, metadata={"persist": "transient"})
+    product_name: str = field(default=None, metadata={"persist": "input"})  # Derived from imagery filename or "tiled_input" if only tiles
 
-    tiles_path: str = None
+    tiles_path: str = field(default=None, metadata={"persist": "input"})
 
-    infer_coco_path: str = None
-    infer_gdf: gpd.GeoDataFrame = None
-    infer_gdf_columns_to_pass: set = field(default_factory=set)
-    infer_gdf_columns_to_delete_on_save: List = field(default_factory=list)
+    infer_coco_path: str = field(default=None, metadata={"persist": "input"})
+    infer_gdf: gpd.GeoDataFrame = field(default=None, metadata={"persist": "input"})  # input slice, but stored via gdf_ref (gpkg), not state.json
+    infer_gdf_columns_to_pass: set = field(default_factory=set, metadata={"persist": "input"})
+    infer_gdf_columns_to_delete_on_save: List = field(default_factory=list, metadata={"persist": "input"})
 
-    background_executor: Optional = None
-    side_processes: List = field(default_factory=list)
+    background_executor: Optional = field(default=None, metadata={"persist": "transient"})
+    side_processes: List = field(default_factory=list, metadata={"persist": "transient"})
 
-    component_output_folders: Dict = field(default_factory=dict)
-    component_output_files: Dict = field(default_factory=dict)
+    component_output_folders: Dict = field(default_factory=dict, metadata={"persist": "registry"})
+    component_output_files: Dict = field(default_factory=dict, metadata={"persist": "registry"})
+
+    def apply_snapshot(self, snapshot, *, restore_registries: bool) -> None:
+        """
+        Restore persisted fields from a resume/initialize snapshot.
+
+        Args:
+            snapshot: a persistence.Snapshot exposing `.fields` (dict of restored field values)
+                      and `.gdf` (the recovered GeoDataFrame, or None).
+            restore_registries: if True (resume), also restore the output registries; if False
+                                (initialize), restore only the "input" slice.
+        """
+        roles = ("input", "registry") if restore_registries else ("input",)
+        for f in fields(self):
+            if f.metadata.get("persist") in roles and f.name in snapshot.fields:
+                setattr(self, f.name, snapshot.fields[f.name])
+        gdf = snapshot.gdf  # read the gpkg once
+        if gdf is not None:
+            self.infer_gdf = gdf
 
     def update_infer_gdf(self, infer_gdf: gpd.GeoDataFrame) -> None:
         assert isinstance(infer_gdf, gpd.GeoDataFrame)
@@ -145,3 +169,9 @@ class DataState:
         self.side_processes = []
 
         return self
+
+
+# Guard: every DataState field must declare a "persist" role so the resume/initialize machinery
+# stays in sync as the dataclass evolves. Adding a field without metadata fails fast here.
+assert all("persist" in f.metadata for f in fields(DataState)), \
+    "every DataState field must declare metadata={'persist': 'input'|'registry'|'transient'}"
