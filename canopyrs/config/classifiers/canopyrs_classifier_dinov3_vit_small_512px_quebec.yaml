@@ -1,0 +1,23 @@
+model: vit_timm                                    # classifier family/loader key (set to whatever you register the timm ViT classifier as)
+architecture: vit_small_patch16_dinov3.lvd1689m
+num_classes: 14
+pretrained: false
+checkpoint_path: /scratch/hugobaud/finetune_runs/cool-violet-214/best_quebec_trees_all_512.pt
+freeze_layers: 0
+batch_size: 8
+n_cls_layers: 2
+class_names:
+  - "Abies balsamea (L.) Mill."        # 0
+  - "Acer pensylvanicum L."            # 1
+  - "Acer rubrum L."                   # 2
+  - "Acer saccharum Marshall"          # 3
+  - "Betula alleghaniensis Britton"    # 4
+  - "Betula papyrifera Marshall"       # 5
+  - "Fagus grandifolia Ehrh."          # 6
+  - "Larix laricina (Du Roi) K.Koch"   # 7
+  - "Picea A.Dietr."                   # 8
+  - "Pinus strobus L."                 # 9
+  - "Populus L."                       # 10
+  - "Thuja occidentalis L."            # 11
+  - "Tsuga canadensis (L.)"            # 12
+  - "dead"                             # 13

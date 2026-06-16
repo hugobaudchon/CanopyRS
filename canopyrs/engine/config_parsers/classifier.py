@@ -13,3 +13,13 @@ class ClassifierConfig(BaseConfig):
     freeze_layers: int = Field(0, description="Number of layers to freeze")
     batch_size: int = Field(8, description="Batch size for inference")
     class_names: Optional[List[str]] = Field(None, description="Names of output classes")
+    n_cls_layers: int = Field(
+        1,
+        description=(
+            "ViT/timm classifiers only: number of final transformer blocks "
+            "whose CLS tokens are concatenated to form the head input "
+            "(head dim = n_cls_layers * embed_dim). Must match the value "
+            "used at training time for the checkpoint to load. Ignored by "
+            "torchvision-based classifiers (resnet, swin)."
+        ),
+    )
