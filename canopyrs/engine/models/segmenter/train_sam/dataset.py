@@ -85,8 +85,8 @@ class Sam2InstanceSegmentationDataset(InstanceSegmentationLabeledRasterCocoDatas
         bboxes = []
         
         for label in labels:
-            bbox = decode_coco_segmentation(label, 'bbox')
-            mask = decode_coco_segmentation(label, 'mask')
+            bbox = decode_coco_segmentation(label, 'bbox', tile_info['height'], tile_info['width'])
+            mask = decode_coco_segmentation(label, 'mask', tile_info['height'], tile_info['width'])
             
             bboxes.append(np.array([int(x) for x in bbox.bounds]))  # XYXY format
             masks.append(mask)
@@ -296,7 +296,7 @@ def get_dataset_dicts_with_predicted_boxes(
         gt_segmentations = []
         
         for label in gt_labels:
-            bbox = decode_coco_segmentation(label, 'bbox')
+            bbox = decode_coco_segmentation(label, 'bbox', tile_info['height'], tile_info['width'])
             gt_boxes.append(list(bbox.bounds))  # [x1, y1, x2, y2]
             
             if 'segmentation' in label:
@@ -454,7 +454,7 @@ def get_dataset_dicts_with_masks(dataset_instance: InstanceSegmentationLabeledRa
         objs = []
         
         for label in labels:
-            bbox = decode_coco_segmentation(label, 'bbox')
+            bbox = decode_coco_segmentation(label, 'bbox', tile_info['height'], tile_info['width'])
             
             # ✅ Get segmentation mask
             if 'segmentation' not in label:

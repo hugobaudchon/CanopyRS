@@ -6,7 +6,7 @@ from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 import copy
 
-from geodataset.utils import decode_coco_segmentation, polygon_to_coco_coordinates_segmentation
+from geodataset.utils import decode_coco_rle_segmentation, polygon_to_coco_coordinates_segmentation
 
 
 def is_rle_format(segmentation):
@@ -26,7 +26,7 @@ def _convert_one_annotation(task):
     if not seg or not is_rle_format(seg):
         return None
 
-    polygon = decode_coco_segmentation(ann, "polygon")
+    polygon = decode_coco_rle_segmentation(ann, "polygon")
     new_seg = polygon_to_coco_coordinates_segmentation(polygon)
     return file_idx, ann_idx, new_seg
 
