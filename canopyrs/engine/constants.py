@@ -29,7 +29,8 @@ class Col:
 
     # Classifier columns
     CLASSIFIER_SCORE = "classifier_score"
-    CLASSIFIER_CLASS = "classifier_class"
+    CLASSIFIER_CLASS = "classifier_class"  # Predicted class index
+    CLASSIFIER_CLASS_NAME = "classifier_class_name"  # Human-readable name (from config.class_names)
     CLASSIFIER_SCORES = "classifier_scores"  # Full list of scores for all classes
 
 

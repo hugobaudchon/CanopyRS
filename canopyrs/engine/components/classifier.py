@@ -70,6 +70,10 @@ class ClassifierComponent(BaseComponent):
         self.produces_state = set(self.BASE_PRODUCES_STATE)
         self.produces_columns = set(self.BASE_PRODUCES_COLUMNS)
 
+        # Map predicted class indices to human-readable names when configured
+        if config.class_names:
+            self.produces_columns.add(Col.CLASSIFIER_CLASS_NAME)
+
         # Set hints
         self.state_hints = dict(self.BASE_STATE_HINTS)
         self.column_hints = dict(self.BASE_COLUMN_HINTS)
@@ -145,6 +149,14 @@ class ClassifierComponent(BaseComponent):
             ],
             Col.CLASSIFIER_SCORES: class_scores,
         })
+
+        # Add human-readable class names when configured (model returns indices only)
+        if self.config.class_names:
+            names = self.config.class_names
+            df[Col.CLASSIFIER_CLASS_NAME] = [
+                names[idx] if idx is not None and 0 <= idx < len(names) else None
+                for idx in class_predictions
+            ]
 
         # Component-specific validation: warn about unclassified items
         unclassified = df[Col.CLASSIFIER_CLASS].isnull().sum()
