@@ -88,6 +88,14 @@ class AggregatorComponent(BaseComponent):
                 f"Add a segmenter before aggregator, or set segmenter_score_weight=0."
             )
 
+        if config.classifier_score_weight > 0:
+            self.requires_columns.add(Col.CLASSIFIER_SCORE)
+            self.column_hints[Col.CLASSIFIER_SCORE] = (
+                f"Config has classifier_score_weight={config.classifier_score_weight} > 0, "
+                f"so '{Col.CLASSIFIER_SCORE}' column is required. "
+                f"Add a classifier before aggregator, or set classifier_score_weight=0."
+            )
+
     @classmethod
     def run_standalone(
         cls,
@@ -148,6 +156,10 @@ class AggregatorComponent(BaseComponent):
         if self.config.segmenter_score_weight > 0:
             score_cols.append(Col.SEGMENTER_SCORE)
             weights.append(self.config.segmenter_score_weight)
+
+        if self.config.classifier_score_weight > 0:
+            score_cols.append(Col.CLASSIFIER_SCORE)
+            weights.append(self.config.classifier_score_weight)
 
         # Generate output names
         gpkg_name, pre_agg_gpkg_name = self._get_gpkg_names(data_state)
