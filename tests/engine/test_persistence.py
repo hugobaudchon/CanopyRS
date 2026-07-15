@@ -1,4 +1,4 @@
-"""Unit tests for v3 persistence: config_hash, parquet round-trip, and from_dir FK relinking."""
+"""Unit tests for persistence: config_hash, parquet round-trip, and from_dir FK relinking."""
 
 import json
 

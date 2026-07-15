@@ -28,8 +28,8 @@ from canopyrs.engine.pipeline import Pipeline
 
 
 def _io_aoi(io_config: InferIOConfig):
-    """The v3 AOI (a gpkg path) from an InferIOConfig, or None. Only package mode carries over;
-    generate/whole-raster tiles the full extent (v3's default when no AOI)."""
+    """The AOI (a gpkg path) from an InferIOConfig, or None. Only package mode carries over;
+    generate/whole-raster tiles the full extent (the default when no AOI)."""
     if io_config.aoi_config == 'package':
         return io_config.aoi
     if io_config.aoi_config in (None, 'generate'):
@@ -53,7 +53,7 @@ def pipeline_main(args):
         output_folder, aoi = io_config.output_folder, _io_aoi(io_config)
         objects = io_config.input_gpkg
         if io_config.input_coco:
-            raise NotImplementedError("input_coco seeding is not yet supported by the v3 pipeline.")
+            raise NotImplementedError("input_coco seeding is not yet supported by the pipeline.")
     else:
         sources, tiles, aoi = args.imagery_path, args.tiles_path, args.aoi_path
         if args.resume_from:

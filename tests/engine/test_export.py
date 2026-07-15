@@ -1,4 +1,4 @@
-"""Unit tests for v3 export: GPKG column widening, and COCO requiring tiles on disk."""
+"""Unit tests for export: GPKG column widening, and COCO requiring tiles on disk."""
 
 import json
 

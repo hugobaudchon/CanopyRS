@@ -1,4 +1,4 @@
-"""v3 column vocabulary. Keys (PK/FK) drive the data classes; the rest are data columns that just ride
+"""Column vocabulary. Keys (PK/FK) drive the data classes; the rest are data columns that just ride
 in the gdfs. Kept here so names stay consistent and ideas don't get lost."""
 
 

@@ -1,4 +1,4 @@
-"""Contract tests for the v3 Aggregator component: its requires/produces reflect the score weights."""
+"""Contract tests for the Aggregator component: its requires/produces reflect the score weights."""
 
 from canopyrs.engine.components.aggregator import Aggregator
 from canopyrs.engine.config_parsers import AggregatorConfig

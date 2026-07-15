@@ -1,7 +1,7 @@
 """
 Shared fixtures for CanopyRS tests.
 
-Pipeline-agnostic assets (rasters, labels) plus small v3 relational-table builders
+Pipeline-agnostic assets (rasters, labels) plus small relational-table builders
 (Sources / Tiles / Objects) used by the engine unit tests.
 """
 
@@ -40,7 +40,7 @@ def temp_output_path(tmp_path):
 
 
 # =============================================================================
-# v3 tile metadata helper + relational-table builders
+# tile metadata helper + relational-table builders
 # =============================================================================
 
 def make_tile_metadata(*, width=64, height=64, gsd=1.0, x0=0.0, y0=0.0, crs="EPSG:32618"):

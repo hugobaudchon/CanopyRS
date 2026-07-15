@@ -1,5 +1,5 @@
 """
-v3 pipeline: run components in order, threading data by type.
+Pipeline: run components in order, threading data by type.
 
 Each component declares ``requires`` (entries: a data-class type, a ``Need(type, …)``, or a ``one_of``)
 and ``produces`` (a type or a ``Need`` describing its output). The pipeline keeps one list per data type

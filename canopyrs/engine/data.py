@@ -1,4 +1,4 @@
-"""The v3 relational data model: three typed tables threaded through the pipeline.
+"""The relational data model: three typed tables threaded through the pipeline.
 
 Everything is a ``Table`` — a (Geo)DataFrame plus a primary key:
   - ``Sources``  : the input files (root; no parents).

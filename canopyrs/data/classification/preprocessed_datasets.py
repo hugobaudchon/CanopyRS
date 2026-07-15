@@ -80,10 +80,10 @@ class QuebecTreesClassifierDataset(QuebecTreesDataset):
             pipeline_output_folder: Path,
             product_name: Optional[str] = None,
     ) -> Tuple[Path, Path, Optional[Path]]:
-        # NOTE (classifier-on-v3 TODO): this scavenges a run folder for the tilerizer's product
-        # tiles/ dir and a geodataset-named infer COCO. The v3 grid tilerizer writes tiles to disk but
-        # no COCO (it's export("coco")-on-demand), so this lookup must be revisited when the classifier
-        # benchmark is ported to consume v3 runs. Behavior is unchanged from the v1 DataState version.
+        # NOTE (classifier TODO): this scavenges a run folder for the tilerizer's product tiles/ dir and
+        # a geodataset-named infer COCO. The grid tilerizer writes tiles to disk but no COCO (it's
+        # export("coco")-on-demand), so this lookup must be revisited when the classifier benchmark is
+        # ported. Behavior is unchanged from the previous output-registry version.
         components = self._scan_pipeline_outputs(pipeline_output_folder)
 
         tilerizer_ids = [cid for cid, entry in components.items() if entry['name'] == 'tilerizer']

@@ -1,4 +1,4 @@
-"""Unit tests for the v3 data contracts (Need / one_of / Schema) and Pipeline.validate wiring."""
+"""Unit tests for the data contracts (Need / one_of / Schema) and Pipeline.validate wiring."""
 
 import pytest
 

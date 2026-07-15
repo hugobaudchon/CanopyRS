@@ -1,16 +1,13 @@
 """
-v3 pipeline flow visualization — the v3 analog of v1's ``pipeline_visualizer`` / v2's ``visualizer``.
+Pipeline flow visualization.
 
-Same colored-block render, but v3 has three typed tables, and a component's contract is
-``Need(type, columns, links, crs)`` — not a flat column set. So the chart has **three stacked sections**
-(SOURCES / TILES / OBJECTS); within each, a row per **link** (``→sources`` / ``→tiles`` /
-``→prev_objects``), a **crs** row (tri-state ✓/✗/?), then a row per **column**. Each cell is marked
-available / produced / required / required+produced / missing / passthrough per component — read off the
-*same* ``Pipeline.thread_schemas`` simulation that ``validate`` uses, so the chart never re-derives
+The pipeline has three typed tables, and a component's contract is ``Need(type, columns, links, crs)``
+— not a flat column set. So the chart has **three stacked sections** (SOURCES / TILES / OBJECTS); within
+each, a row per **link** (``→sources`` / ``→tiles`` / ``→prev_objects``), a **crs** row (tri-state
+✓/✗/?), then a row per **column**. Each cell is marked available / produced / required /
+required+produced / missing / passthrough per component — read off the *same*
+``Pipeline.thread_schemas`` simulation that ``validate`` uses, so the chart never re-derives
 "what's available when".
-
-Standalone (no v1/v2 imports) so the v3 package stays parallel; the small presentation helpers are
-duplicated from ``v2/visualizer.py`` on purpose, then extended with the crs glyphs.
 """
 
 import re
@@ -110,7 +107,7 @@ class _Step:
 
 
 class PipelineFlowVisualizer:
-    """Visualize the typed data flow through a v3 pipeline.
+    """Visualize the typed data flow through a pipeline.
 
     Legend (colored blocks): green ▬ = input · blue ▬ = produced · yellow ▬ = required · yellow+blue =
     required+produced · red ▬ = MISSING · gray · = passthrough. crs row: ✓ = CRS, ✗ = tile-pixel,
@@ -274,7 +271,7 @@ class PipelineFlowVisualizer:
                      + f'{h_bar}{cross}{h_bar}'.join(h_bar * width for width in col_widths) + h_bar)
 
         print("\n" + "=" * len(header))
-        print("PIPELINE FLOW CHART (v3)")
+        print("PIPELINE FLOW CHART")
         print(f"Legend: {_Symbols.AVAILABLE}=input  {_Symbols.PRODUCED}=produced  "
               f"{_Symbols.REQUIRED}=required  {_Symbols.REQ_AND_PROD}=required+produced  "
               f"{_Symbols.MISSING}=MISSING!  {_Symbols.PASSTHROUGH}=passthrough   "

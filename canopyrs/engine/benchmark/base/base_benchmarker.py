@@ -80,7 +80,7 @@ class BaseBenchmarker(ABC):
             has no aggregator.
         """
         if input_coco is not None:
-            raise NotImplementedError("input_coco seeding is not yet supported by the v3 pipeline.")
+            raise NotImplementedError("input_coco seeding is not yet supported by the pipeline.")
         if output_folder is None:
             output_folder = self.output_folder / self.fold_name / product_name
 

@@ -1,4 +1,4 @@
-"""v3 persistence + file writers.
+"""Persistence + file writers.
 
 Each produced table is saved as parquet in its component's folder (Objects via the geopandas geo-parquet
 writer — it keeps geometry, a null CRS, and nested columns; Tiles/Sources via plain parquet). A run
@@ -122,7 +122,7 @@ def write_coco(gdf, path, *, scores_column, categories_column, other_attributes_
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     return generate_coco(
-        description="CanopyRS v3 export",
+        description="CanopyRS export",
         gdf=gdf,
         tiles_paths_column=Col.TILE_PATH,
         polygons_column=Col.GEOMETRY,

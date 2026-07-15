@@ -1,4 +1,4 @@
-"""Unit tests for the v3 relational data model: FK validation and prev_objects ancestry."""
+"""Unit tests for the relational data model: FK validation and prev_objects ancestry."""
 
 import geopandas as gpd
 import pytest

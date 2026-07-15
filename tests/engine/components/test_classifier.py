@@ -1,4 +1,4 @@
-"""Contract tests for the v3 Classifier component: its one_of input shape and produced columns."""
+"""Contract tests for the Classifier component: its one_of input shape and produced columns."""
 
 from canopyrs.engine.components.classifier import Classifier
 from canopyrs.engine.config_parsers import ClassifierConfig

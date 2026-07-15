@@ -1,8 +1,8 @@
-"""Integration tests for the v3 Pipeline.
+"""Integration tests for the Pipeline.
 
 The fast tier drives a real tilerizer over a synthetic raster (CPU only) and checks persistence /
 reload. The @slow tier runs real models on GPU: a full pipeline over the bundled test raster, and the
-tiles-folder seeding path (the one genuinely new v3 capability).
+tiles-folder seeding path.
 """
 
 from pathlib import Path
@@ -79,7 +79,7 @@ def test_full_detector_pipeline_on_test_raster(test_raster, tmp_path):
 
 @pytest.mark.slow
 def test_detector_seeded_from_tiles_dir(test_raster, tmp_path):
-    """The v3 tiles-folder seeding path: seed a detector directly from a folder of pre-cut GeoTIFF tiles
+    """The tiles-folder seeding path: seed a detector directly from a folder of pre-cut GeoTIFF tiles
     (leading tilerizer dropped), exercising Tiles.from_tiles_dir end-to-end."""
     # First cut real tiles to disk with a tilerizer run.
     tiles_run = tmp_path / "tiles_run"

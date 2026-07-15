@@ -1,5 +1,5 @@
 """
-Tile image loader for v3 inference.
+Tile image loader for inference.
 
 A torch ``Dataset`` over a tiles reading frame (``Tiles.reading_frame()`` — one row per tile), turning
 each row into a model-ready image one of two ways:

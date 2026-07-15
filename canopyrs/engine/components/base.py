@@ -16,7 +16,7 @@ from canopyrs.engine.loader import tile_loader
 
 # kind -> component class, populated by the @register_component decorators on each component. Lets the
 # pipeline instantiate components from config (Pipeline.from_config) without importing each class.
-COMPONENT_REGISTRY = Registry("v3_component")
+COMPONENT_REGISTRY = Registry("component")
 register_component = COMPONENT_REGISTRY.register
 
 
