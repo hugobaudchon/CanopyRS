@@ -86,6 +86,12 @@ class ViTTimmClassifierWrapper(ClassifierWrapperBase):
         )
         self.model.to(self.device)
 
+        # Inputs arrive in 0..1 (the loader/dataset divides by 255); the backbone was trained on
+        # ImageNet-normalized images, so we must apply the same mean/std here — otherwise the model
+        # sees a distribution it never trained on and predictions are garbage.
+        self.norm_mean = torch.tensor(config.norm_mean, device=self.device).view(1, 3, 1, 1)
+        self.norm_std = torch.tensor(config.norm_std, device=self.device).view(1, 3, 1, 1)
+
         # Load checkpoint if provided
         if config.checkpoint_path:
             self.load_checkpoint(config.checkpoint_path)
@@ -102,10 +108,11 @@ class ViTTimmClassifierWrapper(ClassifierWrapperBase):
         """
         # Handle different input formats
         if isinstance(images, list):
-            if len(images) == 1:
-                images = images[0]
-            else:
-                images = torch.stack(images)
+            images = images[0] if len(images) == 1 else torch.stack(images)
+
+        # 0..1 -> ImageNet-normalized, matching training (see __init__).
+        images = images.to(self.device).float()
+        images = (images - self.norm_mean) / self.norm_std
 
         # Forward pass
         outputs = self.model(images)

@@ -10,14 +10,11 @@ Tests various alignment scenarios:
 - Edge cases (empty datasets, single image, etc.)
 """
 import json
+import sys
 import tempfile
 from pathlib import Path
-import sys
 
-project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root))
-
-from engine.benchmark.classifier.evaluator import (
+from canopyrs.engine.benchmark.classifier.evaluator import (
     ClassifierCocoEvaluator,
     AlignmentStrategy,
     AlignmentError,

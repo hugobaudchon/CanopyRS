@@ -13,6 +13,17 @@ class ClassifierConfig(BaseConfig):
     freeze_layers: int = Field(0, description="Number of layers to freeze")
     batch_size: int = Field(8, description="Batch size for inference")
     class_names: Optional[List[str]] = Field(None, description="Names of output classes")
+    norm_mean: List[float] = Field(
+        [0.485, 0.456, 0.406],
+        description=(
+            "Per-channel (RGB) mean subtracted from the 0..1 image before the backbone. "
+            "Must match training: forest-ssl uses ImageNet stats (the default)."
+        ),
+    )
+    norm_std: List[float] = Field(
+        [0.229, 0.224, 0.225],
+        description="Per-channel (RGB) std the 0..1 image is divided by (after norm_mean). ImageNet default.",
+    )
     n_cls_layers: int = Field(
         1,
         description=(

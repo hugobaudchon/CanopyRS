@@ -166,6 +166,67 @@ class SegmenterWrapperBase(ABC):
 
         return n_masks_processed
 
+    def infer_v2(self, loader, boxes_by_tile=None):
+        """v2 inference: consume a loader yielding ``(object_ids, images)`` batches and return per-tile
+        ``(tile_object_ids, mask_object_ids, mask_polygons, mask_scores)`` — polygons in tile-pixel
+        coords. Reuses ``forward`` and the same multiprocessing mask->polygon postprocessing as
+        ``_infer_on_dataset``; builds no DataLoader of its own.
+
+        boxes_by_tile : {tile_object_id: (boxes np[N,4] xyxy pixel, box_object_ids list[N])} for
+        box-prompted models; None for automatic mask generation.
+        """
+        queue = multiprocessing.JoinableQueue()
+        manager = multiprocessing.Manager()
+        output_dict = manager.dict()
+        processed_counter = multiprocessing.Value('i', 0)
+        output_dict_lock = multiprocessing.Lock()
+
+        workers = []
+        for _ in range(self.config.pp_n_workers):
+            p = multiprocessing.Process(target=process_masks,
+                                        args=(queue, output_dict, output_dict_lock,
+                                              self.config.pp_simplify_tolerance, self.config.pp_remove_rings,
+                                              self.config.pp_remove_small_geoms, processed_counter))
+            p.start()
+            workers.append(p)
+
+        tile_object_ids = []                                   # tile_idx (running) -> tile object_id
+        for object_ids, images in tqdm(loader, desc="Inferring the segmenter...", leave=True):
+            images = [img.numpy() if hasattr(img, "numpy") else np.asarray(img) for img in images]
+            base = len(tile_object_ids)
+            tiles_idx = list(range(base, base + len(object_ids)))
+            tile_object_ids.extend(object_ids)
+            if boxes_by_tile is None:
+                boxes = [None] * len(images)
+                boxes_object_ids = [None] * len(images)
+            else:
+                boxes = [boxes_by_tile[oid][0] for oid in object_ids]
+                boxes_object_ids = [boxes_by_tile[oid][1] for oid in object_ids]
+            self.forward(images=images, boxes=boxes, boxes_object_ids=boxes_object_ids,
+                         tiles_idx=tiles_idx, queue=queue)
+
+        queue.join()
+        for _ in range(self.config.pp_n_workers):
+            queue.put(None)
+        for p in workers:
+            p.join()
+        queue.close()
+
+        mask_object_ids, mask_polygons, mask_scores = [], [], []
+        for tile_idx in range(len(tile_object_ids)):           # aligned to tile_object_ids order
+            entries = sorted(output_dict.get(tile_idx, []), key=lambda x: x[0])
+            if entries:
+                _, box_object_ids, polygons, scores = zip(*entries)
+                mask_object_ids.append(list(box_object_ids))
+                mask_polygons.append(list(polygons))
+                mask_scores.append([s.item() if hasattr(s, "item") else s for s in scores])
+            else:
+                mask_object_ids.append([])
+                mask_polygons.append([])
+                mask_scores.append([])
+
+        return tile_object_ids, mask_object_ids, mask_polygons, mask_scores
+
     def _infer_on_dataset(self, dataset: BaseDataset, collate_fn: object):
         infer_dl = DataLoader(dataset, batch_size=self.config.image_batch_size, shuffle=False,
                               collate_fn=collate_fn,

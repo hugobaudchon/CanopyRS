@@ -3,7 +3,7 @@ from typing import List, Tuple, Dict
 
 import numpy as np
 import torch
-from geodataset.dataset import InstanceSegmentationLabeledRasterCocoDataset
+from geodataset.dataset import ClassificationLabeledRasterCocoDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -93,7 +93,7 @@ class ClassifierWrapperBase(ABC):
 
         return all_predictions, all_object_ids
 
-    def infer(self, infer_ds: InstanceSegmentationLabeledRasterCocoDataset, collate_fn_classification):
+    def infer(self, infer_ds: ClassificationLabeledRasterCocoDataset, collate_fn_classification):
         """
         Run inference on a dataset and return predictions along with object IDs when available.
 
@@ -127,6 +127,21 @@ class ClassifierWrapperBase(ABC):
             raise AttributeError("Dataset does not have recognized tile paths attribute")
 
         return tiles_paths, class_scores, class_predictions, object_ids_from_dl
+
+    def infer_v2(self, loader):
+        """v2 inference: consume a loader yielding ``(object_ids, images)`` batches and return aligned
+        ``(object_ids, class_predictions, class_scores)`` — one predicted class index and one full
+        per-class score list per tile. Reuses ``forward``; builds no DataLoader of its own."""
+        self.model.eval()
+        object_ids, class_predictions, class_scores = [], [], []
+        with torch.no_grad():
+            for batch_ids, images in tqdm(loader, desc="Inferring classifier...", leave=True):
+                images = torch.stack([img for img in images]).to(self.device)
+                for out in self.forward(images):
+                    class_scores.append(out['scores'].cpu().numpy().tolist())
+                    class_predictions.append(out['labels'].cpu().item())
+                object_ids.extend(batch_ids)
+        return object_ids, class_predictions, class_scores
 
     def load_checkpoint(self, checkpoint_path):
         """Load model weights from a checkpoint file.

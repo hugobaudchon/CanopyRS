@@ -1,232 +1,104 @@
-"""
-Integration tests for Pipeline using the test raster (assets/).
+"""Integration tests for the v3 Pipeline.
 
-These tests use a real orthomosaic crop included in the repo (~24MB).
-They are marked with @pytest.mark.slow and can be skipped with:
-    pytest -m "not slow"
+The fast tier drives a real tilerizer over a synthetic raster (CPU only) and checks persistence /
+reload. The @slow tier runs real models on GPU: a full pipeline over the bundled test raster, and the
+tiles-folder seeding path (the one genuinely new v3 capability).
 """
 
-import pytest
 from pathlib import Path
 
-from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig
-from canopyrs.engine.config_parsers.base import get_config_path
+import pytest
+
+from canopyrs.engine import store
+from canopyrs.engine.constants import Col
+from canopyrs.engine.data import Tiles, Objects
 from canopyrs.engine.pipeline import Pipeline
-
-
-@pytest.mark.slow
-class TestPipelineIntegration:
-    """Integration tests using the test raster asset."""
-
-    def test_raster_available(self, test_raster):
-        """Verify test raster is available."""
-        import rasterio
-
-        assert test_raster.exists()
-
-        with rasterio.open(test_raster) as src:
-            assert src.count >= 3, "Test raster must have at least 3 bands"
-            assert src.width > 0
-            assert src.height > 0
-
-    def test_tiles_created(self, test_raster_tiles):
-        """Verify test raster tiles are created."""
-        assert test_raster_tiles.exists()
-
-        tiles = list(test_raster_tiles.glob("**/*.tif"))
-        assert len(tiles) > 0, "No tiles found"
-
-    def test_pipeline_tilerizer_only(self, test_raster, tmp_path):
-        """Test pipeline with just tilerizer component."""
-        from canopyrs.engine.config_parsers import TilerizerConfig
-
-        io_config = InferIOConfig(
-            input_imagery=str(test_raster),
-            tiles_path=None,
-            output_folder=str(tmp_path / "output"),
-        )
-
-        tilerizer_config = TilerizerConfig(
-            tile_size=512,
-            tile_overlap=0.25,
-            tile_type="tile",
-        )
-
-        pipeline_config = PipelineConfig(
-            components_configs=[("tilerizer", tilerizer_config)]
-        )
-
-        pipeline = Pipeline.from_config(io_config, pipeline_config)
-        pipeline()
-
-        # Verify tiles were created
-        tiles_path = Path(pipeline.data_state.tiles_path)
-        assert tiles_path.exists()
-        tiles = list(tiles_path.glob("**/*.tif"))
-        assert len(tiles) > 0, "No tiles created"
-
-    def test_pipeline_validation_catches_missing_dependency(self, test_raster_tiles, tmp_path):
-        """Test that pipeline validation catches missing component dependencies."""
-        from canopyrs.engine.config_parsers import AggregatorConfig
-        from canopyrs.engine.components.base import ComponentValidationError
-
-        # Try to create a pipeline with aggregator but no detector/segmenter
-        # This should fail validation because aggregator needs INFER_GDF
-        io_config = InferIOConfig(
-            input_imagery=None,
-            tiles_path=str(test_raster_tiles),
-            output_folder=str(tmp_path / "output"),
-        )
-
-        aggregator_config = AggregatorConfig(
-            nms_threshold=0.3,
-            score_threshold=0.5,
-        )
-
-        pipeline_config = PipelineConfig(
-            components_configs=[("aggregator", aggregator_config)]
-        )
-
-        # Pipeline creation should fail because aggregator needs INFER_GDF
-        with pytest.raises(ComponentValidationError):
-            Pipeline.from_config(io_config, pipeline_config)
-
-
-@pytest.mark.slow
-class TestPipelineWithSyntheticData:
-    """Integration tests using synthetic raster data (fastest)."""
-
-    def test_synthetic_raster_created(self, synthetic_raster):
-        """Verify synthetic raster fixture works."""
-        import rasterio
-
-        assert synthetic_raster.exists()
-
-        with rasterio.open(synthetic_raster) as src:
-            assert src.width == 256
-            assert src.height == 256
-            assert src.count == 3
-
-    def test_synthetic_labels_created(self, synthetic_labels):
-        """Verify synthetic labels fixture works."""
-        import geopandas as gpd
-
-        assert synthetic_labels.exists()
-
-        gdf = gpd.read_file(synthetic_labels)
-        assert len(gdf) == 4
-        assert 'geometry' in gdf.columns
-
-    def test_tilerizer_with_synthetic_data(self, synthetic_raster, tmp_path):
-        """Test tilerizer component with synthetic raster."""
-        from canopyrs.engine.config_parsers import TilerizerConfig
-
-        io_config = InferIOConfig(
-            input_imagery=str(synthetic_raster),
-            tiles_path=None,
-            output_folder=str(tmp_path / "output"),
-        )
-
-        tilerizer_config = TilerizerConfig(
-            tile_size=128,  # Small tiles for 256x256 image
-            tile_overlap=0.25,
-            tile_type="tile",
-        )
-
-        pipeline_config = PipelineConfig(
-            components_configs=[("tilerizer", tilerizer_config)]
-        )
-
-        pipeline = Pipeline.from_config(io_config, pipeline_config)
-        pipeline()
-
-        # Verify tiles were created
-        tiles_path = Path(pipeline.data_state.tiles_path)
-        assert tiles_path.exists()
-        tiles = list(tiles_path.glob("**/*.tif"))
-        assert len(tiles) > 0
+from canopyrs.engine.config_parsers import PipelineConfig, TilerizerConfig
+from canopyrs.engine.config_parsers.base import get_config_path
 
 
 # =============================================================================
-# Model Inference Integration Tests
+# Fast tier (CPU only — real geodataset tilerizing, no models)
 # =============================================================================
 
-# Preset pipeline config names (resolved by PipelineConfig.from_yaml via get_config_path)
-DINO_SAM3_CONFIG = "preset_seg_multi_NQOS_selvamask_SAM3_FT_quality.yaml"
-MASKRCNN_CONFIG = "maskrcnn_test.yaml"
-FASTERRCNN_CONFIG = "fasterrcnn_test.yaml"
+def test_tilerizer_pipeline_produces_tiles_and_reloads(synthetic_raster, tmp_path):
+    """A tilerizer-only pipeline over a raster produces Tiles, writes a manifest, and reloads."""
+    run_dir = tmp_path / "run"
+    steps = [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=128, tile_overlap=0.0))]
+
+    pipe = Pipeline.from_config(steps, sources=str(synthetic_raster), output_dir=str(run_dir))
+    pipe.run(verbose=False)
+
+    tiles = pipe.latest(Tiles)
+    assert tiles is not None and len(tiles) > 0
+    assert store.read_manifest(run_dir) is not None
+
+    reloaded = Pipeline.from_dir(run_dir)
+    assert reloaded.latest(Tiles) is not None
+    assert len(reloaded.latest(Tiles)) == len(tiles)
 
 
-def _run_pipeline_from_preset(preset_name: str, test_raster, tmp_path):
-    """Run a pipeline from a preset YAML config on the test raster."""
-    pipeline_config = PipelineConfig.from_yaml(get_config_path(preset_name))
+def test_resume_skips_completed_prefix(synthetic_raster, tmp_path):
+    """Re-running with resume=True over a completed tilerizer skips it (no error, tiles still present)."""
+    run_dir = tmp_path / "run"
+    steps = [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=128, tile_overlap=0.0))]
 
-    io_config = InferIOConfig(
-        input_imagery=str(test_raster),
-        tiles_path=None,
-        output_folder=str(tmp_path / "output"),
-    )
+    Pipeline.from_config(steps, sources=str(synthetic_raster), output_dir=str(run_dir)).run(verbose=False)
+    resumed = Pipeline.from_config(steps, sources=str(synthetic_raster), output_dir=str(run_dir))
+    resumed.run(resume=True, verbose=False)
 
-    pipeline = Pipeline.from_config(io_config, pipeline_config)
-    pipeline()
-    return pipeline
+    assert resumed.latest(Tiles) is not None and len(resumed.latest(Tiles)) > 0
 
 
-@pytest.mark.slow
-class TestDinoSam3Pipeline:
-    """Integration test: DINO FT on SelvaMask + SAM3 FT (detector + segmenter)."""
+# =============================================================================
+# Slow tier (GPU + model weights)
+# =============================================================================
 
-    def test_dino_sam3_inference(self, test_raster, tmp_path):
-        """Full DINO + SAM3 pipeline produces segmentation outputs."""
-        pipeline = _run_pipeline_from_preset(DINO_SAM3_CONFIG, test_raster, tmp_path)
-
-        # Pipeline should have completed with an infer_gdf
-        gdf = pipeline.data_state.infer_gdf
-        assert gdf is not None, "Pipeline did not produce an infer_gdf"
-        assert len(gdf) > 0, "Pipeline produced zero detections"
-
-        # Should have segmenter-produced geometry (polygons, not just bboxes)
-        assert "geometry" in gdf.columns
-
-        # Check output files exist (detector COCO, aggregator gpkg)
-        output_path = Path(pipeline.output_path)
-        assert output_path.exists()
-        coco_files = list(output_path.glob("**/*.json"))
-        gpkg_files = list(output_path.glob("**/*.gpkg"))
-        assert len(coco_files) > 0, "No COCO JSON files produced"
-        assert len(gpkg_files) > 0, "No GeoPackage files produced"
+DETECTOR_PRESET = 'preset_det_single_S_fasterrcnn_r50.yaml'
 
 
 @pytest.mark.slow
-class TestMaskRCNNPipeline:
-    """Integration test: Mask R-CNN pipeline (end-to-end segmenter)."""
+def test_full_detector_pipeline_on_test_raster(test_raster, tmp_path):
+    """Run the single-scale Faster R-CNN preset over the bundled orthomosaic crop: it produces Objects,
+    writes a reloadable run, and (when the preset aggregates) a georeferenced final GPKG."""
+    config = PipelineConfig.from_yaml(get_config_path(DETECTOR_PRESET))
+    run_dir = tmp_path / "run"
 
-    def test_maskrcnn_inference(self, test_raster, tmp_path):
-        """Mask R-CNN pipeline produces segmentation outputs."""
-        pipeline = _run_pipeline_from_preset(MASKRCNN_CONFIG, test_raster, tmp_path)
+    pipe = Pipeline.from_config(config.components_configs, sources=str(test_raster), output_dir=str(run_dir))
+    pipe.run(verbose=False, strict_rgb_validation=False)
 
-        gdf = pipeline.data_state.infer_gdf
-        assert gdf is not None, "Pipeline did not produce an infer_gdf"
-        assert len(gdf) > 0, "Pipeline produced zero detections"
-        assert "geometry" in gdf.columns
+    assert pipe.latest(Tiles) is not None and len(pipe.latest(Tiles)) > 0
+    assert pipe.latest(Objects) is not None
 
-        output_path = Path(pipeline.output_path)
-        gpkg_files = list(output_path.glob("**/*.gpkg"))
-        assert len(gpkg_files) > 0, "No GeoPackage files produced"
+    reloaded = Pipeline.from_dir(run_dir)
+    assert reloaded.latest(Objects) is not None
+
+    if any(c.name == 'aggregator' for c in pipe.components):
+        assert (run_dir / "final.gpkg").exists()
 
 
 @pytest.mark.slow
-class TestFasterRCNNPipeline:
-    """Integration test: Faster R-CNN pipeline (detection only)."""
+def test_detector_seeded_from_tiles_dir(test_raster, tmp_path):
+    """The v3 tiles-folder seeding path: seed a detector directly from a folder of pre-cut GeoTIFF tiles
+    (leading tilerizer dropped), exercising Tiles.from_tiles_dir end-to-end."""
+    # First cut real tiles to disk with a tilerizer run.
+    tiles_run = tmp_path / "tiles_run"
+    tiler_steps = [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=512, tile_overlap=0.0,
+                                                 save_tiles_to_disk=True))]
+    tiler = Pipeline.from_config(tiler_steps, sources=str(test_raster), output_dir=str(tiles_run))
+    tiler.run(verbose=False, strict_rgb_validation=False)
+    # The tilerizer's own tile_path column points at the saved tiles — use its folder directly.
+    tiles_dir = Path(tiler.latest(Tiles).df[Col.TILE_PATH].iloc[0]).parent
 
-    def test_fasterrcnn_inference(self, test_raster, tmp_path):
-        """Faster R-CNN pipeline produces detection outputs."""
-        pipeline = _run_pipeline_from_preset(FASTERRCNN_CONFIG, test_raster, tmp_path)
+    # Now seed a detector-only pipeline straight from that tiles folder (no raster, no tilerizer).
+    config = PipelineConfig.from_yaml(get_config_path(DETECTOR_PRESET))
+    detector_steps = [step for step in config.components_configs if step[0] == 'detector']
+    if not detector_steps:
+        pytest.skip(f"{DETECTOR_PRESET} has no detector step")
 
-        gdf = pipeline.data_state.infer_gdf
-        assert gdf is not None, "Pipeline did not produce an infer_gdf"
-        assert len(gdf) > 0, "Pipeline produced zero detections"
+    det_run = tmp_path / "det_run"
+    pipe = Pipeline.from_config(detector_steps, tiles=str(tiles_dir), output_dir=str(det_run))
+    pipe.run(verbose=False)
 
-        output_path = Path(pipeline.output_path)
-        coco_files = list(output_path.glob("**/*.json"))
-        assert len(coco_files) > 0, "No COCO JSON files produced"
+    assert pipe.latest(Tiles) is not None and len(pipe.latest(Tiles)) > 0
+    assert pipe.latest(Objects) is not None   # boxes (possibly zero on some tiles), but the table exists

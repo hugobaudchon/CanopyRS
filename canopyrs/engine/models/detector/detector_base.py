@@ -55,6 +55,21 @@ class DetectorWrapperBase(ABC):
         tiles_paths = infer_ds.tile_paths
         return tiles_paths, boxes, boxes_scores, classes
 
+    def infer_v2(self, loader):
+        """v2 inference: consume a loader yielding ``(object_ids, images)`` batches (e.g. the v2
+        ``tile_loader``) and return ``(object_ids, boxes, scores, classes)`` as aligned per-tile
+        lists. Reuses ``forward``; builds no DataLoader of its own."""
+        self.model.eval()
+        object_ids, results = [], []
+        with torch.no_grad():
+            for batch_ids, images in tqdm(loader, desc="Inferring detector...", leave=True):
+                images = [img.to(self.device) for img in images]
+                results.extend(self.forward(images))
+                object_ids.extend(batch_ids)
+
+        boxes, boxes_scores, classes = detector_result_to_lists(results)
+        return object_ids, boxes, boxes_scores, classes
+
 
 class TorchVisionDetectorWrapperBase(DetectorWrapperBase, ABC):
     def __init__(self, config, ):

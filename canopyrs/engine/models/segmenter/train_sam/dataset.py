@@ -161,7 +161,7 @@ def get_detector_predictions_for_dataset(
     dict[str, list]
         Mapping from tile path to list of predicted boxes [x1, y1, x2, y2]
     """
-    from canopyrs.engine.config_parsers import InferIOConfig, PipelineConfig
+    from canopyrs.engine.config_parsers import PipelineConfig
     from canopyrs.engine.config_parsers.base import get_config_path
     from canopyrs.engine.pipeline import Pipeline
 
@@ -187,26 +187,12 @@ def get_detector_predictions_for_dataset(
         if config.components_configs[0][0] == 'tilerizer':
             config.components_configs.pop(0)
         
-        # Create IO config
-        io_config = InferIOConfig(
-            input_imagery=tile_dir, 
-            tiles_path=tile_dir,
-            output_folder=str(cache_dir),
-        )
         print(f"Processing tile directory: {tile_dir}")
-        # Run pipeline
-        pipeline = Pipeline.from_config(io_config, config)
-        output = pipeline()
-
-        coco_path = None
-        if hasattr(output, 'infer_coco_path') and output.infer_coco_path:
-            coco_path = output.infer_coco_path
-        elif hasattr(output, 'component_output_files'):
-            # Try aggregator first, then detector
-            if '1_aggregator' in output.component_output_files:
-                coco_path = output.component_output_files['1_aggregator'].get('coco')
-            elif '0_detector' in output.component_output_files:
-                coco_path = output.component_output_files['0_detector'].get('coco')
+        # Run pipeline over the pre-cut tiles; export the COCO at the last Objects producer
+        # (the aggregator if present, else the detector).
+        pipeline = Pipeline.from_config(config.components_configs, tiles=tile_dir, output_dir=str(cache_dir))
+        pipeline.run(verbose=False)
+        coco_path = pipeline.export("coco")
 
         if not coco_path or not Path(coco_path).exists():
             print(f"Warning: No COCO output found from pipeline")
@@ -215,8 +201,6 @@ def get_detector_predictions_for_dataset(
         # Parse COCO annotations to get boxes
         with open(coco_path, 'r') as f:
             coco_data = json.load(f)
-        #Get detector output
-        detector_coco_path = output.component_output_files['0_detector'].get('coco')
         # Build image_id -> filename mapping
         id_to_filename = {img['id']: img['file_name'] for img in coco_data['images']}
         

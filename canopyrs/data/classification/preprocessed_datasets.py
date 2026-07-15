@@ -4,7 +4,6 @@ from typing import Dict, Type, Union, Iterator, Tuple, Optional, List
 from geodataset.utils import CocoNameConvention
 
 from canopyrs.data.detection.preprocessed_datasets import QuebecTreesDataset
-from canopyrs.engine.data_state import DataState
 
 
 class BaseClassifierPreprocessedDataset:
@@ -52,97 +51,48 @@ class QuebecTreesClassifierDataset(QuebecTreesDataset):
     pipeline_outputs_root: Optional[Path] = None
 
     @staticmethod
-    def _register_existing_pipeline_outputs(
-            data_state: DataState,
-            output_folder: Path,
-    ) -> DataState:
+    def _scan_pipeline_outputs(output_folder: Path) -> Dict[int, dict]:
+        """Index a pipeline run's ``{id}_{name}/`` component folders, keyed by component id. Each entry
+        holds the component ``name``, its ``folder``, and any output files found by naming convention
+        (``coco``, ``gpkg``, ``pre_aggregated_gpkg``)."""
+        components: Dict[int, dict] = {}
         for component_path in output_folder.iterdir():
             if not component_path.is_dir():
                 continue
-
             try:
-                component_id_str, component_name = component_path.name.split(
-                    '_',
-                    1,
-                )
+                component_id_str, component_name = component_path.name.split('_', 1)
                 component_id = int(component_id_str)
             except ValueError:
                 continue
 
-            data_state.register_component_folder(
-                component_name,
-                component_id,
-                component_path,
-            )
-
+            entry = {'name': component_name, 'folder': component_path}
             for coco_file in component_path.glob('*.json'):
                 if '_coco_' in coco_file.name:
-                    data_state.register_output_file(
-                        component_name,
-                        component_id,
-                        'coco',
-                        coco_file,
-                    )
-
+                    entry['coco'] = coco_file
             for gpkg_file in component_path.glob('*.gpkg'):
-                file_type = (
-                    'pre_aggregated_gpkg'
-                    if 'notaggregated' in gpkg_file.name
-                    else 'gpkg'
-                )
-                data_state.register_output_file(
-                    component_name,
-                    component_id,
-                    file_type,
-                    gpkg_file,
-                )
-
-        return data_state
-
-    @staticmethod
-    def _get_latest_component_id(
-            data_state: DataState,
-            component_name: str,
-    ) -> Optional[int]:
-        latest = None
-        for key in data_state.component_output_folders.keys():
-            try:
-                component_id_str, name = key.split('_', 1)
-                component_id = int(component_id_str)
-            except ValueError:
-                continue
-            if name != component_name:
-                continue
-            if latest is None or component_id > latest:
-                latest = component_id
-        return latest
+                file_type = 'pre_aggregated_gpkg' if 'notaggregated' in gpkg_file.name else 'gpkg'
+                entry[file_type] = gpkg_file
+            components[component_id] = entry
+        return components
 
     def _resolve_inputs_from_pipeline_output(
             self,
             pipeline_output_folder: Path,
             product_name: Optional[str] = None,
     ) -> Tuple[Path, Path, Optional[Path]]:
-        data_state = DataState(parent_output_path=str(pipeline_output_folder))
-        data_state = self._register_existing_pipeline_outputs(
-            data_state,
-            pipeline_output_folder,
-        )
+        # NOTE (classifier-on-v3 TODO): this scavenges a run folder for the tilerizer's product
+        # tiles/ dir and a geodataset-named infer COCO. The v3 grid tilerizer writes tiles to disk but
+        # no COCO (it's export("coco")-on-demand), so this lookup must be revisited when the classifier
+        # benchmark is ported to consume v3 runs. Behavior is unchanged from the v1 DataState version.
+        components = self._scan_pipeline_outputs(pipeline_output_folder)
 
-        tilerizer_id = self._get_latest_component_id(data_state, 'tilerizer')
-        if tilerizer_id is None:
+        tilerizer_ids = [cid for cid, entry in components.items() if entry['name'] == 'tilerizer']
+        if not tilerizer_ids:
             raise FileNotFoundError(
                 f"No tilerizer component folder found in {pipeline_output_folder}."
             )
-
-        tilerizer_folder = data_state.get_component_folder(
-            'tilerizer',
-            tilerizer_id,
-        )
-        if tilerizer_folder is None:
-            raise FileNotFoundError(
-                f"Could not locate tilerizer folder for id={tilerizer_id} "
-                f"in {pipeline_output_folder}."
-            )
+        tilerizer_id = max(tilerizer_ids)
+        tilerizer_folder = components[tilerizer_id]['folder']
 
         product_folders = [
             p for p in tilerizer_folder.iterdir()
@@ -181,24 +131,13 @@ class QuebecTreesClassifierDataset(QuebecTreesDataset):
             raise FileNotFoundError(f"No tilerizer COCO file found in {product_folder}.")
         input_coco = coco_candidates[0]
 
-        aggregator_ids = []
-        for key in data_state.component_output_folders.keys():
-            try:
-                component_id_str, name = key.split('_', 1)
-                component_id = int(component_id_str)
-            except ValueError:
-                continue
-            if name == 'aggregator' and component_id < tilerizer_id:
-                aggregator_ids.append(component_id)
-
+        aggregator_ids = [
+            cid for cid, entry in components.items()
+            if entry['name'] == 'aggregator' and cid < tilerizer_id
+        ]
         input_gpkg = None
         if aggregator_ids:
-            agg_id = max(aggregator_ids)
-            input_gpkg = data_state.get_output_file(
-                'aggregator',
-                agg_id,
-                'gpkg',
-            )
+            input_gpkg = components[max(aggregator_ids)].get('gpkg')
 
         return tiles_path, input_coco, input_gpkg
 

@@ -68,6 +68,15 @@ def collate_fn_infer_image_masks(data_batch):
     return image_batch, masks_batch, masks_object_ids
 
 
+def collate_fn_infer_image_classification(data_batch):
+    # ClassificationLabeledRasterCocoDataset yields the image crop + a single GT
+    # label (ignored at inference) + the object id. We only consume image + id.
+    image_batch = [data[0] for data in data_batch]
+    labels_batch = [data[1]['labels'] for data in data_batch]
+    object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
+    return image_batch, labels_batch, object_ids
+
+
 def collate_fn_images(batch):
     """
     Pad all images in the batch to (C, H_max, W_max) and stack.
@@ -110,6 +119,26 @@ def resolve_hf_checkpoint_path(checkpoint_path):
     return checkpoint_path
 
 
+# Keys under which a training checkpoint may wrap the actual model state dict
+# (alongside optimizer/scheduler/epoch/etc.). Checked in order.
+_STATE_DICT_CONTAINER_KEYS = ("state_dict", "model_state_dict", "method_state_dict", "model")
+
+
+def unwrap_state_dict(checkpoint):
+    """Return the model state dict from a checkpoint that may wrap it.
+
+    Training checkpoints often store the weights under a key like
+    'method_state_dict' / 'state_dict' / 'model', next to optimizer state,
+    epoch, wandb metadata, etc. A bare state dict is returned unchanged.
+    """
+    if isinstance(checkpoint, dict):
+        for key in _STATE_DICT_CONTAINER_KEYS:
+            value = checkpoint.get(key)
+            if isinstance(value, dict):
+                return value
+    return checkpoint
+
+
 def try_rename_state_dict_keys_with_model(checkpoint_state_dict_path):
     """Fallback when load_state_dict fails on key mismatch: normalize common
     prefixes by stripping 'model.'/'module.' or adding 'model.'.
@@ -146,6 +175,19 @@ def load_state_dict_with_key_repair(model, checkpoint_path, weights_only=False, 
         if verbose:
             print(f"Successfully loaded checkpoint from {checkpoint_path}")
     except RuntimeError:
+        # The weights may be wrapped inside a training checkpoint (e.g. under
+        # 'method_state_dict' / 'state_dict', next to optimizer/epoch/etc.).
+        # Try the unwrapped state dict as-is before falling back to key renaming.
+        checkpoint = torch.load(checkpoint_path, weights_only=weights_only)
+        unwrapped = unwrap_state_dict(checkpoint)
+        if unwrapped is not checkpoint:
+            try:
+                model.load_state_dict(unwrapped)
+                if verbose:
+                    print(f"Successfully loaded checkpoint from {checkpoint_path}")
+                return
+            except RuntimeError:
+                pass
         if verbose:
             print("Error loading checkpoint, will try to rename state dict keys.")
         state_dict = try_rename_state_dict_keys_with_model(checkpoint_path)

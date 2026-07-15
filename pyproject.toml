@@ -18,7 +18,7 @@ dependencies = [
     "faster-coco-eval>=1.6.5",
     "GDAL>=3.0.0,<=3.8.0",
     "geopandas==1.0.1",
-    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.6.6",
+    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@hugo-dev",
     "hf_xet>=1.0.0",
     "numpy>=1.24.0,<2.0.0",
     "pandas>=2.2.0",
@@ -56,3 +56,12 @@ where = ["."]
 include = ["canopyrs*"]
 
 [tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+# Scope collection to the project's own tests (keeps the vendored detrex/detectron2 test tree,
+# which has unrelated missing deps like `av`, out of the run).
+testpaths = ["tests"]
+markers = [
+    "slow: end-to-end / GPU tests (deselect with '-m \"not slow\"')",
+    "integration: tests that touch real data or external services",
+]

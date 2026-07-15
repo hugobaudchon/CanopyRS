@@ -1,789 +1,462 @@
 """
-Pipeline with centralized I/O and merge handling.
+v3 pipeline: run components in order, threading data by type.
 
-Design principles:
-1. Pipeline handles all I/O (saving gpkg, COCO generation, state updates)
-2. Pipeline handles GDF merging with clear rules
-3. Components only flatten outputs and do component-specific validation
-4. Pre-run validation catches config errors before expensive processing
-5. Helper function for standalone component usage
+Each component declares ``requires`` (entries: a data-class type, a ``Need(type, …)``, or a ``one_of``)
+and ``produces`` (a type or a ``Need`` describing its output). The pipeline keeps one list per data type
+— ``sources`` / ``tiles`` / ``objects``, latest last — and, for each component, passes the *latest*
+instance of each required type after checking it satisfies the ``Need`` (precondition). It then checks
+the returned table matches what the component promised (postcondition), stores it, and — when an
+``output_dir`` is set — saves it as parquet under ``{id}_{name}/`` and records it in a run manifest. A
+component never names its predecessor, only the kinds (and shape) of data it needs.
 
-Merge rules:
-- objects_are_new=True (default) → replace existing GDF with new objects
-- objects_are_new=False → merge into existing GDF via _merge_result_gdf:
-  - No existing GDF → set directly, assign object_ids if missing
-  - Result has geometry → becomes base, merge in other columns from existing
-  - Result has no geometry → merge attributes into existing
-  - Merge key priority: object_id > tile_path (if unique) > error
+Two validations off the *same* declarations: ``run`` enforces requires/produces at runtime against real
+tables; ``validate`` is an optional pre-flight that threads ``produces`` forward as simulated ``Schema``s
+and checks every ``requires`` before any compute. Both consume ``thread_schemas`` / ``Need.check``.
+
+Beyond running: ``from_config`` builds components from ``(kind, config)`` steps; ``resume`` skips the
+contiguous prefix of components already done (config unchanged + outputs on disk); ``from_dir`` reloads
+a saved run; ``export`` writes a GPKG or COCO for the Objects at a chosen step.
 """
 
 import shutil
-import warnings
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
-from typing import List, Set, Optional, Union
 
 import geopandas as gpd
-import pandas as pd
 
-from geodataset.utils import (
-    GeoPackageNameConvention, validate_and_convert_product_name, strip_all_extensions_and_path
-)
+from canopyrs.engine.utils import green_print, parse_tilerizer_aoi_config
+from canopyrs.engine.raster_validation import validate_raster_rgb_bands
+from canopyrs.engine import store
+from canopyrs.engine.constants import Col, MASK
+from canopyrs.engine.contracts import Requirement, Schema, as_requirements
+from canopyrs.engine.data import Sources, Tiles, Objects
+from canopyrs.engine.components import COMPONENT_REGISTRY
+from canopyrs.engine.visualizer import PipelineFlowVisualizer
 
-from canopyrs.engine.constants import Col, StateKey, INFER_AOI_NAME
-from canopyrs.engine.components.base import BaseComponent, ComponentResult, ComponentValidationError
-from canopyrs.engine.config_parsers import PipelineConfig, InferIOConfig
-from canopyrs.engine.data_state import DataState
-from canopyrs.engine.persistence import RunState
-from canopyrs.engine.resume import seed_from_run, prepare_resume
-from canopyrs.engine.pipeline_visualizer import PipelineFlowVisualizer
-from canopyrs.engine.raster_validation import validate_input_raster_or_tiles, RasterValidationError
-from canopyrs.engine.utils import (
-    generate_future_coco, green_print,
-    parse_tilerizer_aoi_config, object_id_column_name, tile_path_column_name
-)
-
-class PipelineValidationError(ComponentValidationError):
-    """Raised when pipeline validation fails."""
-    pass
 
 class Pipeline:
-    """
-    Orchestrates component execution with centralized I/O handling.
-
-    Responsibilities:
-    - Component instantiation and ordering
-    - Pre-run validation of entire pipeline
-    - State management (updating DataState from ComponentResult)
-    - File I/O (saving gpkg, COCO generation)
-    - Output registration
-    - Background task management
-    """
-
-    def __init__(
-        self,
-        components: List[BaseComponent],
-        data_state: DataState,
-        output_path: Path,
-        verbose: bool = True,
-        resume_done_ids: Optional[Set[int]] = None,
-    ):
-        """
-        Initialize pipeline.
-
-        Args:
-            components: List of component instances (already configured)
-            data_state: Initial data state
-            output_path: Base output directory
-            verbose: Whether to print the flow chart and status messages
-            resume_done_ids: When resuming, the component ids already fully done (skipped in the
-                run loop). None means a fresh run (status file is (re)initialized).
-        """
-        self.components = components
-        self.data_state = data_state
-        self.output_path = Path(output_path)
-        self.verbose = verbose
-        self.output_path.mkdir(parents=True, exist_ok=True)
-
-        # Setup background executor for async COCO generation
-        self.background_executor = ProcessPoolExecutor(max_workers=1)
-        self.data_state.background_executor = self.background_executor
-
-        # Assign component IDs and output paths
+    def __init__(self, components, sources=None, tiles=None, objects=None, output_dir=None):
+        """Seeds — at least one is needed to ``run``:
+          - ``sources``: the input imagery — a raster path, a list of paths, or ``{path, modality,
+            timestamp}`` descriptors (built into a seed ``Sources`` table; a ``Sources`` passes through);
+          - ``tiles``: a pre-cut tiles folder path (``Tiles.from_tiles_dir``) or a ``Tiles`` instance;
+          - ``objects``: a gpkg path (``Objects.from_gpkg``) or an ``Objects`` instance (prior detections).
+        Given the seeds and components, the wiring is validated here so a bad pipeline fails at
+        construction, before any compute."""
+        self.components = list(components)
         for i, component in enumerate(self.components):
             component.component_id = i
-            component.output_path = self.output_path / f"{i}_{component.name}"
+        self.output_dir = Path(output_dir) if output_dir else None
+        if self.output_dir is not None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.seeds = self._build_seeds(sources, tiles, objects)
+        self.sources, self.tiles, self.objects = [], [], []
+        self._lists = {Sources: self.sources, Tiles: self.tiles, Objects: self.objects}
+        self.outputs = []   # per-component list of produced tables (aligned to self.components)
+        self.manifest = None
+        self._resume_requested = False   # set by from_config(resume_from=...); run() honors it by default
+        if self.seeds and self.components:
+            self.validate()
 
-        # The run's resumable state. Resume orchestration (snapshot restore, hash checks,
-        # cross-folder relink) happens in from_config; here it just records progress.
-        self._state = RunState(self.output_path, self.components, resume_done_ids)
-
-        # Validate pipeline configuration immediately to catch errors early
-        if self.verbose:
-            self._print_flow_chart()
-        self._validate_pipeline(raise_on_error=True)
+    @staticmethod
+    def _build_seeds(sources, tiles, objects):
+        """The seed tables from whatever inputs were given, in dependency order (Sources, Tiles,
+        Objects). A path is built into its table; an instance passes through. A path-seeded Objects is
+        linked to a path-seeded Tiles when both are given, so its ancestry walk works."""
+        seeds = []
+        if sources is not None:
+            seeds.append(Sources.from_paths(sources))
+        if tiles is not None:
+            seeds.append(tiles if isinstance(tiles, Tiles) else Tiles.from_tiles_dir(tiles))
+        if objects is not None:
+            if isinstance(objects, Objects):
+                seeds.append(objects)
+            else:
+                tiles_seed = next((s for s in seeds if isinstance(s, Tiles)), None)
+                seeds.append(Objects.from_gpkg(objects, tiles=tiles_seed))
+        return seeds
 
     @classmethod
-    def from_config(cls, io_config: InferIOConfig, config: PipelineConfig, verbose: bool = True,
-                    resume_from: Optional[str] = None,
-                    initialize_from: Optional[str] = None) -> 'Pipeline':
-        """
-        Create a Pipeline from configuration objects.
-
-        This matches the interface of the original pipeline.py for backward compatibility.
-
-        Args:
-            io_config: Input/output configuration
-            config: Pipeline configuration with component configs
-            verbose: Whether to print the flow chart and status messages
-            resume_from: Path to a previous run's output folder to resume (same config). Skips
-                components already fully done, continuing from where it stopped. May equal
-                io_config.output_folder (in-place) or differ (cross-folder: done component folders
-                are symlinked and paths rebased).
-            initialize_from: Path to a previous run's output folder whose outputs seed the inputs
-                of this (new-config) pipeline. Components restart at id 0.
-
-        Returns:
-            Configured Pipeline instance
-        """
-        # Import component classes here to avoid circular imports
-        from canopyrs.engine.components.aggregator import AggregatorComponent
-        from canopyrs.engine.components.detector import DetectorComponent
-        from canopyrs.engine.components.segmenter import SegmenterComponent
-        from canopyrs.engine.components.tilerizer import TilerizerComponent
-        from canopyrs.engine.components.classifier import ClassifierComponent
-
-        output_path = Path(io_config.output_folder)
-
-        # Initialize AOI configuration (Area of Interest, used by the Tilerizer)
-        infer_aois_config = parse_tilerizer_aoi_config(
-            aoi_config=io_config.aoi_config,
-            aoi_type=io_config.aoi_type,
-            aois={INFER_AOI_NAME: io_config.aoi}
-        )
-
-        # Instantiate components from config
-        components = []
-        for component_id, (component_type, component_config) in enumerate(config.components_configs):
-            if component_type == 'tilerizer':
-                component = TilerizerComponent(
-                    component_config, output_path, component_id, infer_aois_config
-                )
-            elif component_type == 'detector':
-                component = DetectorComponent(component_config, output_path, component_id)
-            elif component_type == 'aggregator':
-                component = AggregatorComponent(component_config, output_path, component_id)
-            elif component_type == 'segmenter':
-                component = SegmenterComponent(component_config, output_path, component_id)
-            elif component_type == 'classifier':
-                component = ClassifierComponent(component_config, output_path, component_id)
-            else:
-                raise ValueError(f'Invalid component type: {component_type}')
-            components.append(component)
-
-        # Initialize data state from the io (input/output) config
-        infer_gdf = gpd.read_file(io_config.input_gpkg) if io_config.input_gpkg else None
-        infer_gdf_columns_to_pass = (
-            set(io_config.infer_gdf_columns_to_pass)
-            if io_config.infer_gdf_columns_to_pass else set()
-        )
-
-        # If an infer_gdf from a previous pipeline run is provided,
-        # make sure to pass the special columns if present
-        for special_column_name in [object_id_column_name, tile_path_column_name]:
-            if infer_gdf is not None and special_column_name in infer_gdf.columns:
-                infer_gdf_columns_to_pass.add(special_column_name)
-
-        # Derive product name from imagery path, or use default for tiled input
-        if io_config.input_imagery:
-            product_name = validate_and_convert_product_name(
-                strip_all_extensions_and_path(Path(io_config.input_imagery))
-            )
-        else:
-            product_name = "tiled_input"
-
-        data_state = DataState(
-            imagery_path=io_config.input_imagery,
-            parent_output_path=io_config.output_folder,
-            product_name=product_name,
-            tiles_path=io_config.tiles_path,
-            infer_coco_path=io_config.input_coco,
-            infer_gdf=infer_gdf,
-            infer_gdf_columns_to_pass=infer_gdf_columns_to_pass,
-        )
-
-        # Seed from a previous run, if requested.
+    def from_config(cls, steps, sources=None, tiles=None, objects=None, output_dir=None, aoi=None,
+                    resume_from=None, initialize_from=None):
+        """Build a pipeline from ordered ``(kind, config)`` steps (instantiated from the registry) over
+        the given seeds. ``aoi`` (a gpkg path) restricts tilerizing to an area of interest. Pass one of:
+        ``resume_from`` (continue a prior run — its unchanged prefix is skipped; same folder, or a new
+        ``output_dir`` for cross-folder) or ``initialize_from`` (seed this new-config run from a prior
+        run's latest Tiles + Objects; components restart at id 0)."""
         if resume_from and initialize_from:
             raise ValueError("Pass only one of resume_from / initialize_from, not both.")
-        resume_done_ids = None
+        aois_config = cls._build_aois_config(aoi)
+        components = [cls._make_component(kind, config, aois_config) for kind, config in steps]
+
         if initialize_from:
-            seed_from_run(Path(initialize_from), data_state, restore_registries=False)
-        elif resume_from:
-            resume_done_ids = prepare_resume(Path(resume_from), output_path, components, data_state)
+            prior = cls.from_dir(initialize_from)
+            tiles = tiles if tiles is not None else prior.latest(Tiles)
+            objects = objects if objects is not None else prior.latest(Objects)
+        elif resume_from and output_dir and Path(output_dir).resolve() != Path(resume_from).resolve():
+            shutil.copytree(resume_from, output_dir, dirs_exist_ok=True)   # cross-folder: bring the prior run over
 
-        green_print("Pipeline initialized")
+        pipe = cls(components, sources=sources, tiles=tiles, objects=objects, output_dir=output_dir)
+        pipe._resume_requested = bool(resume_from)
+        return pipe
 
-        return cls(
-            components=components,
-            data_state=data_state,
-            output_path=output_path,
-            verbose=verbose,
-            resume_done_ids=resume_done_ids,
-        )
+    @staticmethod
+    def _make_component(kind, config, aois_config):
+        """Instantiate a component from the registry; the tilerizer also receives the run-level AOI."""
+        if kind == "tilerizer":
+            return COMPONENT_REGISTRY[kind](config, aois_config=aois_config)
+        return COMPONENT_REGISTRY[kind](config)
 
-    # -------------------------------------------------------------------------
-    # Execution
-    # -------------------------------------------------------------------------
+    @staticmethod
+    def _build_aois_config(aoi):
+        """A geodataset AOIConfig restricting tilerizing to ``aoi`` (a gpkg path), or None (whole raster)."""
+        if aoi is None:
+            return None
+        return parse_tilerizer_aoi_config(aoi_config="package", aoi_type=None, aois={"infer": str(aoi)})
 
-    def run(self, strict_rgb_validation: bool = True) -> DataState:
-        """
-        Run the pipeline.
+    # --- run -----------------------------------------------------------------
+    def run(self, resume=None, verbose=True, strict_rgb_validation=True):
+        """Run the components in order over the seeds (given at construction), and return ``self``
+        (inspect ``self.tiles`` / ``self.objects`` / ``self.sources`` after). With ``output_dir`` set,
+        each output is saved and a manifest written. ``resume`` (defaulting to what ``from_config``
+        recorded) skips an already-completed prefix (unchanged config + outputs on disk).
+        ``strict_rgb_validation``: raise (True) or warn (False) when a source raster's bands aren't
+        tagged R,G,B."""
+        resume = self._resume_requested if resume is None else resume
+        if not self.seeds and not resume:
+            raise ValueError("Pipeline has no seeds; construct with sources= / tiles= / objects=")
+        self._validate_sources(strict_rgb_validation)
+        if verbose:
+            self.print_flow_chart()
+        for seed in self.seeds:
+            self._store(seed)
+        self.outputs = []
+        start = self._resume_prefix() if resume else 0
 
-        Args:
-            strict_rgb_validation: If True, enforce strict RGB band validation
+        for i in range(start, len(self.components)):
+            component = self.components[i]
+            green_print(f"Running {component.label}...")
+            component.out_dir = self._component_dir(component)
+            args = [self._resolve(req, component) for req in component.requires]
+            produced = self._collect(component.run(*args))
+            self._check_produced(component, produced)
+            for table in produced:
+                self._store(table)
+            self.outputs.append(produced)
+            if self.output_dir is not None:
+                self._save(component, produced)
 
-        Returns:
-            Final DataState with all outputs
-        """
+        if self.output_dir is not None:
+            store.save_seeds(self.output_dir, self.seeds)
+            self.manifest = store.write_manifest(self.output_dir, self.components)
+            self._write_final_gpkg()
+        green_print("Pipeline finished")
+        return self
 
-        # Validate input raster/tiles bands
-        self._validate_input_data(strict_rgb_validation)
-
-        try:
-            for component in self.components:
-                cid = component.component_id
-
-                # Resume: skip components already fully done (their state/registries were restored
-                # in from_config); re-run anything else, discarding any dirty partial output.
-                if self._state.is_done(cid):
-                    green_print(f"Skipping {component.name} (already done, resumed)")
-                    continue
-                if self._state.resuming:
-                    self._clean_component_dir(component)
-
-                green_print(f"Running {component.name}...")
-                self._state.mark_running(cid)
-                try:
-                    self._wait_for_required_state(component)
-
-                    # Run component - returns ComponentResult
-                    component.output_path.mkdir(parents=True, exist_ok=True)
-                    result = component(self.data_state)
-
-                    # Pipeline handles all I/O and state updates
-                    self._process_result(component, result)
-
-                    # Snapshot state + track this component's async side outputs (non-blocking)
-                    self._state.mark_done(component, self.data_state)
-                except Exception:
-                    self._state.mark_error(cid)
-                    raise
-
-            # Final cleanup of async tasks
-            self.data_state.clean_side_processes()
-
-            # Save final GDF to root output folder if one was produced
-            if self.data_state.infer_gdf is not None:
-                green_print("Saving final GeoDataFrame...")
-                final_gpkg_path = self._save_final_gpkg()
-                num_polygons = len(self.data_state.infer_gdf)
-                print(f"Final GDF containing {num_polygons} polygons saved to: {final_gpkg_path}")
-
-            green_print("Pipeline finished")
-
-        finally:
-            self.background_executor.shutdown(wait=True)
-
-        # All side processes have completed and their callbacks have run (shutdown joined the
-        # executor's management thread). Defensively flip any still-pending side statuses to done.
-        self._state.finalize()
-
-        return self.data_state
-
-    def __call__(self) -> DataState:
-        """Alias for run()."""
-        return self.run()
-
-    def _wait_for_required_state(self, component: BaseComponent) -> None:
-        """Wait for any required state still being produced by background processes."""
-        if self.data_state.side_processes is None or len(self.data_state.side_processes) == 0:
+    def _validate_sources(self, strict_rgb_validation):
+        """Pre-flight on the seed rasters before any compute: first 3 bands are RGB-tagged (per
+        ``strict_rgb_validation``), uint8, and in [0, 255]. Only rgb Sources are checked — other
+        modalities aren't RGB rasters, and a tiles/objects-seeded run has no Sources to check."""
+        sources = next((s for s in self.seeds if isinstance(s, Sources)), None)
+        if sources is None:
             return
-        for key in component.requires_state:
-            if getattr(self.data_state, key, None) is None:
-                self.data_state.clean_side_processes(key)
+        df = sources.df
+        if Col.MODALITY in df.columns:
+            df = df[df[Col.MODALITY] == "rgb"]
+        for path in df[Col.SOURCE_PATH]:
+            validate_raster_rgb_bands(Path(path), strict_color_interp=strict_rgb_validation)
 
-    def _process_result(self, component: BaseComponent, result: ComponentResult):
-        """
-        Process ComponentResult: update state and handle I/O.
-
-        This is where all I/O and merging is centralized.
-        """
-        # Register component folder
-        self.data_state.register_component_folder(
-            component.name, component.component_id, component.output_path
-        )
-
-        # Apply state updates (e.g., tiles_path, infer_coco_path)
-        for key, value in result.state_updates.items():
-            setattr(self.data_state, key, value)
-
-        # Merge GDF if provided (this replaces the old update_infer_gdf call)
-        if result.gdf is not None:
-            if len(result.gdf) > 0:
-                if result.objects_are_new:
-                    # New objects: replace existing GDF entirely
-                    self.data_state.infer_gdf = self._set_as_new_gdf(result.gdf)
-                else:
-                    # Existing objects refined: merge into existing GDF
-                    merged_gdf = self._merge_result_gdf(result.gdf)
-                    self.data_state.infer_gdf = merged_gdf
-            else:
-                warnings.warn(f"{component.name} returned an empty GeoDataFrame (0 results).")
-                self.data_state.infer_gdf = result.gdf
-
-        # Update columns to pass based on what's actually in the merged GDF
-        # (not just what the component claims to produce, since merge may add columns)
-        if self.data_state.infer_gdf is not None:
-            # Use all non-geometry columns from the merged GDF
-            actual_columns = set(self.data_state.infer_gdf.columns) - {Col.GEOMETRY}
-            self.data_state.infer_gdf_columns_to_pass = actual_columns
-
-        # Register any files the component already wrote itself (e.g. geodataset internals)
-        for file_type, file_path in result.output_files.items():
-            if file_path is not None:
-                self.data_state.register_output_file(
-                    component.name, component.component_id, file_type, Path(file_path)
-                )
-
-        # Save GeoPackage if requested (use merged GDF from data_state)
-        if result.save_gpkg and self.data_state.infer_gdf is not None and len(self.data_state.infer_gdf) > 0:
-            gpkg_path = self._save_gpkg(component, self.data_state.infer_gdf, result.gpkg_name_suffix)
-            file_type = 'gpkg' if result.gpkg_name_suffix in ('aggregated', 'gpkg') else 'pre_aggregated_gpkg'
-            self.data_state.register_output_file(
-                component.name, component.component_id, file_type, gpkg_path
-            )
-
-        # Queue COCO generation if requested (use merged GDF from data_state)
-        if result.save_coco and self.data_state.infer_gdf is not None and len(self.data_state.infer_gdf) > 0:
-            future_coco = self._queue_coco_generation(component, result)
-            if future_coco:
-                self.data_state.side_processes.append(future_coco)
-
-    def _clean_component_dir(self, component: BaseComponent) -> None:
-        """Discard a component's (possibly dirty, partial) output dir before re-running on resume."""
-        path = component.output_path
-        if path and Path(path).exists() and not Path(path).is_symlink():
-            shutil.rmtree(path)
-
-    def _merge_result_gdf(self, result_gdf: Union[gpd.GeoDataFrame, pd.DataFrame]) -> gpd.GeoDataFrame:
-        """
-        Merge component output with existing infer_gdf (objects_are_new=False).
-
-        Only called when a component refines existing objects (e.g., prompted
-        segmenter replacing detector boxes with masks, or aggregator filtering).
-
-        Rules:
-        1. No existing GDF → set directly, assign object_ids if missing
-        2. Result has geometry + valid merge key → becomes base, merge in other columns
-        3. Result has geometry + no merge key → full replacement
-        4. Result has no geometry → merge attributes into existing
-        5. Merge key priority: object_id > tile_path (if unique)
-
-        Args:
-            result_gdf: Output from component (GeoDataFrame or DataFrame)
-
-        Returns:
-            Merged GeoDataFrame
-        """
-        existing_gdf = self.data_state.infer_gdf
-
-        # Case 1: No existing GDF - set directly
-        if existing_gdf is None:
-            return self._set_as_new_gdf(result_gdf)
-
-        # Check if result has geometry
-        has_geometry = Col.GEOMETRY in result_gdf.columns and result_gdf[Col.GEOMETRY].notna().any()
-
-        # Try to determine merge key
-        merge_key = self._determine_merge_key(result_gdf, existing_gdf, raise_on_error=False)
-
-        # Case 2: Result has geometry
-        if has_geometry:
-            if merge_key:
-                # Merge with existing to get other columns
-                return self._merge_with_new_geometry(result_gdf, existing_gdf, merge_key)
-            else:
-                # No merge key - full replacement
-                return self._set_as_new_gdf(result_gdf)
-
-        # Case 3: Result has no geometry - must merge into existing
-        if not merge_key:
-            raise ValueError(
-                "Cannot merge DataFrame into existing GDF: no valid merge key found. "
-                f"Result columns: {list(result_gdf.columns)}"
-            )
-        
-        # no new geometry, merge attributes into existing
-        return self._merge_into_existing(result_gdf, existing_gdf, merge_key)
-
-    def _set_as_new_gdf(self, result_gdf: Union[gpd.GeoDataFrame, pd.DataFrame]) -> gpd.GeoDataFrame:
-        """Set result as new infer_gdf, assigning object_ids if missing."""
-        # Assign object_ids if not present
-        if Col.OBJECT_ID not in result_gdf.columns:
-            result_gdf = result_gdf.copy()
-            result_gdf[Col.OBJECT_ID] = range(len(result_gdf))
-
-        # Ensure it's a GeoDataFrame
-        if isinstance(result_gdf, gpd.GeoDataFrame):
-            return result_gdf
-
-        # Convert DataFrame to GeoDataFrame (no geometry)
-        if Col.GEOMETRY in result_gdf.columns:
-            return gpd.GeoDataFrame(result_gdf, geometry=Col.GEOMETRY)
-        return gpd.GeoDataFrame(result_gdf)
-
-    def _determine_merge_key(
-        self,
-        result_gdf: Union[gpd.GeoDataFrame, pd.DataFrame],
-        existing_gdf: gpd.GeoDataFrame,
-        raise_on_error: bool = True
-    ) -> Optional[str]:
-        """Determine which column to use for merging."""
-        # Try object_id first
-        if (Col.OBJECT_ID in result_gdf.columns and
-            Col.OBJECT_ID in existing_gdf.columns and
-            result_gdf[Col.OBJECT_ID].notna().all()):
-            return Col.OBJECT_ID
-
-        # Fall back to tile_path if unique in result
-        if (Col.TILE_PATH in result_gdf.columns and
-            Col.TILE_PATH in existing_gdf.columns and
-            result_gdf[Col.TILE_PATH].is_unique):
-            return Col.TILE_PATH
-
-        if raise_on_error:
-            raise ValueError(
-                "Cannot merge GDFs: need valid object_id or unique tile_path. "
-                f"Result columns: {list(result_gdf.columns)}, "
-                f"Existing columns: {list(existing_gdf.columns)}"
-            )
-        return None
-
-    def _merge_with_new_geometry(
-        self,
-        result_gdf: gpd.GeoDataFrame,
-        existing_gdf: gpd.GeoDataFrame,
-        merge_key: str
-    ) -> gpd.GeoDataFrame:
-        """Merge when result has new geometry (e.g., segmenter masks replace detector boxes)."""
-        # Get columns from existing that aren't in result (except geometry)
-        existing_cols_to_keep = [merge_key]
-        for col in existing_gdf.columns:
-            if col not in result_gdf.columns and col != Col.GEOMETRY:
-                existing_cols_to_keep.append(col)
-
-        # Merge: result is base, pull in other columns from existing
-        merged = result_gdf.merge(
-            existing_gdf[existing_cols_to_keep],
-            on=merge_key,
-            how='left'
-        )
-
-        # Warn about unmatched rows
-        unmatched = merged[merge_key].isna().sum() if merge_key in merged.columns else 0
-        if unmatched > 0:
-            warnings.warn(f"{unmatched} rows in result had no match in existing GDF")
-
-        # Check if merge_key is unique in merged. If merge key is OBJECT_ID, warn and assign new unique object_ids to duplicates. If merge key is TILE_PATH, raise error.
-        if merged[merge_key].duplicated().any():
-            if merge_key == Col.OBJECT_ID:
-                warnings.warn(f"Duplicate OBJECT_IDs found in merged GDF. Assigning new unique OBJECT_IDs. This can happen if a component duplicated objects, like a labeled tilerizer with overlap > 0.")
-                merged = merged.copy()
-                # Identify duplicates (keep='first' ensures the first occurrence retains its ID)
-                duplicates_mask = merged.duplicated(subset=[Col.OBJECT_ID], keep='first')
-                # Find the current highest ID to start incrementing from
-                current_max_id = merged[Col.OBJECT_ID].max()
-                num_duplicates = duplicates_mask.sum()
-                # Generate a range of new IDs
-                new_ids = range(current_max_id + 1, current_max_id + 1 + num_duplicates)
-                # Assign new IDs only to the rows identified as duplicates
-                merged.loc[duplicates_mask, Col.OBJECT_ID] = new_ids
-            else: 
-                raise ValueError(f"Duplicate TILE_PATHs found in merged GDF after merging. This should not happen as TILE_PATH is the merge_key and is expected to be unique.")
-
-        return gpd.GeoDataFrame(merged, geometry=Col.GEOMETRY, crs=result_gdf.crs)
-
-    def _merge_into_existing(
-        self,
-        result_gdf: Union[gpd.GeoDataFrame, pd.DataFrame],
-        existing_gdf: gpd.GeoDataFrame,
-        merge_key: str
-    ) -> gpd.GeoDataFrame:
-        """Merge attributes into existing GDF (e.g., classifier adds scores)."""
-        # Drop geometry from result if present (we keep existing geometry)
-        result_cols = [col for col in result_gdf.columns if col != Col.GEOMETRY]
-        result_data = result_gdf[result_cols]
-
-        # Merge: existing is base, add new columns from result
-        merged = existing_gdf.merge(
-            result_data,
-            on=merge_key,
-            how='left'
-        )
-
-        # Warn about unmatched rows
-        new_cols = [col for col in result_cols if col != merge_key]
-        if new_cols:
-            unmatched = merged[new_cols[0]].isna().sum()
-            if unmatched > 0:
-                warnings.warn(f"{unmatched} rows in existing GDF had no match in result")
-
-        return gpd.GeoDataFrame(merged, geometry=Col.GEOMETRY, crs=existing_gdf.crs)
-
-    # -------------------------------------------------------------------------
-    # File I/O
-    # -------------------------------------------------------------------------
-
-    def _save_gpkg(self, component: BaseComponent, gdf: gpd.GeoDataFrame, suffix: str) -> Path:
-        """Save GeoDataFrame to GeoPackage."""
-        gpkg_name = self._generate_gpkg_name(suffix)
-        gpkg_path = component.output_path / gpkg_name
-        gdf.to_file(gpkg_path, driver='GPKG')
-        return gpkg_path
-
-    def _save_final_gpkg(self) -> Path:
-        """Save final GeoDataFrame to root output folder."""
-        gpkg_name = self._generate_gpkg_name("final")
-        gpkg_path = self.output_path / gpkg_name
-        self.data_state.infer_gdf.to_file(gpkg_path, driver='GPKG')
-        return gpkg_path
-
-    def _generate_gpkg_name(self, suffix: str) -> str:
-        """Generate GeoPackage filename using product name from data state."""
-        product_name = self.data_state.product_name or "output"
-        fold = f"{INFER_AOI_NAME}{suffix}" if suffix else INFER_AOI_NAME
-        return GeoPackageNameConvention.create_name(
-            product_name=product_name,
-            fold=fold,
-            scale_factor=1.0,
-            ground_resolution=None
-        )
-
-    def _queue_coco_generation(self, component: BaseComponent, result: ComponentResult):
-        """Queue async COCO generation."""
-        return generate_future_coco(
-            future_key=StateKey.INFER_COCO_PATH,
-            executor=self.background_executor,
-            component_name=component.name,
-            component_id=component.component_id,
-            description=f"{component.name} inference",
-            gdf=self.data_state.infer_gdf,  # Use merged GDF from data_state
-            tiles_paths_column=Col.TILE_PATH,
-            polygons_column=Col.GEOMETRY,
-            scores_column=result.coco_scores_column,
-            categories_column=result.coco_categories_column,
-            other_attributes_columns=result.produced_columns - {Col.GEOMETRY, Col.TILE_PATH},
-            output_path=component.output_path,
-            use_rle_for_labels=False,
-            n_workers=4,
-            coco_categories_list=None
-        )
-
-    # -------------------------------------------------------------------------
-    # Validation
-    # -------------------------------------------------------------------------
-
-    def _validate_input_data(self, strict_rgb_validation: bool = True) -> None:
-        """
-        Validate input raster/tiles at pipeline start.
-
-        Uses utility functions from raster_validation module to check RGB band properties.
-
-        Args:
-            strict_rgb_validation: If True, raise error for missing color interpretation.
-                                    If False, only warn if color interpretation is not R,G,B.
-
-        Raises:
-            PipelineValidationError: If validation fails
-        """
+    def _write_final_gpkg(self):
+        """Auto-write the final result GPKG at the run root (``final.gpkg``) — the latest Objects, widened
+        with their ancestry columns. Best effort: skipped with a note if there are no Objects or they're
+        in tile-pixel coords (no CRS to write)."""
         try:
-            if self.data_state.imagery_path:
-                print("Validating input raster bands...")
-                validate_input_raster_or_tiles(
-                    imagery_path=self.data_state.imagery_path,
-                    strict_color_interp=strict_rgb_validation
-                )
-                print("Input raster validation passed")
-            elif self.data_state.tiles_path:
-                print("Validating input tiles...")
-                validate_input_raster_or_tiles(
-                    tiles_path=self.data_state.tiles_path,
-                    strict_color_interp=strict_rgb_validation
-                )
-                print("Tile validation passed")
-        except RasterValidationError as e:
-            # Convert to PipelineValidationError for consistency
-            raise PipelineValidationError(str(e))
+            anchor = self._objects_at(self._last_objects_index())
+        except ValueError:
+            return
+        if not anchor.crs_set:
+            print("Final GPKG skipped: final Objects are in tile-pixel coords (no CRS).")
+            return
+        print(f"Final GPKG: {self.export('gpkg', path=self.output_dir / 'final.gpkg')}")
 
-    def _validate_pipeline(self, raise_on_error: bool = True) -> List[str]:
-        """
-        Validate entire pipeline before running.
+    def validate(self):
+        """Pre-flight wiring check, no compute: thread each component's ``produces`` forward as Schemas
+        and confirm every ``requires`` is satisfiable. Raises on the first unmet requirement. Called at
+        construction. Optimistic about ancestry (a produced column stays reachable while the chain links
+        ``prev_objects``); ``run``'s checks are the ground truth."""
+        for component, before, _ in self.thread_schemas():
+            if component is None:
+                continue
+            for req in component.requires:
+                desc, err = Requirement.coerce(req).resolve(before.get)
+                if desc is None:
+                    raise ValueError(f"{type(component).__name__} {err}")
+        return self
 
-        Simulates state flow through components to catch errors early.
+    def thread_schemas(self):
+        """Yield ``(component, before, after)`` per step — ``before``/``after`` are ``{data_type:
+        Schema}`` snapshots of what's available immediately before/after the component. The first yield
+        is ``(None, None, seed)`` (the seed ``Sources``). Pure simulation, no compute: the single source
+        of "what's available when", consumed by ``validate`` and the flow chart."""
+        available = {type(seed): seed.schema() for seed in self.seeds}
+        yield None, None, dict(available)
+        for component in self.components:
+            before = dict(available)
+            for need in as_requirements(component.produces):
+                prev = available.get(need.data_type)
+                columns = set(need.columns)
+                links = set(need.links)
+                fks = getattr(need.data_type, "fks", {})
+                columns |= {fks[link] for link in need.links if link in fks}   # a link's FK column is a column too
+                if prev is not None and "prev_objects" in need.links:          # ancestry: reach back through the chain
+                    columns |= prev.columns
+                    links |= prev.links
+                available[need.data_type] = Schema(columns=columns, links=links, crs=need.crs)
+            yield component, before, dict(available)
 
-        Args:
-            raise_on_error: If True, raise PipelineValidationError on first error
+    def print_flow_chart(self):
+        PipelineFlowVisualizer(self).print()
 
-        Returns:
-            List of all validation errors (empty if valid)
-        """
-        all_errors = []
+    def latest(self, data_type):
+        """The most recently produced (or seeded) instance of ``data_type``, or None."""
+        produced = self._lists[data_type]
+        return produced[-1] if produced else None
 
-        # Start with initial state
-        available_state = self._get_initial_state_keys()
-        available_columns = self._get_initial_columns()
+    # --- export --------------------------------------------------------------
+    def export(self, fmt, end_at=None, start_at=0, path=None, scores_column=None, categories_column=None):
+        """Write a single GPKG or COCO file for the Objects produced at component ``end_at`` (default:
+        the last that produced Objects) and return its path. Columns are merged from the ancestry but
+        only those introduced by components in ``[start_at, end_at]``; with repeats (e.g. two
+        aggregators) the latest value wins (``Objects.column``). ``fmt`` is ``"gpkg"`` or ``"coco"``."""
+        manifest = self.manifest or (store.read_manifest(self.output_dir) if self.output_dir else None)
+        if manifest is None:
+            raise ValueError("no run manifest available; run() the pipeline with an output_dir before exporting")
+        end_at = self._last_objects_index() if end_at is None else end_at
+        anchor = self._objects_at(end_at)
+        if anchor is None:
+            raise ValueError(f"component {end_at} did not produce Objects to export")
+        columns = self._window_columns(manifest, start_at, end_at)
+        directory = self.output_dir / f"{manifest[end_at]['id']}_{manifest[end_at]['name']}"
+        if fmt == "gpkg":
+            return store.write_gpkg(self._wide_gdf(anchor, columns), Path(path) if path else directory / "export.gpkg")
+        if fmt == "coco":
+            return self._export_coco(anchor, columns, Path(path) if path else directory / "export.coco.json",
+                                     scores_column, categories_column)
+        raise ValueError(f"unknown export format '{fmt}' (use 'gpkg' or 'coco')")
 
-        # Simulate running through each component
+    def _wide_gdf(self, anchor: Objects, columns):
+        if not anchor.crs_set:
+            raise ValueError("GPKG export needs georeferenced Objects (crs set); these are in tile-pixel coords")
+        data = {Col.GEOMETRY: anchor.df.geometry.values}
+        for col in sorted(columns):
+            values = self._reach(anchor, col)
+            if values is not None:
+                data[col] = values
+        tile_path = self._tile_path_per_object(anchor)   # latest tile_path, if reachable
+        if tile_path is not None:
+            data[Col.TILE_PATH] = tile_path.values
+        return gpd.GeoDataFrame(data, geometry=Col.GEOMETRY, crs=anchor.df.crs)
+
+    def _export_coco(self, anchor: Objects, columns, path, scores_column, categories_column):
+        tiles = anchor.linked("tiles")
+        if tiles is None:
+            raise ValueError("COCO export needs tiles linked to the objects (none reachable in the ancestry)")
+        try:
+            tile_id = anchor.column(Col.TILE_ID)
+        except KeyError:
+            raise ValueError("COCO export needs each object's tile_id (none reachable in the ancestry)")
+        if Col.TILE_PATH not in tiles.df.columns:
+            raise ValueError("COCO export needs tile images on disk (re-run the tilerizer with save_tiles_to_disk=True)")
+        paths = tile_id.map(tiles.df.set_index(Col.TILE_ID)[Col.TILE_PATH])
+        if paths.isna().any() or (paths.astype(str) == "").any():
+            raise ValueError("COCO export needs tile images on disk (re-run the tilerizer with save_tiles_to_disk=True)")
+
+        scores_column = scores_column or self._latest_in(columns, store.SCORE_COLS)
+        categories_column = categories_column or self._latest_in(columns, store.CLASS_COLS)
+
+        data = {Col.TILE_PATH: paths.values, Col.GEOMETRY: anchor.df.geometry.values}
+        others = []
+        for col in sorted(columns):
+            if col in (Col.TILE_PATH, Col.GEOMETRY):
+                continue
+            values = self._reach(anchor, col)
+            if values is not None:
+                data[col] = values
+                if col not in (scores_column, categories_column):
+                    others.append(col)
+        for col in (scores_column, categories_column):       # ensure score/category cols are present
+            if col and col not in data:
+                values = self._reach(anchor, col)
+                if values is not None:
+                    data[col] = values
+        # CRS geometry -> geodataset converts to each tile's pixels; pixel geometry (crs=None) is used as-is.
+        gdf = gpd.GeoDataFrame(data, geometry=Col.GEOMETRY, crs=anchor.df.crs)
+        use_rle = bool(len(anchor)) and anchor.df[Col.GEOM_KIND].iloc[0] == MASK
+        return store.write_coco(gdf, path, scores_column=scores_column, categories_column=categories_column,
+                                other_attributes_columns=others, use_rle=use_rle, categories=None)
+
+    def _last_objects_index(self) -> int:
+        for i in range(len(self.outputs) - 1, -1, -1):
+            if any(isinstance(table, Objects) for table in self.outputs[i]):
+                return i
+        raise ValueError("pipeline produced no Objects to export")
+
+    def _objects_at(self, index):
+        if not 0 <= index < len(self.outputs):
+            return None
+        return next((table for table in self.outputs[index] if isinstance(table, Objects)), None)
+
+    @staticmethod
+    def _window_columns(manifest, start_at, end_at):
+        columns = set()
+        for entry in manifest[start_at:end_at + 1]:
+            for produced in entry["produces"]:
+                if produced["type"] == Objects.__name__:
+                    columns |= set(produced["columns"])
+        return columns
+
+    @staticmethod
+    def _reach(anchor: Objects, col):
+        try:
+            return anchor.column(col).values
+        except KeyError:
+            return None
+
+    def _tile_path_per_object(self, anchor: Objects):
+        tiles = anchor.linked("tiles")
+        if tiles is None or Col.TILE_PATH not in tiles.df.columns:
+            return None
+        try:
+            tile_id = anchor.column(Col.TILE_ID)
+        except KeyError:
+            return None
+        return tile_id.map(tiles.df.set_index(Col.TILE_ID)[Col.TILE_PATH])
+
+    @staticmethod
+    def _latest_in(columns, ordered):
+        present = [col for col in ordered if col in columns]
+        return present[-1] if present else None
+
+    # --- reload + resume -----------------------------------------------------
+    @classmethod
+    def from_dir(cls, root):
+        """Reload a saved run for inspection / re-export: reconstruct the typed tables in order,
+        re-linking FKs from their persisted columns. Data-only (no components) — everything ``export``
+        needs comes from the manifest and the reloaded tables."""
+        root = Path(root)
+        manifest = store.read_manifest(root)
+        if manifest is None:
+            raise FileNotFoundError(f"no {store.MANIFEST} in {root}")
+        pipe = cls([], output_dir=root)
+        pipe.manifest = manifest
+        pipe._load_seeds(root)                              # seed tables first, so produced FKs relink
+        pipe._load_prefix(manifest, len(manifest), root)
+        return pipe
+
+    def _load_seeds(self, root):
+        """Reload persisted seed tables (``_seed/``) before any component output, so produced Objects
+        can relink their FKs (e.g. ``tiles``) to a seeded table — the case of a run seeded from a
+        pre-cut tiles folder rather than a tilerizer component."""
+        seeds = store.read_seeds(root)
+        if not seeds:
+            return
+        directory = Path(root) / store.SEED_DIR
+        for spec in seeds:
+            data_type = store.TYPE_BY_NAME[spec["type"]]
+            df = store.load_df(data_type, directory / spec["file"])
+            self._store(self._rebuild(data_type, df))
+
+    def _resume_prefix(self) -> int:
+        """The number of leading components to skip: the longest contiguous prefix whose recorded
+        config_hash matches the current component and whose output files exist. Loads those outputs."""
+        manifest = store.read_manifest(self.output_dir) if self.output_dir else None
+        if not manifest:
+            return 0
+        done = self._done_prefix(manifest)
+        self._load_prefix(manifest, done, self.output_dir)
+        for entry in manifest[:done]:
+            green_print(f"Skipping {entry['id']}_{entry['name']} (already done, resumed)")
+        return done
+
+    def _done_prefix(self, manifest) -> int:
+        done = 0
         for i, component in enumerate(self.components):
-            # Validate component
-            errors = component.validate(
-                available_state=available_state,
-                available_columns=available_columns,
-                raise_on_error=False,
-            )
+            if i >= len(manifest):
+                break
+            entry = manifest[i]
+            if entry.get("name") != component.name or entry.get("config_hash") != store.config_hash(component.config):
+                break
+            directory = self._component_dir(component)
+            if not all((directory / produced["file"]).exists() for produced in entry["produces"]):
+                break
+            done = i + 1
+        return done
 
-            if errors:
-                all_errors.append(f"Component {i} ({component.name}):")
-                all_errors.extend(f"  {e}" for e in errors)
+    def _load_prefix(self, manifest, count, root):
+        for entry in manifest[:count]:
+            directory = root / f"{entry['id']}_{entry['name']}"
+            produced = []
+            for spec in entry["produces"]:
+                data_type = store.TYPE_BY_NAME[spec["type"]]
+                df = store.load_df(data_type, directory / spec["file"])
+                table = self._rebuild(data_type, df)
+                self._store(table)
+                produced.append(table)
+            self.outputs.append(produced)
 
-            # Update available state/columns with what this component produces
-            available_state = available_state | component.produces_state
-            available_columns = available_columns | component.produces_columns
+    def _rebuild(self, data_type, df):
+        """A typed table from its saved dataframe, re-linking FKs to the latest loaded parent of each
+        linked type (the same latest-wins rule ``run`` threads inputs by)."""
+        if data_type is Sources:
+            return Sources(df)
+        if data_type is Tiles:
+            sources = self.latest(Sources)
+            related = {"sources": sources} if (sources is not None and self._has_fk(df, Col.SOURCE_ID)) else {}
+            return Tiles(df, **related)
+        related = {}
+        tiles = self.latest(Tiles)
+        if tiles is not None and self._has_fk(df, Col.TILE_ID):
+            related["tiles"] = tiles
+        prev = self.latest(Objects)
+        if prev is not None and self._has_fk(df, Col.PREV_OBJECT_ID):
+            related["prev_objects"] = prev
+        return Objects(df, **related)
 
-        if all_errors and raise_on_error:
-            error_msg = "Pipeline validation failed:\n" + "\n".join(all_errors)
-            raise PipelineValidationError(error_msg)
+    @staticmethod
+    def _has_fk(df, col) -> bool:
+        return col in df.columns and df[col].notna().any()
 
-        return all_errors
+    # --- internals -----------------------------------------------------------
+    def _component_dir(self, component):
+        return self.output_dir / f"{component.component_id}_{component.name}" if self.output_dir else None
 
-    def _print_flow_chart(self) -> None:
-        """
-        Print a flow chart showing state/column availability through the pipeline.
+    def _save(self, component, produced):
+        directory = self._component_dir(component)
+        for table in produced:
+            store.save_table(table, directory)
 
-        This visualizes the data flow through all components, showing what each
-        component requires, produces, and what passes through.
-        """
-        visualizer = PipelineFlowVisualizer(
-            components=self.components,
-            initial_state_keys=self._get_initial_state_keys(),
-            initial_columns=self._get_initial_columns(),
-        )
-        visualizer.print()
+    @staticmethod
+    def _collect(outputs):
+        return list(outputs if isinstance(outputs, tuple) else (outputs,))
 
-    def _get_initial_state_keys(self) -> Set[str]:
-        """Get state keys available at pipeline start."""
-        available = set()
-        if self.data_state.imagery_path:
-            available.add(StateKey.IMAGERY_PATH)
-        if self.data_state.tiles_path:
-            available.add(StateKey.TILES_PATH)
-        if self.data_state.infer_gdf is not None:
-            available.add(StateKey.INFER_GDF)
-        if self.data_state.infer_coco_path:
-            available.add(StateKey.INFER_COCO_PATH)
-        if self.data_state.product_name:
-            available.add(StateKey.PRODUCT_NAME)
-        return available
+    def _store(self, data):
+        self._lists[type(data)].append(data)
 
-    def _get_initial_columns(self) -> Set[str]:
-        """Get GDF columns available at pipeline start."""
-        if self.data_state.infer_gdf is not None:
-            return set(self.data_state.infer_gdf.columns)
-        return set()
+    def _resolve(self, req, component):
+        """The latest instance satisfying a ``requires`` entry (a bare type, a ``Need``, or an ``AnyOf``).
+        Resolution is by type via ``self.latest``; an ``AnyOf`` picks the first available alternative."""
+        inst, err = Requirement.coerce(req).resolve(self.latest)
+        if inst is None:
+            raise ValueError(f"{type(component).__name__} {err}")
+        return inst
 
-
-# =============================================================================
-# Standalone Helper
-# =============================================================================
-
-def run_component(
-    component: BaseComponent,
-    output_path: str = None,
-    imagery_path: str = None,
-    tiles_path: str = None,
-    infer_gdf: gpd.GeoDataFrame = None,
-    infer_coco_path: str = None,
-    product_name: str = None,
-    **kwargs
-) -> DataState:
-    """
-    Run a single component standalone (wraps it in a Pipeline).
-
-    This is a convenience function for users who want to run a single
-    component without manually creating a Pipeline. For a more discoverable
-    API with explicit signatures, use each component's ``run_standalone()``
-    classmethod instead.
-
-    Args:
-        component: The component to run
-        output_path: Where to save outputs (required)
-        imagery_path: Path to imagery (for tilerizer)
-        tiles_path: Path to tiles (for detector, segmenter)
-        infer_gdf: Input GeoDataFrame (for aggregator, classifier)
-        infer_coco_path: Path to COCO file (for segmenter, classifier)
-        product_name: Name for output files (derived from imagery if not provided)
-        **kwargs: Additional DataState attributes
-
-    Returns:
-        DataState with component outputs
-
-    Example:
-        from canopyrs.engine.components.detector import DetectorComponent
-        from canopyrs.engine.config_parsers import DetectorConfig
-
-        config = DetectorConfig(model='faster_rcnn_detectron2', ...)
-        detector = DetectorComponent(config)
-
-        result = run_component(
-            detector,
-            output_path='./output',
-            tiles_path='./tiles'
-        )
-        print(result.infer_gdf)
-    """
-    if output_path is None:
-        raise ValueError("output_path is required for run_component()")
-
-    # Validate inputs against component requirements before creating Pipeline
-    available_state = {
-        key for key, value in {
-            StateKey.IMAGERY_PATH: imagery_path,
-            StateKey.TILES_PATH: tiles_path,
-            StateKey.INFER_GDF: infer_gdf,
-            StateKey.INFER_COCO_PATH: infer_coco_path,
-            StateKey.PRODUCT_NAME: product_name,
-        }.items() if value is not None
-    }
-    available_columns = set(infer_gdf.columns) if infer_gdf is not None else set()
-
-    errors = component.validate(
-        available_state=available_state,
-        available_columns=available_columns,
-        raise_on_error=False,
-    )
-    if errors:
-        error_msg = (
-            f"Cannot run '{component.name}' standalone - missing inputs:\n"
-            + "\n".join(f"  * {e}" for e in errors)
-            + f"\n\n{component.describe()}"
-        )
-        raise ComponentValidationError(error_msg)
-
-    # Derive product name if not provided
-    if product_name is None:
-        if imagery_path:
-            product_name = validate_and_convert_product_name(
-                strip_all_extensions_and_path(Path(imagery_path))
-            )
-        else:
-            product_name = "tiled_input"
-
-    # Create DataState from provided inputs
-    data_state = DataState(
-        imagery_path=imagery_path,
-        tiles_path=tiles_path,
-        product_name=product_name,
-        infer_gdf=infer_gdf,
-        infer_coco_path=infer_coco_path,
-        parent_output_path=output_path,
-        **kwargs
-    )
-
-    # Create and run pipeline with single component
-    pipeline = Pipeline(
-        components=[component],
-        data_state=data_state,
-        output_path=output_path,
-    )
-
-    return pipeline.run()
+    def _check_produced(self, component, produced):
+        """Postcondition: the component actually produced what its ``produces`` promised. Catches a
+        declaration drifting from the ``run`` body at the producer, not three components downstream."""
+        name = type(component).__name__
+        for need in as_requirements(component.produces):
+            inst = next((table for table in produced if type(table) is need.data_type), None)
+            if inst is None:
+                raise ValueError(f"{name} promised to produce {need.data_type.__name__} but did not")
+            err = need.check(inst)
+            if err:
+                raise ValueError(f"{name} produced {need.data_type.__name__} but {err}")

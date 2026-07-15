@@ -6,7 +6,7 @@ import pandas as pd
 
 from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator
 from canopyrs.engine.benchmark.base.find_optimal_detector_aggregator import find_optimal_detector_aggregator
-from canopyrs.engine.config_parsers import DetectorConfig, AggregatorConfig, PipelineConfig, InferIOConfig, SegmenterConfig
+from canopyrs.engine.config_parsers import DetectorConfig, AggregatorConfig, PipelineConfig, SegmenterConfig
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.utils import merge_coco_jsons
 
@@ -68,47 +68,39 @@ class BaseBenchmarker(ABC):
                               input_coco: str | Path | None = None,
                               output_folder: str | Path = None):
         """
-        Run inference for one product and return paths to outputs.
-        
-        pipeline_config: Pre-configured PipelineConfig from child class
-        component_name: 'detector' or 'segmenter' - used to retrieve output files
-        """
+        Run inference for one product (over a pre-cut tiles folder) and return output paths.
 
+        pipeline_config: Pre-configured PipelineConfig from child class
+        component_name: 'detector', 'segmenter' or 'classifier' - identifies the model component
+
+        Returns (model_coco, run_dir, aggregator_gpkg):
+          - model_coco: tile-level COCO exported at the model component (for tile-level eval);
+          - run_dir: the run's output folder (reloadable via Pipeline.from_dir for the aggregator search);
+          - aggregator_gpkg: raster-level GPKG exported at the last aggregator, or None if the pipeline
+            has no aggregator.
+        """
+        if input_coco is not None:
+            raise NotImplementedError("input_coco seeding is not yet supported by the v3 pipeline.")
         if output_folder is None:
             output_folder = self.output_folder / self.fold_name / product_name
 
-        io_config = InferIOConfig(
-            input_imagery=None,
-            tiles_path=str(product_tiles_path),
-            input_gpkg=str(input_gpkg) if input_gpkg is not None else None,
-            input_coco=str(input_coco) if input_coco is not None else None,
-            output_folder=str(output_folder),
+        pipeline = Pipeline.from_config(
+            pipeline_config.components_configs,
+            tiles=str(product_tiles_path),
+            objects=str(input_gpkg) if input_gpkg is not None else None,
+            output_dir=str(output_folder),
         )
+        pipeline.run(verbose=False)
 
-        pipeline = Pipeline.from_config(io_config, pipeline_config, verbose=False)
-        pipeline()
+        model_idx = max((c.component_id for c in pipeline.components if c.name == component_name),
+                        default=None)
+        agg_idx = max((c.component_id for c in pipeline.components if c.name == 'aggregator'),
+                      default=None)
 
-        last_model_component_id = None
-        last_aggregator_component_id = None
-        for component in pipeline.components:
-            if component.name == component_name:
-                last_model_component_id = component.component_id
-            if component.name == 'aggregator':
-                last_aggregator_component_id = component.component_id
+        model_coco_output = pipeline.export("coco", end_at=model_idx) if model_idx is not None else None
+        aggregator_output = pipeline.export("gpkg", end_at=agg_idx) if agg_idx is not None else None
 
-        model_coco_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'coco')
-
-        if component_name == 'classifier':
-            model_gpkg_file_type = 'gpkg'
-        else:
-            model_gpkg_file_type = 'pre_aggregated_gpkg'
-        model_gpkg_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, model_gpkg_file_type)
-        if last_aggregator_component_id is not None:
-            aggregator_output = pipeline.data_state.get_output_file('aggregator', last_aggregator_component_id, 'gpkg')
-        else:
-            aggregator_output = None
-
-        return model_coco_output, model_gpkg_output, aggregator_output
+        return model_coco_output, str(output_folder), aggregator_output
 
     def _find_optimal_nms_iou_threshold(self,
                                         pipeline_config: PipelineConfig,
@@ -134,13 +126,12 @@ class BaseBenchmarker(ABC):
         print(f"Finding optimal NMS IoU threshold for datasets: {dataset_names}. Inferring rasters...")
 
         raster_names: list[str] = []
-        model_gpkg_outputs: list[str] = []
+        model_run_dirs: list[str] = []
         truths_gdfs: list[str] = []
         aois_gdfs: list[str] = []
-        tiles_roots: list[str] = []
         for dataset_name, dataset in datasets.items():
             for location, product_name, tiles_path, aoi_gpkg, truths_gpkg, truths_coco in dataset.iter_fold(self.raw_data_root, fold="valid"):
-                _, model_gpkg_output, _ = self._infer_single_product(
+                _, model_run_dir, _ = self._infer_single_product(
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     pipeline_config=pipeline_config,
@@ -149,21 +140,19 @@ class BaseBenchmarker(ABC):
                 )
 
                 raster_names.append(f"{location}/{product_name}")
-                model_gpkg_outputs.append(str(model_gpkg_output))
+                model_run_dirs.append(str(model_run_dir))
                 truths_gdfs.append(truths_gpkg)
                 aois_gdfs.append(aoi_gpkg)
-                tiles_roots.append(str(tiles_path))
 
         print(f"Datasets inferred. Starting NMS IoU threshold search...")
         nms_search_output_folder = self.output_folder / self.fold_name / 'NMS_search'
-        
+
         aggregators_results_df = find_optimal_detector_aggregator(
             output_folder=str(nms_search_output_folder),
             raster_names=raster_names,
-            model_gpkg_outputs=model_gpkg_outputs,
+            model_run_dirs=model_run_dirs,
             truths_gdfs=truths_gdfs,
             aois_gdfs=aois_gdfs,
-            tiles_roots=tiles_roots,
             ground_resolution=eval_at_ground_resolution,
             nms_iou_thresholds=nms_iou_thresholds,
             nms_score_thresholds=nms_score_thresholds,

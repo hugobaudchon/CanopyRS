@@ -11,6 +11,17 @@ from canopyrs.data.classification.preprocessed_datasets import DATASET_REGISTRY
 
 PathLike = Union[str, Path]
 
+# TODO (classifier-on-v3): the classifier benchmark needs its objects seeded in v3 — from a prior
+# segmentation COCO/GPKG, or by re-running a segmenter. That design is not settled, and the object
+# seeding from input_gpkg/input_coco (via _infer_single_product) is unverified against v3, so the
+# public entry points below raise until it's ported. The Detector/Segmenter benchmarkers are unaffected
+# and the module stays importable. See MIGRATION_PLAN.md Phase C4.
+_NOT_PORTED = (
+    "ClassifierBenchmarker is not yet ported to the v3 pipeline. The classifier's object seeding "
+    "(from a segmentation COCO/GPKG, or a re-run segmenter) is an open design question — see "
+    "MIGRATION_PLAN.md Phase C4."
+)
+
 
 class ClassifierBenchmarker(BaseBenchmarker):
     def __init__(self,
@@ -111,6 +122,8 @@ class ClassifierBenchmarker(BaseBenchmarker):
             input_gpkg: Optional[PathLike],
             input_coco: Optional[PathLike],
     ):
+        raise NotImplementedError(_NOT_PORTED)
+
         evaluator = ClassifierCocoEvaluator(verbose=True)
 
         run_output_folder = self.output_folder / self.fold_name / run_name
@@ -152,6 +165,8 @@ class ClassifierBenchmarker(BaseBenchmarker):
             classifier_config: ClassifierConfig,
             dataset_names: Union[str, List[str]],
     ):
+        raise NotImplementedError(_NOT_PORTED)
+
         classification_df = self._benchmark_classification_only(
             classifier_config=classifier_config,
             dataset_names=dataset_names,
