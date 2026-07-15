@@ -1,10 +1,10 @@
 """Aggregator: cross-tile NMS over the latest Objects, reusing geodataset's ``Aggregator``.
 
-Inputs arrive in tile-pixel coords (crs=None) — detector boxes or segmenter masks. Each object's tile
-is looked up in the latest Tiles (by ``tile_id``), and its geometry mapped from that tile's pixels to
-CRS via the tile's own transform (boxes vectorized via bounds; masks vertex-wise). The CRS polygons go
-to geodataset's ``Aggregator`` for NMS. Aggregation only suppresses, so each survivor points back to
-the input object it kept (``prev_object_id``).
+Inputs arrive in tile-pixel coords (crs=None) — detector boxes or segmenter masks. Each object's image
+is looked up in its linked Imagery (by ``image_id``), and its geometry mapped from that image's pixels
+to CRS via the image's own transform — applied per image group in one vectorized call, never per
+object. The CRS polygons go to geodataset's ``Aggregator`` for NMS. Aggregation only suppresses, so
+each survivor points back to the input object it kept (``prev_object_id``).
 
 The NMS weights (detector / segmenter / classifier) decide which score columns matter — and a weighted
 score may have been produced several components back (e.g. ``detector_score`` at a late, post-classifier
@@ -13,14 +13,18 @@ aggregator). We don't require the input to carry them forward: ``Objects.column`
 """
 
 import geopandas as gpd
+import pandas as pd
 
 from geodataset.aggregator import Aggregator as GdAggregator
 
 from canopyrs.engine.constants import Col
-from canopyrs.engine.data import Tiles, Objects
+from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.contracts import Need
 from canopyrs.engine.components.base import Component, register_component
-from canopyrs.engine.tilemeta import box_of, pixel_to_crs
+from canopyrs.engine.tilemeta import affine_params, box_of
+
+# geodataset's Aggregator expects these column names in the frames it receives (external vocabulary).
+GD_TILE_ID = "tile_id"
 
 
 @register_component("aggregator")
@@ -29,16 +33,16 @@ class Aggregator(Component):
         super().__init__(config)
         self._score_cols = self._weighted_score_columns()
         # Aggregator needs the input Objects to carry every weighted score column, and to have their
-        # tiles linked (for georeferencing).
-        self.requires = (Need(Objects, links=("tiles",), columns=tuple(self._score_cols), crs=False),)
-        # Survivors in CRS coords, pointing back to the input each kept (prev_objects). No tiles link:
-        # they're tile-agnostic, and a consumer that needs the tile resolves it through the ancestry.
+        # imagery linked (for georeferencing).
+        self.requires = (Need(Objects, links=("imagery",), columns=tuple(self._score_cols), crs=False),)
+        # Survivors in CRS coords, pointing back to the input each kept (prev_objects). No imagery link:
+        # they're image-agnostic, and a consumer that needs the image resolves it through the ancestry.
         self.produces = Need(Objects, columns=(Col.AGGREGATOR_SCORE,), links=("prev_objects",), crs=True)
 
     def run(self, objects: Objects) -> Objects:
         assert self.out_dir is not None, "Aggregator needs an output dir (set Pipeline(output_dir=...))"
-        tiles = objects.linked("tiles")   # the input's tiles — directly, or resolved through its ancestry
-        crs = tiles.df[Col.TILE_METADATA].iloc[0]["crs"] if len(tiles) else None
+        tiles = objects.linked("imagery")   # the input's imagery — directly, or resolved through its ancestry
+        crs = tiles.df[Col.METADATA].iloc[0]["crs"] if len(tiles) else None
         if len(objects) == 0:
             print("Aggregator: no input objects; nothing to aggregate.")
             return self._empty(objects, crs)
@@ -54,7 +58,7 @@ class Aggregator(Component):
             other_attributes_names=[Col.PREV_OBJECT_ID],
             scores_weights=scores_weights,
             tiles_extent_gdf=tiles_extent_gdf,
-            tile_ids_to_path=self._tile_paths(tiles, tiles_extent_gdf[Col.TILE_ID]),
+            tile_ids_to_path=self._tile_paths(tiles, tiles_extent_gdf[GD_TILE_ID]),
             scores_weighting_method=self.config.scores_weighting_method,
             min_centroid_distance_weight=self.config.min_centroid_distance_weight,
             score_threshold=self.config.score_threshold,
@@ -77,40 +81,45 @@ class Aggregator(Component):
         print(f"Aggregator: kept {len(out)} of {len(objects)} objects.")
         return out
 
-    def _georeference(self, objects: Objects, tiles: Tiles, crs):
-        """Map each object from its tile's pixel coords to CRS via the tile's own affine transform
-        (origin + GSD). Each object's ``tile_id`` is resolved through the ancestry (so an aggregated
-        input finds the tile of the detection it kept), then joined to ``tiles``. Boxes and masks alike
-        are transformed vertex-wise (``pixel_to_crs``). Returns the CRS ``polygons_gdf`` (with its
-        scores + the ``prev_object_id`` carry) and the per-tile ``tiles_extent_gdf`` geodataset needs."""
-        tile_id = objects.column(Col.TILE_ID)
-        metadata = tile_id.map(tiles.df.set_index(Col.TILE_ID)[Col.TILE_METADATA]).values
-        geometry = [pixel_to_crs(geom, meta) for geom, meta in zip(objects.df.geometry.values, metadata)]
+    def _georeference(self, objects: Objects, imagery: Imagery, crs):
+        """Map each object from its image's pixel coords to CRS via the image's own affine transform
+        (origin + GSD). Each object's ``image_id`` is resolved through the ancestry (so an aggregated
+        input finds the image of the detection it kept), then grouped by image and transformed with one
+        vectorized ``affine_transform`` per group — the affine is constant within an image, so the loop
+        runs over distinct images, never over objects. Returns the CRS ``polygons_gdf`` (with its
+        scores + the ``prev_object_id`` carry) and the per-image ``tiles_extent_gdf`` geodataset needs."""
+        image_id = objects.column(Col.IMAGE_ID)
+        meta_by_id = imagery.df.set_index(Col.IMAGE_ID)[Col.METADATA]
 
         data = {
-            Col.GEOMETRY: geometry,
-            Col.TILE_ID: tile_id.values,
+            Col.GEOMETRY: objects.df.geometry.values,
+            GD_TILE_ID: image_id.values,
             Col.PREV_OBJECT_ID: objects.df[Col.OBJECT_ID].values,   # the input object each survivor came from
         }
         for col in self._score_cols:
             data[col] = objects.column(col).values                 # walk the ancestry for each weighted score
         polygons_gdf = gpd.GeoDataFrame(data, geometry=Col.GEOMETRY, crs=crs)
+
+        transformed = [group.geometry.affine_transform(affine_params(meta_by_id[iid]))
+                       for iid, group in polygons_gdf.groupby(GD_TILE_ID, sort=False)]
+        polygons_gdf[Col.GEOMETRY] = pd.concat(transformed).reindex(polygons_gdf.index)
+
         tiles_extent_gdf = gpd.GeoDataFrame({
-            Col.TILE_ID: tiles.df[Col.TILE_ID].values,
-            Col.GEOMETRY: tiles.df[Col.TILE_METADATA].map(box_of).values,
+            GD_TILE_ID: imagery.df[Col.IMAGE_ID].values,
+            Col.GEOMETRY: imagery.df[Col.METADATA].map(box_of).values,
         }, geometry=Col.GEOMETRY, crs=crs)
         return polygons_gdf, tiles_extent_gdf
 
-    def _tile_paths(self, tiles: Tiles, tile_ids):
-        """tile_id -> source path for geodataset. Real ``tile_path`` when tiles were cut to disk; else a
+    def _tile_paths(self, imagery: Imagery, image_ids):
+        """image_id -> file path for geodataset. Real ``path`` when tiles were cut to disk; else a
         clearly-fake ``unsaved_tile_{id}`` (windows read on demand have no file)."""
-        paths = tiles.df.set_index(Col.TILE_ID)[Col.TILE_PATH] if Col.TILE_PATH in tiles.df.columns else None
+        paths = imagery.df.set_index(Col.IMAGE_ID)[Col.PATH] if Col.PATH in imagery.df.columns else None
 
-        def path_for(tile_id):
-            path = paths.get(tile_id) if paths is not None else None
-            return str(path) if (path is not None and path == path and path != "") else f"unsaved_tile_{tile_id}"
+        def path_for(image_id):
+            path = paths.get(image_id) if paths is not None else None
+            return str(path) if (path is not None and path == path and path != "") else f"unsaved_tile_{image_id}"
 
-        return {tile_id: path_for(tile_id) for tile_id in tile_ids}
+        return {image_id: path_for(image_id) for image_id in image_ids}
 
     def _empty(self, objects, crs) -> Objects:
         """An empty output (no input objects), still satisfying ``produces``: the score columns, the

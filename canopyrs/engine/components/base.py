@@ -11,7 +11,7 @@ per tile, and turning those into one row per object is the same loop everywhere.
 """
 
 from canopyrs.engine.models.registry import Registry
-from canopyrs.engine.data import Tiles
+from canopyrs.engine.data import Imagery
 from canopyrs.engine.loader import tile_loader
 
 # kind -> component class, populated by the @register_component decorators on each component. Lets the
@@ -46,9 +46,9 @@ class Component:
         return registry[self.config.model]
 
     def _loader(self, source, batch_size):
-        """A tile image loader over ``source`` — a ``Tiles`` table (its reading frame) or an already
+        """A tile image loader over ``source`` — an ``Imagery`` table (its reading frame) or an already
         built reading frame."""
-        frame = source.reading_frame() if isinstance(source, Tiles) else source
+        frame = source.reading_frame() if isinstance(source, Imagery) else source
         return tile_loader(frame, batch_size=batch_size, num_workers=self.NUM_WORKERS)
 
 

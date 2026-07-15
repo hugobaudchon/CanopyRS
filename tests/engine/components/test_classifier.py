@@ -3,8 +3,8 @@
 from canopyrs.engine.components.classifier import Classifier
 from canopyrs.engine.config_parsers import ClassifierConfig
 from canopyrs.engine.contracts import AnyOf
-from canopyrs.engine.data import Objects, Tiles
-from canopyrs.engine.constants import Col
+from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.constants import Col, ImageKind
 
 
 def _config(**overrides):
@@ -17,9 +17,9 @@ def test_requires_is_one_of_objects_or_tiles():
     assert len(clf.requires) == 1
     req = clf.requires[0]
     assert isinstance(req, AnyOf)
-    # per-object crops preferred, then whole tiles (pre-cut path, then source window)
-    types = [alt.data_type for alt in req.alternatives]
-    assert types == [Objects, Tiles, Tiles]
+    # per-object crops preferred, then whole tiles (readability is guaranteed by the imagery tree)
+    assert [alt.data_type for alt in req.alternatives] == [Objects, Imagery]
+    assert req.alternatives[1].kind == ImageKind.TILE
 
 
 def test_produces_class_columns_without_names():

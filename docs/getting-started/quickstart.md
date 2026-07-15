@@ -37,7 +37,7 @@ python infer.py -c <CONFIG_NAME> -t <PATH_TO_TILES_FOLDER> -o <PATH_TO_OUTPUT_FO
 
 ## Understanding the output
 
-The output folder contains one `{id}_{name}/` subfolder per component that ran, each holding that step's tables as GeoParquet, plus a `pipeline.json` manifest describing the run (so it can be reloaded or resumed).
+The output folder contains one `{id}_{name}/` subfolder per component that ran, each holding that step's tables as GeoParquet, plus a `run.json` run record describing the run (so it can be reloaded or resumed).
 
 If the pipeline produced georeferenced polygons, the final result is written to **`final.gpkg`** at the root of the output folder. You can also export any step's Objects as a **GeoPackage** or **COCO** file on demand via `pipeline.export(...)`.
 

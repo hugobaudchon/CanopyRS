@@ -1,7 +1,7 @@
 """
 Tile window metadata — the single source of truth for a tile's georeferencing.
 
-A tile stores ``Col.TILE_METADATA``: a JSON-serializable snapshot of the rasterio metadata for its
+An image region stores ``Col.METADATA``: a JSON-serializable snapshot of the rasterio metadata for its
 window (transform, crs, size, ...). The tile's GSD lives in the transform, so it may differ from the
 raster's (resampling) — consumers (loader, aggregator) read georeferencing from the tile, never the
 raster. Kept serializable (transform as a 6-float list, crs as a string) so it round-trips parquet.
@@ -60,6 +60,13 @@ def box_of(meta):
 def _shapely_affine(aff: Affine):
     """An ``affine.Affine`` -> shapely ``affine_transform`` 6-param list ``[a, b, d, e, xoff, yoff]``."""
     return [aff.a, aff.b, aff.d, aff.e, aff.c, aff.f]
+
+
+def affine_params(meta):
+    """The tile's pixel->CRS transform as shapely/GeoSeries ``affine_transform`` params
+    ``[a, b, d, e, xoff, yoff]`` — for applying one tile's transform to a whole group of geometries
+    in a single vectorized call."""
+    return _shapely_affine(transform_of(meta))
 
 
 def pixel_to_crs(geom, meta):

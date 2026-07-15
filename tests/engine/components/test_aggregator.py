@@ -20,7 +20,7 @@ def test_requires_carries_weighted_score_columns():
     need = _need(agg.requires)
     assert need.data_type is Objects
     assert set(need.columns) == {Col.DETECTOR_SCORE}
-    assert need.links == ("tiles",)
+    assert need.links == ("imagery",)
     assert need.crs is False   # inputs arrive in tile-pixel coords
 
 

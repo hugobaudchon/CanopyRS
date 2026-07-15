@@ -2,7 +2,7 @@
 Shared fixtures for CanopyRS tests.
 
 Pipeline-agnostic assets (rasters, labels) plus small relational-table builders
-(Sources / Tiles / Objects) used by the engine unit tests.
+(Imagery / Objects) used by the engine unit tests.
 """
 
 import pytest
@@ -10,8 +10,8 @@ import geopandas as gpd
 from shapely.geometry import Polygon, box
 from pathlib import Path
 
-from canopyrs.engine.constants import Col, BOX
-from canopyrs.engine.data import Sources, Tiles, Objects
+from canopyrs.engine.constants import Col, GeomKind, ImageKind
+from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.utils import init_spawn_method
 
 # The segmenter's mask post-processing (and the benchmark grid-search) use multiprocessing; with a
@@ -44,7 +44,7 @@ def temp_output_path(tmp_path):
 # =============================================================================
 
 def make_tile_metadata(*, width=64, height=64, gsd=1.0, x0=0.0, y0=0.0, crs="EPSG:32618"):
-    """A serializable TILE_METADATA dict for a tile whose top-left is (x0, y0) in CRS units,
+    """A serializable METADATA dict for an image whose top-left is (x0, y0) in CRS units,
     ``gsd`` units per pixel (north-up). Matches the shape produced by ``tilemeta.window_meta``."""
     return {
         "transform": [gsd, 0.0, x0, 0.0, -gsd, y0],
@@ -59,27 +59,28 @@ def make_tile_metadata(*, width=64, height=64, gsd=1.0, x0=0.0, y0=0.0, crs="EPS
 
 @pytest.fixture
 def sources_seed(tmp_path):
-    """A single-raster Sources seed (path need not exist for wiring/persistence tests)."""
-    return Sources.from_paths(str(tmp_path / "product.tif"))
+    """A single-raster kind='source' Imagery seed (path need not exist for wiring/persistence tests)."""
+    return Imagery.from_paths(str(tmp_path / "product.tif"))
 
 
 @pytest.fixture
 def tiles_seed(sources_seed):
-    """Two grid tiles over the seed source, in CRS-referenced windows (no on-disk tile files)."""
+    """Two grid tiles over the seed source — children of the source (windows, no files on disk)."""
     metadata = [make_tile_metadata(x0=0.0, y0=64.0), make_tile_metadata(x0=64.0, y0=64.0)]
-    return Tiles.build(source_id=sources_seed.df[Col.SOURCE_ID].iloc[0],
-                       tile_metadata=metadata, sources=sources_seed)
+    return Imagery.build(kind=ImageKind.TILE,
+                         parent_id=sources_seed.df[Col.IMAGE_ID].iloc[0],
+                         metadata=metadata, parent=sources_seed)
 
 
 @pytest.fixture
 def objects_seed(tiles_seed):
     """Two detector-style box Objects in tile-pixel coords (crs=None), one per tile, with scores."""
-    tile_ids = list(tiles_seed.df[Col.TILE_ID])
+    image_ids = list(tiles_seed.df[Col.IMAGE_ID])
     return Objects.build(
         geometry=[box(1, 1, 10, 10), box(5, 5, 20, 20)],
-        geom_kind=BOX,
-        tile_id=tile_ids,
-        tiles=tiles_seed,
+        geom_kind=GeomKind.BOX,
+        image_id=image_ids,
+        imagery=tiles_seed,
         **{Col.DETECTOR_SCORE: [0.9, 0.8], Col.DETECTOR_CLASS: [0, 1]},
     )
 
@@ -101,7 +102,7 @@ def test_raster():
 
 @pytest.fixture
 def synthetic_raster(tmp_path):
-    """A small (256x256 RGB uint8) synthetic COG-ish raster for fast unit tests."""
+    """A small (256x256 RGB uint8) synthetic raster for fast unit tests."""
     import numpy as np
 
     try:
@@ -126,7 +127,7 @@ def synthetic_raster(tmp_path):
 
 @pytest.fixture
 def tiles_dir(synthetic_raster, tmp_path):
-    """A folder of two pre-cut georeferenced GeoTIFF tiles (for Tiles.from_tiles_dir)."""
+    """A folder of two pre-cut georeferenced GeoTIFF tiles (for Imagery.from_tiles_dir)."""
     import rasterio
     from rasterio.windows import Window
     from rasterio.windows import transform as window_transform

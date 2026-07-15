@@ -12,10 +12,10 @@ from tqdm import tqdm
 from geodataset.aggregator import Aggregator as GdAggregator
 
 from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator
-from canopyrs.engine.components.aggregator import Aggregator as AggregatorComponent
+from canopyrs.engine.components.aggregator import GD_TILE_ID, Aggregator as AggregatorComponent
 from canopyrs.engine.config_parsers import AggregatorConfig
 from canopyrs.engine.constants import Col
-from canopyrs.engine.data import Tiles, Objects
+from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.pipeline import Pipeline
 
 
@@ -41,12 +41,12 @@ def eval_single_aggregator(
         output_path = Path(output_path) / f"nmsiou_{str(aggregator_config.nms_threshold).replace('.', 'p')}_nmsscorethresh_{str(aggregator_config.score_threshold).replace('.', 'p')}"
         Path(output_path).mkdir(parents=True, exist_ok=True)
 
-        # Reload the model-only run (Tiles + Objects, in tile-pixel coords, scores intact) and seed an
-        # aggregator-only pipeline from it — no pixel-coords gpkg round-trip.
+        # Reload the model-only run (tile Imagery + Objects, in tile-pixel coords, scores intact) and
+        # seed an aggregator-only pipeline from it — no pixel-coords gpkg round-trip.
         prior = Pipeline.from_dir(model_run_dir)
         pipeline = Pipeline.from_config(
             [('aggregator', aggregator_config)],
-            tiles=prior.latest(Tiles),
+            tiles=prior.latest(Imagery),
             objects=prior.latest(Objects),
             output_dir=str(output_path),
         )
@@ -126,11 +126,11 @@ def grid_search_single_raster_iou(
 
         # Georeference the model outputs (same path the aggregator component runs).
         component = AggregatorComponent(aggregator_config)
-        tiles = objects.linked("tiles")
-        crs = tiles.df[Col.TILE_METADATA].iloc[0]["crs"] if len(tiles) else None
+        tiles = objects.linked("imagery")
+        crs = tiles.df[Col.METADATA].iloc[0]["crs"] if len(tiles) else None
         polygons_gdf, tiles_extent_gdf = component._georeference(objects, tiles, crs)
         scores_names, scores_weights = component._scores()
-        tile_ids_to_path = component._tile_paths(tiles, tiles_extent_gdf[Col.TILE_ID])
+        tile_ids_to_path = component._tile_paths(tiles, tiles_extent_gdf[GD_TILE_ID])
 
         # Single NMS run at the minimum score threshold; higher score thresholds are exact subsets.
         out_dir = Path(output_path) / f"nmsiou_{str(nms_iou_threshold).replace('.', 'p')}"

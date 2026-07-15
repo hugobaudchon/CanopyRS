@@ -1,20 +1,21 @@
 """
 Pipeline flow visualization.
 
-The pipeline has three typed tables, and a component's contract is ``Need(type, columns, links, crs)``
-— not a flat column set. So the chart has **three stacked sections** (SOURCES / TILES / OBJECTS); within
-each, a row per **link** (``→sources`` / ``→tiles`` / ``→prev_objects``), a **crs** row (tri-state
-✓/✗/?), then a row per **column**. Each cell is marked available / produced / required /
-required+produced / missing / passthrough per component — read off the *same*
-``Pipeline.thread_schemas`` simulation that ``validate`` uses, so the chart never re-derives
-"what's available when".
+The pipeline has two typed tables, and a component's contract is ``Need(type, columns, links, crs,
+kind)`` — not a flat column set. So the chart has **two stacked sections** (IMAGERY / OBJECTS); within
+each, a row per **link** (``→parent`` / ``→imagery`` / ``→prev_objects``), a **kind** row (s=source,
+t=tile) for imagery, a **crs** row (tri-state ✓/✗/?), then a row per **column**. Each cell is marked
+available / produced / required / required+produced / missing / passthrough per component — read off
+the *same* ``Pipeline.thread_schemas`` simulation that ``validate`` uses (per-type schema *lists*;
+cells display the newest schema of each type), so the chart never re-derives "what's available when".
 """
 
 import re
 import sys
 
+from canopyrs.engine.constants import ImageKind
 from canopyrs.engine.contracts import Requirement, AnyOf, as_requirements
-from canopyrs.engine.data import Sources, Tiles, Objects
+from canopyrs.engine.data import Imagery, Objects
 
 
 _ANSI_ESCAPE_RE = re.compile(r'\033\[[0-9;]*m')
@@ -72,6 +73,15 @@ class _Symbols:
         color = cls._ROLE_COLOR.get(role)
         return f"{color}{cls._glyph(value)}{_Colors.RESET}" if color else cls.EMPTY
 
+    @classmethod
+    def tag(cls, role, letter, req_letter=None):
+        """A single letter cell (e.g. the imagery kind: s=source, t=tile), colored by role — same
+        rendering rules as the crs glyphs."""
+        if role == "both":
+            return f"{_Colors.YELLOW}{req_letter or cls._UNK}{_Colors.BLUE}{letter or cls._UNK}{_Colors.RESET}"
+        color = cls._ROLE_COLOR.get(role)
+        return f"{color}{letter or cls._UNK}{_Colors.RESET}" if color else cls.EMPTY
+
 
 def _fill_width(s: str, width: int) -> str:
     """Fill `width` by repeating the visible symbol character, preserving ANSI color wrapping."""
@@ -111,10 +121,11 @@ class PipelineFlowVisualizer:
 
     Legend (colored blocks): green ▬ = input · blue ▬ = produced · yellow ▬ = required · yellow+blue =
     required+produced · red ▬ = MISSING · gray · = passthrough. crs row: ✓ = CRS, ✗ = tile-pixel,
-    ? = undeclared.
+    ? = undeclared. kind row: s = source, t = tile.
     """
 
-    SECTIONS = (Sources, Tiles, Objects)
+    SECTIONS = (Imagery, Objects)
+    KIND_LETTER = {ImageKind.SOURCE: "s", ImageKind.TILE: "t"}
 
     def __init__(self, pipeline):
         self.pipeline = pipeline
@@ -126,24 +137,37 @@ class PipelineFlowVisualizer:
             pass  # terminals that can't display the chart (e.g. Windows subprocess workers)
 
     # --- tracking ------------------------------------------------------------
+    @staticmethod
+    def _newest_view(available):
+        """The newest schema per type — cells display the newest instance of each type; requirement
+        matching (which may pick an older one) runs on the full lists."""
+        return {data_type: schemas[-1] for data_type, schemas in available.items() if schemas}
+
     def _track(self):
         steps = []
         for component, before, after in self.pipeline.thread_schemas():
             if component is None:
-                steps.append(_Step("input", {}, after, set(after), self._empty_marks(), self._empty_marks(), seed=True))
+                after_view = self._newest_view(after)
+                steps.append(_Step("input", {}, after_view, set(after_view),
+                                   self._empty_marks(), self._empty_marks(), seed=True))
             else:
                 req, miss = self._requirement_marks(component, before)
                 produced_types = {need.data_type for need in as_requirements(component.produces)}
-                steps.append(_Step(component.label, before, after, produced_types, req, miss))
+                steps.append(_Step(component.label, self._newest_view(before), self._newest_view(after),
+                                   produced_types, req, miss))
 
         labels = [step.label for step in steps]
         sections = []
         for data_type in self.SECTIONS:
             rows = []
-            for name in data_type.fks:                                  # link rows: →sources / →tiles / ...
+            for name in data_type.fks:                                  # link rows: →parent / →imagery / ...
                 cells = [self._link_cell(data_type, name, step) for step in steps]
                 if any(cell != _Symbols.EMPTY for cell in cells):
                     rows.append((f"→{name}", cells))
+            if data_type is Imagery:
+                kind_cells = [self._kind_cell(data_type, step) for step in steps]
+                if any(cell != _Symbols.EMPTY for cell in kind_cells):
+                    rows.append(("kind", kind_cells))
             crs_cells = [self._crs_cell(data_type, step) for step in steps]
             if any(cell != _Symbols.EMPTY for cell in crs_cells):
                 rows.append(("crs", crs_cells))
@@ -164,15 +188,16 @@ class PipelineFlowVisualizer:
 
     @staticmethod
     def _empty_marks():
-        return {"cols": {}, "links": {}, "crs": {}}
+        return {"cols": {}, "links": {}, "crs": {}, "kind": {}}
 
     def _requirement_marks(self, component, before):
+        get = lambda t: before.get(t, ())   # noqa: E731 — resolve over the full per-type schema lists
         req, miss = self._empty_marks(), self._empty_marks()
         for entry in component.requires:
             spec = Requirement.coerce(entry)
-            desc, _ = spec.resolve(before.get)
+            desc, _ = spec.resolve(get)
             if desc is not None:
-                self._add_need(req, self._chosen_need(spec, before))
+                self._add_need(req, self._chosen_need(spec, get))
             else:
                 for need in self._alternatives(spec):
                     self._add_need(miss, need)
@@ -182,11 +207,11 @@ class PipelineFlowVisualizer:
     def _alternatives(spec):
         return list(spec.alternatives) if isinstance(spec, AnyOf) else [spec]
 
-    def _chosen_need(self, spec, before):
+    def _chosen_need(self, spec, get):
         """The Need the available data actually binds (for a one_of, the first satisfiable alternative)."""
         if not isinstance(spec, AnyOf):
             return spec
-        return next(need for need in spec.alternatives if need.resolve(before.get)[0] is not None)
+        return next(need for need in spec.alternatives if need.resolve(get)[0] is not None)
 
     @staticmethod
     def _add_need(acc, need):
@@ -194,6 +219,8 @@ class PipelineFlowVisualizer:
         acc["links"].setdefault(need.data_type, set()).update(need.links)
         if need.crs is not None:
             acc["crs"][need.data_type] = need.crs
+        if need.kind is not None:
+            acc["kind"][need.data_type] = need.kind
 
     # --- per-cell symbols ----------------------------------------------------
     def _col_cell(self, data_type, col, step):
@@ -226,6 +253,27 @@ class PipelineFlowVisualizer:
             return _Symbols.PRODUCED
         if avail_before:
             return _Symbols.PASSTHROUGH
+        return _Symbols.EMPTY
+
+    def _kind_cell(self, data_type, step):
+        before_kind = step.before[data_type].kind if data_type in step.before else None
+        after_kind = step.after[data_type].kind if data_type in step.after else None
+        letter = self.KIND_LETTER.get(after_kind)
+        if step.seed:
+            return _Symbols.tag("available", letter) if (data_type in step.after and after_kind) else _Symbols.EMPTY
+        produced = (data_type in step.produced_types and after_kind is not None
+                    and (data_type not in step.before or before_kind != after_kind))
+        required = data_type in step.req["kind"]
+        if data_type in step.miss["kind"]:
+            return _Symbols.tag("missing", self.KIND_LETTER.get(step.miss["kind"][data_type]))
+        if required and produced:
+            return _Symbols.tag("both", letter, req_letter=self.KIND_LETTER.get(step.req["kind"][data_type]))
+        if required:
+            return _Symbols.tag("required", self.KIND_LETTER.get(step.req["kind"][data_type]))
+        if produced:
+            return _Symbols.tag("produced", letter)
+        if data_type in step.before and before_kind is not None:
+            return _Symbols.tag("passthrough", self.KIND_LETTER.get(before_kind))
         return _Symbols.EMPTY
 
     def _crs_cell(self, data_type, step):
@@ -275,7 +323,8 @@ class PipelineFlowVisualizer:
         print(f"Legend: {_Symbols.AVAILABLE}=input  {_Symbols.PRODUCED}=produced  "
               f"{_Symbols.REQUIRED}=required  {_Symbols.REQ_AND_PROD}=required+produced  "
               f"{_Symbols.MISSING}=MISSING!  {_Symbols.PASSTHROUGH}=passthrough   "
-              f"crs: {_Symbols._YES}=CRS {_Symbols._NO}=pixel {_Symbols._UNK}=undeclared")
+              f"crs: {_Symbols._YES}=CRS {_Symbols._NO}=pixel {_Symbols._UNK}=undeclared   "
+              f"kind: s=source t=tile")
         print("=" * len(header))
         print(header)
         print(separator)

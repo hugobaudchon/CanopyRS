@@ -1,21 +1,21 @@
 """
-Pipeline: run components in order, threading data by type.
+Pipeline: run components in order, threading typed data by need.
 
-Each component declares ``requires`` (entries: a data-class type, a ``Need(type, …)``, or a ``one_of``)
-and ``produces`` (a type or a ``Need`` describing its output). The pipeline keeps one list per data type
-— ``sources`` / ``tiles`` / ``objects``, latest last — and, for each component, passes the *latest*
-instance of each required type after checking it satisfies the ``Need`` (precondition). It then checks
-the returned table matches what the component promised (postcondition), stores it, and — when an
-``output_dir`` is set — saves it as parquet under ``{id}_{name}/`` and records it in a run manifest. A
-component never names its predecessor, only the kinds (and shape) of data it needs.
+See ``canopyrs/engine/README.md`` for the model in five sentences.
 
-Two validations off the *same* declarations: ``run`` enforces requires/produces at runtime against real
-tables; ``validate`` is an optional pre-flight that threads ``produces`` forward as simulated ``Schema``s
-and checks every ``requires`` before any compute. Both consume ``thread_schemas`` / ``Need.check``.
+The pipeline keeps one list per data type (``imagery`` / ``objects``, latest last) and, per component,
+resolves each ``requires`` entry to the **newest instance of its type that satisfies the Need** — so a
+``kind='source'`` requirement reaches past freshly produced tiles back to the seed raster. The returned
+tables are checked against ``produces`` (postcondition), stored, and — with an ``output_dir`` — saved
+as parquet under ``{id}_{name}/`` and recorded in the run record (``run.json``). A component never
+names its predecessor, only the kind and shape of data it needs.
+
+``validate`` (called at construction) runs the same checks statically: ``thread_schemas`` threads each
+component's ``produces`` forward as declared ``Schema``s, kept as per-type lists exactly like runtime.
 
 Beyond running: ``from_config`` builds components from ``(kind, config)`` steps; ``resume`` skips the
-contiguous prefix of components already done (config unchanged + outputs on disk); ``from_dir`` reloads
-a saved run; ``export`` writes a GPKG or COCO for the Objects at a chosen step.
+contiguous prefix already done (config unchanged + outputs on disk); ``from_dir`` reloads a saved run;
+``export`` writes a GPKG or COCO for the Objects at a chosen step.
 """
 
 import shutil
@@ -26,9 +26,9 @@ import geopandas as gpd
 from canopyrs.engine.utils import green_print, parse_tilerizer_aoi_config
 from canopyrs.engine.raster_validation import validate_raster_rgb_bands
 from canopyrs.engine import store
-from canopyrs.engine.constants import Col, MASK
+from canopyrs.engine.constants import Col, GeomKind, ImageKind, Modality
 from canopyrs.engine.contracts import Requirement, Schema, as_requirements
-from canopyrs.engine.data import Sources, Tiles, Objects
+from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.components import COMPONENT_REGISTRY
 from canopyrs.engine.visualizer import PipelineFlowVisualizer
 
@@ -36,9 +36,11 @@ from canopyrs.engine.visualizer import PipelineFlowVisualizer
 class Pipeline:
     def __init__(self, components, sources=None, tiles=None, objects=None, output_dir=None):
         """Seeds — at least one is needed to ``run``:
-          - ``sources``: the input imagery — a raster path, a list of paths, or ``{path, modality,
-            timestamp}`` descriptors (built into a seed ``Sources`` table; a ``Sources`` passes through);
-          - ``tiles``: a pre-cut tiles folder path (``Tiles.from_tiles_dir``) or a ``Tiles`` instance;
+          - ``sources``: the input scenes — a raster path, a list of paths, or ``{path, modality,
+            timestamp}`` descriptors (built into a kind='source' ``Imagery`` seed; an ``Imagery``
+            instance passes through);
+          - ``tiles``: a pre-cut tiles folder path (``Imagery.from_tiles_dir``) or a kind='tile'
+            ``Imagery`` instance;
           - ``objects``: a gpkg path (``Objects.from_gpkg``) or an ``Objects`` instance (prior detections).
         Given the seeds and components, the wiring is validated here so a bad pipeline fails at
         construction, before any compute."""
@@ -49,30 +51,31 @@ class Pipeline:
         if self.output_dir is not None:
             self.output_dir.mkdir(parents=True, exist_ok=True)
         self.seeds = self._build_seeds(sources, tiles, objects)
-        self.sources, self.tiles, self.objects = [], [], []
-        self._lists = {Sources: self.sources, Tiles: self.tiles, Objects: self.objects}
+        self.imagery, self.objects = [], []
+        self._lists = {Imagery: self.imagery, Objects: self.objects}
         self.outputs = []   # per-component list of produced tables (aligned to self.components)
-        self.manifest = None
+        self.run_record = None
         self._resume_requested = False   # set by from_config(resume_from=...); run() honors it by default
         if self.seeds and self.components:
             self.validate()
 
     @staticmethod
     def _build_seeds(sources, tiles, objects):
-        """The seed tables from whatever inputs were given, in dependency order (Sources, Tiles,
-        Objects). A path is built into its table; an instance passes through. A path-seeded Objects is
-        linked to a path-seeded Tiles when both are given, so its ancestry walk works."""
+        """The seed tables from whatever inputs were given, in dependency order (source scenes, tiles,
+        objects). A path is built into its table; an instance passes through. A path-seeded Objects is
+        linked to the imagery seed its rows were found in (tiles preferred), so its ancestry walk works."""
         seeds = []
         if sources is not None:
-            seeds.append(Sources.from_paths(sources))
+            seeds.append(Imagery.from_paths(sources))
         if tiles is not None:
-            seeds.append(tiles if isinstance(tiles, Tiles) else Tiles.from_tiles_dir(tiles))
+            seeds.append(tiles if isinstance(tiles, Imagery) else Imagery.from_tiles_dir(tiles))
         if objects is not None:
             if isinstance(objects, Objects):
                 seeds.append(objects)
             else:
-                tiles_seed = next((s for s in seeds if isinstance(s, Tiles)), None)
-                seeds.append(Objects.from_gpkg(objects, tiles=tiles_seed))
+                imagery_seed = next(
+                    (s for s in reversed(seeds) if isinstance(s, Imagery)), None)   # tiles seed preferred
+                seeds.append(Objects.from_gpkg(objects, imagery=imagery_seed))
         return seeds
 
     @classmethod
@@ -82,7 +85,7 @@ class Pipeline:
         the given seeds. ``aoi`` (a gpkg path) restricts tilerizing to an area of interest. Pass one of:
         ``resume_from`` (continue a prior run — its unchanged prefix is skipped; same folder, or a new
         ``output_dir`` for cross-folder) or ``initialize_from`` (seed this new-config run from a prior
-        run's latest Tiles + Objects; components restart at id 0)."""
+        run's latest Imagery + Objects; components restart at id 0)."""
         if resume_from and initialize_from:
             raise ValueError("Pass only one of resume_from / initialize_from, not both.")
         aois_config = cls._build_aois_config(aoi)
@@ -90,7 +93,7 @@ class Pipeline:
 
         if initialize_from:
             prior = cls.from_dir(initialize_from)
-            tiles = tiles if tiles is not None else prior.latest(Tiles)
+            tiles = tiles if tiles is not None else prior.latest(Imagery)
             objects = objects if objects is not None else prior.latest(Objects)
         elif resume_from and output_dir and Path(output_dir).resolve() != Path(resume_from).resolve():
             shutil.copytree(resume_from, output_dir, dirs_exist_ok=True)   # cross-folder: bring the prior run over
@@ -116,9 +119,9 @@ class Pipeline:
     # --- run -----------------------------------------------------------------
     def run(self, resume=None, verbose=True, strict_rgb_validation=True):
         """Run the components in order over the seeds (given at construction), and return ``self``
-        (inspect ``self.tiles`` / ``self.objects`` / ``self.sources`` after). With ``output_dir`` set,
-        each output is saved and a manifest written. ``resume`` (defaulting to what ``from_config``
-        recorded) skips an already-completed prefix (unchanged config + outputs on disk).
+        (inspect ``self.imagery`` / ``self.objects`` after). With ``output_dir`` set, each output is
+        saved and the run record written. ``resume`` (defaulting to what ``from_config`` recorded)
+        skips an already-completed prefix (unchanged config + outputs on disk).
         ``strict_rgb_validation``: raise (True) or warn (False) when a source raster's bands aren't
         tagged R,G,B."""
         resume = self._resume_requested if resume is None else resume
@@ -147,23 +150,23 @@ class Pipeline:
 
         if self.output_dir is not None:
             store.save_seeds(self.output_dir, self.seeds)
-            self.manifest = store.write_manifest(self.output_dir, self.components)
+            self.run_record = store.write_run_record(self.output_dir, self.components, self.outputs)
             self._write_final_gpkg()
         green_print("Pipeline finished")
         return self
 
     def _validate_sources(self, strict_rgb_validation):
-        """Pre-flight on the seed rasters before any compute: first 3 bands are RGB-tagged (per
-        ``strict_rgb_validation``), uint8, and in [0, 255]. Only rgb Sources are checked — other
-        modalities aren't RGB rasters, and a tiles/objects-seeded run has no Sources to check."""
-        sources = next((s for s in self.seeds if isinstance(s, Sources)), None)
-        if sources is None:
-            return
-        df = sources.df
-        if Col.MODALITY in df.columns:
-            df = df[df[Col.MODALITY] == "rgb"]
-        for path in df[Col.SOURCE_PATH]:
-            validate_raster_rgb_bands(Path(path), strict_color_interp=strict_rgb_validation)
+        """Pre-flight on the seed source rasters before any compute: first 3 bands are RGB-tagged (per
+        ``strict_rgb_validation``), uint8, and in [0, 255]. Only rgb source scenes are checked — other
+        modalities aren't RGB rasters, and a tiles/objects-seeded run has no sources to check."""
+        for seed in self.seeds:
+            if not isinstance(seed, Imagery) or seed.kind != ImageKind.SOURCE:
+                continue
+            df = seed.df
+            if Col.MODALITY in df.columns:
+                df = df[df[Col.MODALITY] == Modality.RGB]
+            for path in df[Col.PATH].dropna():
+                validate_raster_rgb_bands(Path(path), strict_color_interp=strict_rgb_validation)
 
     def _write_final_gpkg(self):
         """Auto-write the final result GPKG at the run root (``final.gpkg``) — the latest Objects, widened
@@ -180,29 +183,34 @@ class Pipeline:
 
     def validate(self):
         """Pre-flight wiring check, no compute: thread each component's ``produces`` forward as Schemas
-        and confirm every ``requires`` is satisfiable. Raises on the first unmet requirement. Called at
-        construction. Optimistic about ancestry (a produced column stays reachable while the chain links
-        ``prev_objects``); ``run``'s checks are the ground truth."""
+        (per-type lists, mirroring runtime input matching) and confirm every ``requires`` is satisfiable.
+        Raises on the first unmet requirement. Called at construction. Optimistic about ancestry (a
+        produced column stays reachable while the chain links ``prev_objects``); ``run``'s checks are
+        the ground truth."""
         for component, before, _ in self.thread_schemas():
             if component is None:
                 continue
             for req in component.requires:
-                desc, err = Requirement.coerce(req).resolve(before.get)
+                desc, err = Requirement.coerce(req).resolve(lambda t: before.get(t, ()))
                 if desc is None:
                     raise ValueError(f"{type(component).__name__} {err}")
         return self
 
     def thread_schemas(self):
         """Yield ``(component, before, after)`` per step — ``before``/``after`` are ``{data_type:
-        Schema}`` snapshots of what's available immediately before/after the component. The first yield
-        is ``(None, None, seed)`` (the seed ``Sources``). Pure simulation, no compute: the single source
-        of "what's available when", consumed by ``validate`` and the flow chart."""
-        available = {type(seed): seed.schema() for seed in self.seeds}
-        yield None, None, dict(available)
+        [Schema, ...]}`` snapshots (oldest -> newest, appended, never overwritten — an older table's
+        schema stays resolvable, exactly like runtime) of what's available immediately before/after the
+        component. The first yield is ``(None, None, seeds)``. Pure simulation, no compute: the single
+        source of "what's available when", consumed by ``validate`` and the flow chart."""
+        available = {}
+        for seed in self.seeds:
+            available.setdefault(type(seed), []).append(seed.schema())
+        yield None, None, self._snapshot(available)
         for component in self.components:
-            before = dict(available)
+            before = self._snapshot(available)
             for need in as_requirements(component.produces):
-                prev = available.get(need.data_type)
+                prevs = available.get(need.data_type, [])
+                prev = prevs[-1] if prevs else None
                 columns = set(need.columns)
                 links = set(need.links)
                 fks = getattr(need.data_type, "fks", {})
@@ -210,8 +218,16 @@ class Pipeline:
                 if prev is not None and "prev_objects" in need.links:          # ancestry: reach back through the chain
                     columns |= prev.columns
                     links |= prev.links
-                available[need.data_type] = Schema(columns=columns, links=links, crs=need.crs)
-            yield component, before, dict(available)
+                # Modalities propagate producer <- input: a tilerizer's tiles hold its source's modalities.
+                modalities = prev.modalities if (need.data_type is Imagery and prev is not None) else None
+                available.setdefault(need.data_type, []).append(
+                    Schema(columns=columns, links=links, crs=need.crs, kind=need.kind,
+                           modalities=modalities))
+            yield component, before, self._snapshot(available)
+
+    @staticmethod
+    def _snapshot(available):
+        return {data_type: list(schemas) for data_type, schemas in available.items()}
 
     def print_flow_chart(self):
         PipelineFlowVisualizer(self).print()
@@ -227,15 +243,15 @@ class Pipeline:
         the last that produced Objects) and return its path. Columns are merged from the ancestry but
         only those introduced by components in ``[start_at, end_at]``; with repeats (e.g. two
         aggregators) the latest value wins (``Objects.column``). ``fmt`` is ``"gpkg"`` or ``"coco"``."""
-        manifest = self.manifest or (store.read_manifest(self.output_dir) if self.output_dir else None)
-        if manifest is None:
-            raise ValueError("no run manifest available; run() the pipeline with an output_dir before exporting")
+        record = self.run_record or (store.read_run_record(self.output_dir) if self.output_dir else None)
+        if record is None:
+            raise ValueError("no run record available; run() the pipeline with an output_dir before exporting")
         end_at = self._last_objects_index() if end_at is None else end_at
         anchor = self._objects_at(end_at)
         if anchor is None:
             raise ValueError(f"component {end_at} did not produce Objects to export")
-        columns = self._window_columns(manifest, start_at, end_at)
-        directory = self.output_dir / f"{manifest[end_at]['id']}_{manifest[end_at]['name']}"
+        columns = self._window_columns(record, start_at, end_at)
+        directory = self.output_dir / f"{record[end_at]['id']}_{record[end_at]['name']}"
         if fmt == "gpkg":
             return store.write_gpkg(self._wide_gdf(anchor, columns), Path(path) if path else directory / "export.gpkg")
         if fmt == "coco":
@@ -251,32 +267,32 @@ class Pipeline:
             values = self._reach(anchor, col)
             if values is not None:
                 data[col] = values
-        tile_path = self._tile_path_per_object(anchor)   # latest tile_path, if reachable
-        if tile_path is not None:
-            data[Col.TILE_PATH] = tile_path.values
+        image_path = self._image_path_per_object(anchor)   # each object's image file, if reachable
+        if image_path is not None:
+            data[store.EXPORT_TILE_PATH] = image_path.values
         return gpd.GeoDataFrame(data, geometry=Col.GEOMETRY, crs=anchor.df.crs)
 
     def _export_coco(self, anchor: Objects, columns, path, scores_column, categories_column):
-        tiles = anchor.linked("tiles")
-        if tiles is None:
-            raise ValueError("COCO export needs tiles linked to the objects (none reachable in the ancestry)")
+        imagery = anchor.linked("imagery")
+        if imagery is None:
+            raise ValueError("COCO export needs imagery linked to the objects (none reachable in the ancestry)")
         try:
-            tile_id = anchor.column(Col.TILE_ID)
+            image_id = anchor.column(Col.IMAGE_ID)
         except KeyError:
-            raise ValueError("COCO export needs each object's tile_id (none reachable in the ancestry)")
-        if Col.TILE_PATH not in tiles.df.columns:
+            raise ValueError("COCO export needs each object's image_id (none reachable in the ancestry)")
+        if Col.PATH not in imagery.df.columns:
             raise ValueError("COCO export needs tile images on disk (re-run the tilerizer with save_tiles_to_disk=True)")
-        paths = tile_id.map(tiles.df.set_index(Col.TILE_ID)[Col.TILE_PATH])
+        paths = image_id.map(imagery.df.set_index(Col.IMAGE_ID)[Col.PATH])
         if paths.isna().any() or (paths.astype(str) == "").any():
             raise ValueError("COCO export needs tile images on disk (re-run the tilerizer with save_tiles_to_disk=True)")
 
         scores_column = scores_column or self._latest_in(columns, store.SCORE_COLS)
         categories_column = categories_column or self._latest_in(columns, store.CLASS_COLS)
 
-        data = {Col.TILE_PATH: paths.values, Col.GEOMETRY: anchor.df.geometry.values}
+        data = {store.EXPORT_TILE_PATH: paths.values, Col.GEOMETRY: anchor.df.geometry.values}
         others = []
         for col in sorted(columns):
-            if col in (Col.TILE_PATH, Col.GEOMETRY):
+            if col in (store.EXPORT_TILE_PATH, Col.GEOMETRY):
                 continue
             values = self._reach(anchor, col)
             if values is not None:
@@ -290,7 +306,7 @@ class Pipeline:
                     data[col] = values
         # CRS geometry -> geodataset converts to each tile's pixels; pixel geometry (crs=None) is used as-is.
         gdf = gpd.GeoDataFrame(data, geometry=Col.GEOMETRY, crs=anchor.df.crs)
-        use_rle = bool(len(anchor)) and anchor.df[Col.GEOM_KIND].iloc[0] == MASK
+        use_rle = bool(len(anchor)) and anchor.df[Col.GEOM_KIND].iloc[0] == GeomKind.MASK
         return store.write_coco(gdf, path, scores_column=scores_column, categories_column=categories_column,
                                 other_attributes_columns=others, use_rle=use_rle, categories=None)
 
@@ -306,9 +322,9 @@ class Pipeline:
         return next((table for table in self.outputs[index] if isinstance(table, Objects)), None)
 
     @staticmethod
-    def _window_columns(manifest, start_at, end_at):
+    def _window_columns(record, start_at, end_at):
         columns = set()
-        for entry in manifest[start_at:end_at + 1]:
+        for entry in record[start_at:end_at + 1]:
             for produced in entry["produces"]:
                 if produced["type"] == Objects.__name__:
                     columns |= set(produced["columns"])
@@ -321,15 +337,15 @@ class Pipeline:
         except KeyError:
             return None
 
-    def _tile_path_per_object(self, anchor: Objects):
-        tiles = anchor.linked("tiles")
-        if tiles is None or Col.TILE_PATH not in tiles.df.columns:
+    def _image_path_per_object(self, anchor: Objects):
+        imagery = anchor.linked("imagery")
+        if imagery is None or Col.PATH not in imagery.df.columns:
             return None
         try:
-            tile_id = anchor.column(Col.TILE_ID)
+            image_id = anchor.column(Col.IMAGE_ID)
         except KeyError:
             return None
-        return tile_id.map(tiles.df.set_index(Col.TILE_ID)[Col.TILE_PATH])
+        return image_id.map(imagery.df.set_index(Col.IMAGE_ID)[Col.PATH])
 
     @staticmethod
     def _latest_in(columns, ordered):
@@ -341,20 +357,20 @@ class Pipeline:
     def from_dir(cls, root):
         """Reload a saved run for inspection / re-export: reconstruct the typed tables in order,
         re-linking FKs from their persisted columns. Data-only (no components) — everything ``export``
-        needs comes from the manifest and the reloaded tables."""
+        needs comes from the run record and the reloaded tables."""
         root = Path(root)
-        manifest = store.read_manifest(root)
-        if manifest is None:
-            raise FileNotFoundError(f"no {store.MANIFEST} in {root}")
+        record = store.read_run_record(root)
+        if record is None:
+            raise FileNotFoundError(f"no {store.RUN_RECORD} in {root}")
         pipe = cls([], output_dir=root)
-        pipe.manifest = manifest
+        pipe.run_record = record
         pipe._load_seeds(root)                              # seed tables first, so produced FKs relink
-        pipe._load_prefix(manifest, len(manifest), root)
+        pipe._load_prefix(record, len(record), root)
         return pipe
 
     def _load_seeds(self, root):
-        """Reload persisted seed tables (``_seed/``) before any component output, so produced Objects
-        can relink their FKs (e.g. ``tiles``) to a seeded table — the case of a run seeded from a
+        """Reload persisted seed tables (``_seed/``) before any component output, so produced tables
+        can relink their FKs (e.g. ``imagery``) to a seeded table — the case of a run seeded from a
         pre-cut tiles folder rather than a tilerizer component."""
         seeds = store.read_seeds(root)
         if not seeds:
@@ -368,21 +384,21 @@ class Pipeline:
     def _resume_prefix(self) -> int:
         """The number of leading components to skip: the longest contiguous prefix whose recorded
         config_hash matches the current component and whose output files exist. Loads those outputs."""
-        manifest = store.read_manifest(self.output_dir) if self.output_dir else None
-        if not manifest:
+        record = store.read_run_record(self.output_dir) if self.output_dir else None
+        if not record:
             return 0
-        done = self._done_prefix(manifest)
-        self._load_prefix(manifest, done, self.output_dir)
-        for entry in manifest[:done]:
+        done = self._done_prefix(record)
+        self._load_prefix(record, done, self.output_dir)
+        for entry in record[:done]:
             green_print(f"Skipping {entry['id']}_{entry['name']} (already done, resumed)")
         return done
 
-    def _done_prefix(self, manifest) -> int:
+    def _done_prefix(self, record) -> int:
         done = 0
         for i, component in enumerate(self.components):
-            if i >= len(manifest):
+            if i >= len(record):
                 break
-            entry = manifest[i]
+            entry = record[i]
             if entry.get("name") != component.name or entry.get("config_hash") != store.config_hash(component.config):
                 break
             directory = self._component_dir(component)
@@ -391,8 +407,8 @@ class Pipeline:
             done = i + 1
         return done
 
-    def _load_prefix(self, manifest, count, root):
-        for entry in manifest[:count]:
+    def _load_prefix(self, record, count, root):
+        for entry in record[:count]:
             directory = root / f"{entry['id']}_{entry['name']}"
             produced = []
             for spec in entry["produces"]:
@@ -405,17 +421,16 @@ class Pipeline:
 
     def _rebuild(self, data_type, df):
         """A typed table from its saved dataframe, re-linking FKs to the latest loaded parent of each
-        linked type (the same latest-wins rule ``run`` threads inputs by)."""
-        if data_type is Sources:
-            return Sources(df)
-        if data_type is Tiles:
-            sources = self.latest(Sources)
-            related = {"sources": sources} if (sources is not None and self._has_fk(df, Col.SOURCE_ID)) else {}
-            return Tiles(df, **related)
+        linked type (matching how tables were threaded at run time: a table's parents were the newest
+        of their type when it was produced, and tables reload in the same order)."""
+        if data_type is Imagery:
+            parent = self.latest(Imagery)
+            related = {"parent": parent} if (parent is not None and self._has_fk(df, Col.PARENT_ID)) else {}
+            return Imagery(df, **related)
         related = {}
-        tiles = self.latest(Tiles)
-        if tiles is not None and self._has_fk(df, Col.TILE_ID):
-            related["tiles"] = tiles
+        imagery = self.latest(Imagery)
+        if imagery is not None and self._has_fk(df, Col.IMAGE_ID):
+            related["imagery"] = imagery
         prev = self.latest(Objects)
         if prev is not None and self._has_fk(df, Col.PREV_OBJECT_ID):
             related["prev_objects"] = prev
@@ -442,11 +457,17 @@ class Pipeline:
         self._lists[type(data)].append(data)
 
     def _resolve(self, req, component):
-        """The latest instance satisfying a ``requires`` entry (a bare type, a ``Need``, or an ``AnyOf``).
-        Resolution is by type via ``self.latest``; an ``AnyOf`` picks the first available alternative."""
-        inst, err = Requirement.coerce(req).resolve(self.latest)
+        """The newest instance satisfying a ``requires`` entry (a bare type, a ``Need``, or an
+        ``AnyOf``). Matching scans each type's stored list newest-first; when it reaches past the
+        newest instance (sometimes intended — a tilerizer reaching past tiles to the source), that's
+        made visible."""
+        inst, err = Requirement.coerce(req).resolve(lambda t: self._lists.get(t, ()))
         if inst is None:
             raise ValueError(f"{type(component).__name__} {err}")
+        stored = self._lists.get(type(inst), ())
+        if stored and inst is not stored[-1]:
+            print(f"{type(component).__name__}: resolved an older {type(inst).__name__} "
+                  f"({len(inst)} rows) — the newest didn't satisfy its requirement.")
         return inst
 
     def _check_produced(self, component, produced):
@@ -457,6 +478,6 @@ class Pipeline:
             inst = next((table for table in produced if type(table) is need.data_type), None)
             if inst is None:
                 raise ValueError(f"{name} promised to produce {need.data_type.__name__} but did not")
-            err = need.check(inst)
+            err = need.check(inst.schema())
             if err:
                 raise ValueError(f"{name} produced {need.data_type.__name__} but {err}")

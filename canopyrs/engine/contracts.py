@@ -1,23 +1,29 @@
 """Data contracts: how a component declares what it needs and what it makes.
 
+See ``canopyrs/engine/README.md`` for the model in five sentences.
+
 A component declares ``requires`` (a tuple of contract entries) and ``produces`` (a contract entry, or
 a tuple). An entry is a data-class *type* (no extra constraints), a ``Need`` (a type plus required
-columns / links / CRS-ness), or a ``one_of`` over alternatives. The pipeline checks each ``requires``
-against the available data before ``run`` and each ``produces`` against the output after — the same
-``Need.check`` serving both.
+columns / links / CRS-ness / kind / modalities), or a ``one_of`` over alternatives.
 
-The contract system is pure duck-typing: a ``Need`` only ever calls ``provides`` / ``has_link`` /
-``crs_set`` on whatever it's checking — a live ``Table`` at runtime, a ``Schema`` during static
-``validate``. So this module knows nothing about the concrete table classes; it imports nothing from
-``data``.
+Every check runs on a ``Schema`` — a plain description of what a table exposes. Live tables render
+themselves as one via ``.schema()``; the pipeline's static ``validate`` threads declared Schemas
+forward. Contracts check *schema-level* properties only (column presence, links, crs-ness, kind,
+modality sets) — never data values like timestamps or paths; the attribute checks are tri-state,
+skipped when the schema can't say.
+
+Input matching: a requirement is matched against the *list* of available candidates of its type
+(oldest -> newest) and takes the newest one whose schema satisfies it — so e.g. a tilerizer's
+``kind="source"`` need reaches past freshly produced tiles back to the seed raster.
 """
 
 
 class Requirement:
     """A ``requires`` entry the pipeline resolves against the available data. ``resolve(get)`` returns
     ``(descriptor, '')`` for the chosen input, or ``(None, error)``. ``get`` maps a data type to the
-    available descriptor — a table instance at runtime, a ``Schema`` in static ``validate`` — or None.
-    ``Need`` is the basic spec; ``one_of`` builds an OR (alternatives may even span different types)."""
+    *list* of available descriptors, oldest -> newest — live tables at runtime, ``Schema``s in static
+    ``validate`` — or an empty sequence. ``Need`` is the basic spec; ``one_of`` builds an OR
+    (alternatives may even span different types)."""
 
     def resolve(self, get):
         raise NotImplementedError
@@ -41,47 +47,62 @@ class Need(Requirement):
     an instance of ``data_type`` and additionally:
       - expose every column in ``columns`` (present with usable values; for Objects, resolvable through
         the prev_objects ancestry);
-      - have every relation in ``links`` hydrated (e.g. ``"tiles"`` -> ``objects.tiles`` is set);
-      - if ``crs`` is given, hold its geometry in CRS coords (``True``) or tile-pixel coords (``False``).
+      - have every relation in ``links`` hydrated (e.g. ``"imagery"`` -> ``objects.imagery`` is set);
+      - if ``crs`` is given, hold its geometry in CRS coords (``True``) or tile-pixel coords (``False``);
+      - if ``kind`` is given, be a table of that kind (e.g. ``ImageKind.TILE`` — so a detector can
+        statically refuse an untiled source scene);
+      - if ``modalities`` is given, hold at least one row of a supported modality (set intersection).
 
-    A bare type in ``requires`` is the no-extra-constraints case. The pipeline threads inputs by
-    ``data_type`` and checks the input before ``run``, so a component can assume valid inputs."""
+    A bare type in ``requires`` is the no-extra-constraints case. The pipeline resolves inputs by
+    scanning each type's available instances newest-first for the first that satisfies the Need, so a
+    component can assume valid inputs."""
 
-    def __init__(self, data_type, columns=(), links=(), crs=None):
+    def __init__(self, data_type, columns=(), links=(), crs=None, kind=None, modalities=None):
         self.data_type = data_type
         self.columns = tuple(columns)
         self.links = tuple(links)
         self.crs = crs
+        self.kind = kind
+        self.modalities = tuple(modalities) if modalities is not None else None
 
-    def check(self, desc) -> str:
-        """An error message if ``desc`` violates this need, else ''. ``desc`` is anything implementing
-        the descriptor interface (``provides`` / ``has_link`` / ``crs_set``) — a real table instance
-        (runtime) or a simulated ``Schema`` (static ``validate``)."""
+    def check(self, schema) -> str:
+        """An error message if ``schema`` (a ``Schema``) violates this need, else ''. Attribute checks
+        (crs / kind / modalities) are tri-state: a schema value of None means "can't say" — skip."""
         name = self.data_type.__name__
         for link in self.links:
-            if not desc.has_link(link):
+            if not schema.has_link(link):
                 return f"{name}.{link} must be linked"
         for col in self.columns:
-            if not desc.provides(col):
+            if not schema.provides(col):
                 return f"{name} must expose column '{col}' (incl. its ancestry)"
-        # crs_set may be None on a Schema whose producer didn't declare CRS-ness — then we can't verify.
-        if self.crs is not None and desc.crs_set is not None and self.crs != desc.crs_set:
+        if self.crs is not None and schema.crs_set is not None and self.crs != schema.crs_set:
             return (f"{name} geometry must be in CRS coords" if self.crs
                     else f"{name} geometry must be in tile-pixel coords (no CRS)")
+        if self.kind is not None and schema.kind is not None and self.kind != schema.kind:
+            return f"{name} must be kind='{self.kind}' (got '{schema.kind}')"
+        if self.modalities is not None and schema.modalities is not None \
+                and not set(self.modalities) & set(schema.modalities):
+            return f"{name} must hold a modality in {sorted(self.modalities)} (got {sorted(schema.modalities)})"
         return ""
 
     def resolve(self, get):
-        desc = get(self.data_type)
-        if desc is None:
+        candidates = list(get(self.data_type) or ())
+        if not candidates:
             return None, f"requires {self.data_type.__name__}, but none is available"
-        err = self.check(desc)
-        return (None, err) if err else (desc, "")
+        newest_err = ""
+        for candidate in reversed(candidates):   # newest first; a live table or a Schema
+            err = self.check(candidate.schema())
+            if not err:
+                return candidate, ""
+            newest_err = newest_err or err
+        return None, (f"requires {self.data_type.__name__} but none of the {len(candidates)} available "
+                      f"satisfies it (newest: {newest_err})")
 
 
 class AnyOf(Requirement):
     """Satisfied by the FIRST alternative Need the available data meets — alternatives are tried in
-    order and may span different types (e.g. classify per-object crops if Objects-with-tiles are
-    present, else whole tiles; or read a tile from a pre-cut path else its source). Built via ``one_of``."""
+    order and may span different types (e.g. classify per-object crops if Objects-with-imagery are
+    present, else whole tiles). Built via ``one_of``."""
 
     def __init__(self, alternatives):
         assert alternatives, "one_of needs at least one alternative"
@@ -106,16 +127,21 @@ __all__ = ["Requirement", "Need", "AnyOf", "one_of", "Schema", "as_requirements"
 
 
 class Schema:
-    """A declared description of what a table exposes — its (ancestry-reachable) columns, hydrated
-    links, and CRS-ness — without a real instance. The pipeline's ``validate()`` threads each
-    component's ``produces`` forward as Schemas to check requirements before running. Implements the
-    same descriptor interface (``provides`` / ``has_link`` / ``crs_set``) a real table does, so one
-    ``Need.check`` serves both static and runtime."""
+    """What a table exposes — its (ancestry-reachable) columns, links, CRS-ness, kind, and modality
+    set. The single currency of every contract check: live tables render themselves into one via
+    ``Table.schema()``, and the pipeline's static ``validate()`` threads declared Schemas forward.
+    ``crs`` / ``kind`` / ``modalities`` may be None = undeclared (checks skip)."""
 
-    def __init__(self, columns=(), links=(), crs=None):
+    def __init__(self, columns=(), links=(), crs=None, kind=None, modalities=None):
         self.columns = set(columns)
         self.links = set(links)
-        self.crs_set = crs   # True / False / None (None = the producer didn't declare CRS-ness)
+        self.crs_set = crs
+        self.kind = kind
+        self.modalities = set(modalities) if modalities is not None else None
+
+    def schema(self) -> "Schema":
+        """Itself — so input matching treats live tables and declared Schemas identically."""
+        return self
 
     def provides(self, col) -> bool:
         return col in self.columns

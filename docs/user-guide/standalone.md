@@ -9,14 +9,14 @@ For config parameters (tile size, NMS thresholds, score weights, etc.), see [Con
 ```python
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import TilerizerConfig
-from canopyrs.engine.data import Tiles
+from canopyrs.engine.data import Imagery
 
 pipe = Pipeline.from_config(
     [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=512, save_tiles_to_disk=True))],
     sources='raster.tif',
     output_dir='./out',
 ).run()
-print(pipe.latest(Tiles))
+print(pipe.latest(Imagery))
 ```
 
 ## Detector
@@ -58,12 +58,12 @@ The aggregator georeferences and de-duplicates existing detections, so seed it f
 ```python
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import AggregatorConfig
-from canopyrs.engine.data import Tiles, Objects
+from canopyrs.engine.data import Imagery, Objects
 
 prior = Pipeline.from_dir('./detector_run')
 pipe = Pipeline.from_config(
     [('aggregator', AggregatorConfig(nms_algorithm='iou', nms_threshold=0.5, score_threshold=0.3))],
-    tiles=prior.latest(Tiles),
+    tiles=prior.latest(Imagery),
     objects=prior.latest(Objects),
     output_dir='./out',
 ).run()

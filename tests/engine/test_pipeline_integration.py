@@ -11,7 +11,7 @@ import pytest
 
 from canopyrs.engine import store
 from canopyrs.engine.constants import Col
-from canopyrs.engine.data import Tiles, Objects
+from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import PipelineConfig, TilerizerConfig
 from canopyrs.engine.config_parsers.base import get_config_path
@@ -22,20 +22,20 @@ from canopyrs.engine.config_parsers.base import get_config_path
 # =============================================================================
 
 def test_tilerizer_pipeline_produces_tiles_and_reloads(synthetic_raster, tmp_path):
-    """A tilerizer-only pipeline over a raster produces Tiles, writes a manifest, and reloads."""
+    """A tilerizer-only pipeline over a raster produces tile Imagery, writes a run record, and reloads."""
     run_dir = tmp_path / "run"
     steps = [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=128, tile_overlap=0.0))]
 
     pipe = Pipeline.from_config(steps, sources=str(synthetic_raster), output_dir=str(run_dir))
     pipe.run(verbose=False)
 
-    tiles = pipe.latest(Tiles)
+    tiles = pipe.latest(Imagery)
     assert tiles is not None and len(tiles) > 0
-    assert store.read_manifest(run_dir) is not None
+    assert store.read_run_record(run_dir) is not None
 
     reloaded = Pipeline.from_dir(run_dir)
-    assert reloaded.latest(Tiles) is not None
-    assert len(reloaded.latest(Tiles)) == len(tiles)
+    assert reloaded.latest(Imagery) is not None
+    assert len(reloaded.latest(Imagery)) == len(tiles)
 
 
 def test_resume_skips_completed_prefix(synthetic_raster, tmp_path):
@@ -47,7 +47,7 @@ def test_resume_skips_completed_prefix(synthetic_raster, tmp_path):
     resumed = Pipeline.from_config(steps, sources=str(synthetic_raster), output_dir=str(run_dir))
     resumed.run(resume=True, verbose=False)
 
-    assert resumed.latest(Tiles) is not None and len(resumed.latest(Tiles)) > 0
+    assert resumed.latest(Imagery) is not None and len(resumed.latest(Imagery)) > 0
 
 
 # =============================================================================
@@ -67,7 +67,7 @@ def test_full_detector_pipeline_on_test_raster(test_raster, tmp_path):
     pipe = Pipeline.from_config(config.components_configs, sources=str(test_raster), output_dir=str(run_dir))
     pipe.run(verbose=False, strict_rgb_validation=False)
 
-    assert pipe.latest(Tiles) is not None and len(pipe.latest(Tiles)) > 0
+    assert pipe.latest(Imagery) is not None and len(pipe.latest(Imagery)) > 0
     assert pipe.latest(Objects) is not None
 
     reloaded = Pipeline.from_dir(run_dir)
@@ -80,7 +80,7 @@ def test_full_detector_pipeline_on_test_raster(test_raster, tmp_path):
 @pytest.mark.slow
 def test_detector_seeded_from_tiles_dir(test_raster, tmp_path):
     """The tiles-folder seeding path: seed a detector directly from a folder of pre-cut GeoTIFF tiles
-    (leading tilerizer dropped), exercising Tiles.from_tiles_dir end-to-end."""
+    (leading tilerizer dropped), exercising Imagery.from_tiles_dir end-to-end."""
     # First cut real tiles to disk with a tilerizer run.
     tiles_run = tmp_path / "tiles_run"
     tiler_steps = [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=512, tile_overlap=0.0,
@@ -88,7 +88,7 @@ def test_detector_seeded_from_tiles_dir(test_raster, tmp_path):
     tiler = Pipeline.from_config(tiler_steps, sources=str(test_raster), output_dir=str(tiles_run))
     tiler.run(verbose=False, strict_rgb_validation=False)
     # The tilerizer's own tile_path column points at the saved tiles — use its folder directly.
-    tiles_dir = Path(tiler.latest(Tiles).df[Col.TILE_PATH].iloc[0]).parent
+    tiles_dir = Path(tiler.latest(Imagery).df[Col.PATH].iloc[0]).parent
 
     # Now seed a detector-only pipeline straight from that tiles folder (no raster, no tilerizer).
     config = PipelineConfig.from_yaml(get_config_path(DETECTOR_PRESET))
@@ -100,5 +100,5 @@ def test_detector_seeded_from_tiles_dir(test_raster, tmp_path):
     pipe = Pipeline.from_config(detector_steps, tiles=str(tiles_dir), output_dir=str(det_run))
     pipe.run(verbose=False)
 
-    assert pipe.latest(Tiles) is not None and len(pipe.latest(Tiles)) > 0
+    assert pipe.latest(Imagery) is not None and len(pipe.latest(Imagery)) > 0
     assert pipe.latest(Objects) is not None   # boxes (possibly zero on some tiles), but the table exists

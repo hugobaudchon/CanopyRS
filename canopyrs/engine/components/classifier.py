@@ -1,18 +1,18 @@
-"""Classifier: a predicted class + score per object, reusing the v1 classifier model. Two input modes,
-picked by what the pipeline has available (Objects preferred):
+"""Classifier: a predicted class + score per object. Two input modes, picked by what the pipeline has
+available (Objects preferred):
 
-  - **on objects** (the pipeline case): per-object crop Objects from the polygon tilerizer, each already
-    pointing at its crop tile (``object.tiles``). Reads each crop and carries the object forward with
-    its class (``prev_object_id`` -> the input object), preserving geometry and lineage.
-  - **on tiles** (standalone): a Tiles table read directly — one classification per tile. Emits one
-    Object per tile, geometry = the tile footprint, pointing at its tile.
+  - **on objects** (the pipeline case): per-object crop Objects from the polygon tilerizer, each
+    already pointing at its crop (``object.imagery``). Reads each crop and carries the object forward
+    with its class (``prev_object_id`` -> the input object), preserving geometry and lineage.
+  - **on tiles** (standalone): a tile Imagery table read directly — one classification per image.
+    Emits one Object per image, geometry = the image footprint, pointing at its image.
 
 Either way it just adds the classifier columns; geometry/links are inherited from whatever it consumed.
 """
 
 from canopyrs.engine.models.registry import CLASSIFIER_REGISTRY
-from canopyrs.engine.constants import Col, BOX
-from canopyrs.engine.data import Objects, Tiles
+from canopyrs.engine.constants import Col, GeomKind, ImageKind
+from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.contracts import Need, one_of
 from canopyrs.engine.components.base import Component, register_component
 from canopyrs.engine.tilemeta import box_of
@@ -23,11 +23,10 @@ class Classifier(Component):
     def __init__(self, config):
         super().__init__(config)
         self._model_class = self._model(CLASSIFIER_REGISTRY)
-        # Prefer per-object crops (Objects that point at their tile); else classify whole tiles directly.
+        # Prefer per-object crops (Objects that point at their image); else classify whole tiles.
         self.requires = (one_of(
-            Need(Objects, links=("tiles",)),
-            Need(Tiles, columns=(Col.TILE_PATH,)),
-            Need(Tiles, links=("sources",)),
+            Need(Objects, links=("imagery",)),
+            Need(Imagery, kind=ImageKind.TILE),
         ),)
         columns = [Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORE, Col.CLASSIFIER_SCORES]
         if config.class_names:
@@ -39,14 +38,14 @@ class Classifier(Component):
         return self._on_objects(data, classifier) if isinstance(data, Objects) else self._on_tiles(data, classifier)
 
     def _on_objects(self, objects: Objects, classifier) -> Objects:
-        tiles = objects.linked("tiles")   # the per-object crops (one crop tile per object)
-        loader = self._loader(tiles, batch_size=self.config.batch_size)
-        tile_ids, predictions, class_scores = classifier.infer_v2(loader)
+        crops = objects.linked("imagery")   # the per-object crops (one crop per object)
+        loader = self._loader(crops, batch_size=self.config.batch_size)
+        image_ids, predictions, class_scores = classifier.infer_v2(loader)
 
-        by_tile = objects.df.set_index(Col.TILE_ID)   # one crop tile per object
+        by_image = objects.df.set_index(Col.IMAGE_ID)   # one crop per object
         geometry, geom_kind, prev_object_ids = [], [], []
-        for tile_id in tile_ids:
-            object_row = by_tile.loc[tile_id]
+        for image_id in image_ids:
+            object_row = by_image.loc[image_id]
             geometry.append(object_row[Col.GEOMETRY])
             geom_kind.append(object_row[Col.GEOM_KIND])
             prev_object_ids.append(object_row[Col.OBJECT_ID])
@@ -56,14 +55,15 @@ class Classifier(Component):
         print(f"Classifier: classified {len(out)} objects.")
         return out
 
-    def _on_tiles(self, tiles: Tiles, classifier) -> Objects:
+    def _on_tiles(self, tiles: Imagery, classifier) -> Objects:
         loader = self._loader(tiles, batch_size=self.config.batch_size)
-        tile_ids, predictions, class_scores = classifier.infer_v2(loader)
+        image_ids, predictions, class_scores = classifier.infer_v2(loader)
 
-        meta_by_tile = tiles.df.set_index(Col.TILE_ID)[Col.TILE_METADATA]
-        crs = tiles.df[Col.TILE_METADATA].iloc[0]["crs"] if len(tiles) else None
-        geometry = [box_of(meta_by_tile[tile_id]) for tile_id in tile_ids]   # each tile's footprint
-        out = Objects.build(geometry=geometry, geom_kind=BOX, tile_id=list(tile_ids), tiles=tiles, crs=crs,
+        meta_by_image = tiles.df.set_index(Col.IMAGE_ID)[Col.METADATA]
+        crs = tiles.df[Col.METADATA].iloc[0]["crs"] if len(tiles) else None
+        geometry = [box_of(meta_by_image[image_id]) for image_id in image_ids]   # each image's footprint
+        out = Objects.build(geometry=geometry, geom_kind=GeomKind.BOX, image_id=list(image_ids),
+                            imagery=tiles, crs=crs,
                             **self._class_columns(predictions, class_scores))
         print(f"Classifier: classified {len(out)} tiles.")
         return out
