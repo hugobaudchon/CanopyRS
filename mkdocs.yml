@@ -64,5 +64,5 @@ nav:
       - Segmenter: api/components/segmenter.md
       - Aggregator: api/components/aggregator.md
       - Classifier: api/components/classifier.md
-    - DataState: api/data-state.md
+    - Data model: api/data-model.md
   - Contributing: contributing.md

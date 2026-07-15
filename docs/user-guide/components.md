@@ -1,69 +1,67 @@
 # Components
 
-Each component in the pipeline is responsible for a single stage of processing. All components share the same interface: they receive a `DataState`, do their work, and return a `ComponentResult`.
+Each component handles a single stage. A component declares the typed data it **requires** and what it **produces**; the pipeline threads the right tables in and checks them before and after the component runs (see [Pipeline](pipeline.md)).
 
-All components can also be run individually — see [Standalone Usage](standalone.md).
+All components can also be run on their own — see [Standalone Usage](standalone.md).
 
 ## Tilerizer
 
-Splits a large orthomosaic into smaller, overlapping tiles suitable for model inference.
+Splits an orthomosaic into tiles.
 
-**Tile types:**
+**Tile types** (`tile_type`):
 
 | Type | Description |
 |---|---|
-| `tile` | Unlabeled regular-grid tiles (input to detector or segmenter) |
-| `tile_labeled` | Labeled tiles with COCO annotations (input to prompted segmenter) |
-| `polygon` | Per-polygon tiles (input to classifier) |
+| `tile` | regular-grid tiles (input to a detector or segmenter) |
+| `labeled` | grid tiles with input objects re-tiled onto them |
+| `polygon` | one crop per input object (input to a classifier) |
 
-You can select the type of tilerizer you want using the `tile_type` parameter in your tilerizer config.
+**Requires:** `Sources` (+ `Objects` for `labeled` and `polygon`)
 
-**Requires:** `imagery_path` (+ `infer_gdf` for `tile_labeled` and `polygon`)
-
-**Produces:** `tiles_path`, optionally `infer_coco_path`
+**Produces:** `Tiles` (+ the carried `Objects` for `labeled` and `polygon`)
 
 ---
 
 ## Detector
 
-Runs object detection on image tiles, producing bounding box predictions with confidence scores.
+Runs object detection on tiles, one box per detection.
 
-**Requires:** `tiles_path`
+**Requires:** `Tiles`
 
-**Produces:** `infer_gdf` (geometry, object_id, tile_path, score, class), `infer_coco_path`
+**Produces:** `Objects` (boxes, tile-pixel coords) with `detector_score`, `detector_class`
 
 ---
 
 ## Segmenter
 
-Refines bounding box detections into instance segmentation masks. Can operate in prompted mode (using detector boxes) or unprompted mode.
+Produces instance masks — prompted by input objects (e.g. SAM) or automatically over each tile.
 
-**Requires:** `tiles_path`, optionally `infer_coco_path` (prompted mode)
+**Requires:** `Objects` (prompted) or `Tiles` (automatic)
 
-**Produces:** `infer_gdf` with updated mask geometries, `infer_coco_path`
+**Produces:** `Objects` (masks, tile-pixel coords) with `segmenter_score`
 
 ---
 
 ## Aggregator
 
-Merges overlapping detections from tiled inference using non-maximum suppression (NMS). Produces the final per-tree polygons.
+Merges overlapping detections across tiles with non-maximum suppression (NMS), georeferencing them to raster coordinates.
 
-**Requires:** `infer_gdf` with geometry, object_id, tile_path, and detector_score and/or segmenter_score columns
+**Requires:** `Objects` carrying the weighted score column(s) and with their `tiles` linked
 
-**Produces:** aggregated `infer_gdf` with `aggregator_score`
+**Produces:** georeferenced `Objects` with `aggregator_score`
 
 ---
 
 ## Classifier
 
-Classifies each detected/segmented tree into categories (e.g. species).
+Classifies each object.
 
-**Requires:** `tiles_path`, `infer_coco_path`
+**Requires:** per-object crop `Objects` (preferred) or `Tiles`
 
-**Produces:** classification scores and predictions in `infer_gdf`
+**Produces:** `Objects` with `classifier_class`, `classifier_score`, `classifier_scores` (and `classifier_class_name` if `class_names` is set)
 
 ---
 
-## Runtime validation
+## Validation
 
-Every component is decorated with `@validate_requirements`. At runtime, before the component logic executes, the decorator checks that all required state keys and GDF columns are present — and raises a clear error with hints if anything is missing.
+A component's inputs are checked against its declared `requires` before it runs, and its output against its `produces` after — so a wiring error surfaces early, at the offending component, with a clear message.
