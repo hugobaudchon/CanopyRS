@@ -91,6 +91,22 @@ class AlignmentReport:
         }
 
 
+@dataclass
+class RasterEvalContext:
+    """Precomputed per-raster evaluation state, reusable across many prediction subsets.
+
+    Built once by ``CocoEvaluator.build_raster_eval_context`` (the geometry-heavy work: AOI
+    filtering/clipping, ground-resolution transform, repair, size labels, pred x truth candidate
+    IoUs). ``CocoEvaluator.evaluate_raster_from_context`` then scores any subset of the
+    predictions with only the cheap greedy matching.
+    """
+    candidate_ious: List[list]      # per context pred: [(gt_idx, iou), ...] sorted by IoU desc
+    gt_sizes: List[str]             # size label per truth
+    pred_sizes: List[str]           # size label per context pred (score-descending order)
+    pred_superset_pos: np.ndarray   # per context pred, its row position in the input predictions
+    num_truths: int
+
+
 class CocoEvaluator:
     small_max_sq_meters = 16
     medium_max_sq_meters = 100
@@ -392,21 +408,47 @@ class CocoEvaluator:
         Compute precision, recall, and F1 averaged over one or more IoU thresholds
         between prediction and ground-truth GeoDataFrames (RF1-style).
 
+        Thin wrapper: builds a ``RasterEvalContext`` (the geometry-heavy precompute) and scores
+        all predictions against it. Grid searches build the context once and call
+        ``evaluate_raster_from_context`` per candidate subset instead.
+
         iou_type: type of IoU to compute (e.g., 'bbox', 'segm').
         preds_gpkg_path: path to GeoDataFrame with a 'geometry' column and a 'score', 'aggregator_score', 'detector_score' or 'segmentation_score' column (will be checked in that order).
         truth_gpkg_path: path to GeoDataFrame with a 'geometry' column.
         aoi_gpkg_path: path to GeoDataFrame with a 'geometry' column (optional).
         iou_thresholds: List of IoU thresholds to average over (e.g. [0.50, 0.55, ..., 0.95]).
         """
+        context = CocoEvaluator.build_raster_eval_context(
+            iou_type=iou_type,
+            preds=preds_gpkg_path,
+            truths=truth_gpkg_path,
+            aoi=aoi_gpkg_path,
+            ground_resolution=ground_resolution,
+        )
+        return CocoEvaluator.evaluate_raster_from_context(context, iou_thresholds=iou_thresholds)
 
-        if iou_thresholds is None or len(iou_thresholds) == 0:
-            iou_thresholds = [0.5]
-        # De-duplicate and sort for deterministic output
-        iou_thresholds = sorted({float(t) for t in iou_thresholds})
+    @staticmethod
+    def build_raster_eval_context(iou_type: str,
+                                  preds,
+                                  truths,
+                                  aoi=None,
+                                  ground_resolution: float = 0.045) -> "RasterEvalContext":
+        """
+        Precompute the geometry-heavy half of raster-level evaluation: AOI filtering/clipping,
+        ground-resolution transform, geometry repair, size labels and pred x truth candidate IoUs.
+        ``preds``/``truths``/``aoi`` are GeoDataFrames or paths readable by geopandas (aoi optional).
 
+        Predictions keep their input row positions (``pred_superset_pos``), so any subset of the
+        input can later be scored via ``evaluate_raster_from_context`` and a boolean mask —
+        without redoing the geometry work.
+        """
         # Load the prediction and ground truth GeoDataFrames
-        infer_gdf = gpd.read_file(preds_gpkg_path)
-        truth_gdf = gpd.read_file(truth_gpkg_path)
+        infer_gdf = preds.copy() if isinstance(preds, gpd.GeoDataFrame) else gpd.read_file(preds)
+        truth_gdf = truths.copy() if isinstance(truths, gpd.GeoDataFrame) else gpd.read_file(truths)
+
+        # Each prediction's input row position, carried through filtering/clipping/sorting so
+        # subsets can be selected by masking input rows later.
+        infer_gdf['_superset_pos'] = np.arange(len(infer_gdf))
 
         # Apply IoU type on polygons
         if iou_type == 'segm':
@@ -429,8 +471,8 @@ class CocoEvaluator:
         truth_gdf = truth_gdf.to_crs(common_crs)
 
         # Only keep the truth and inference geometries that are inside the AOI (40% overlap minimum)
-        if aoi_gpkg_path is not None:
-            aoi_gdf = gpd.read_file(aoi_gpkg_path).to_crs(common_crs)
+        if aoi is not None:
+            aoi_gdf = (aoi if isinstance(aoi, gpd.GeoDataFrame) else gpd.read_file(aoi)).to_crs(common_crs)
             aoi_union = aoi_gdf.geometry.unary_union
             truth_gdf = filter_min_overlap(truth_gdf, aoi_union, min_frac=0.4)
             infer_gdf = filter_min_overlap(infer_gdf, aoi_union, min_frac=0.4)
@@ -489,13 +531,49 @@ class CocoEvaluator:
             cand_iou.sort(key=lambda x: x[1], reverse=True)
             candidate_ious.append(cand_iou)
 
+        return RasterEvalContext(
+            candidate_ious=candidate_ious,
+            gt_sizes=gt_sizes,
+            pred_sizes=pred_sizes,
+            pred_superset_pos=infer_gdf['_superset_pos'].to_numpy(),
+            num_truths=len(truth_gdf),
+        )
+
+    @staticmethod
+    def evaluate_raster_from_context(context: "RasterEvalContext",
+                                     iou_thresholds: list[float] | None = None,
+                                     pred_mask=None) -> dict:
+        """
+        Score (a subset of) a context's predictions against its truths — greedy matching only,
+        no geometry work.
+
+        pred_mask: optional boolean mask over the *input rows* of the predictions the context was
+        built from; None scores all of them. Matching runs in the context's score-descending
+        order, so masking a superset context is equivalent to building a context on the subset.
+        """
+        if iou_thresholds is None or len(iou_thresholds) == 0:
+            iou_thresholds = [0.5]
+        # De-duplicate and sort for deterministic output
+        iou_thresholds = sorted({float(t) for t in iou_thresholds})
+
+        size_labels = CocoEvaluator.size_labels
+        gt_sizes = context.gt_sizes
+        pred_sizes = context.pred_sizes
+        candidate_ious = context.candidate_ious
+
+        if pred_mask is None:
+            selected_preds = list(range(len(pred_sizes)))
+        else:
+            pred_mask = np.asarray(pred_mask, dtype=bool)
+            selected_preds = list(np.flatnonzero(pred_mask[context.pred_superset_pos]))
+
         size_labels_with_all = ['all'] + size_labels
         per_size_iou_results: dict[str, list[dict]] = {lbl: [] for lbl in size_labels_with_all}
 
         # Precompute index lists per size for reuse
         gt_indices_by_size = {lbl: [i for i, s in enumerate(gt_sizes) if lbl == 'all' or s == lbl]
                               for lbl in size_labels_with_all}
-        pred_indices_by_size = {lbl: [i for i, s in enumerate(pred_sizes) if lbl == 'all' or s == lbl]
+        pred_indices_by_size = {lbl: [i for i in selected_preds if lbl == 'all' or pred_sizes[i] == lbl]
                                 for lbl in size_labels_with_all}
 
         for iou_thresh in iou_thresholds:
@@ -566,8 +644,8 @@ class CocoEvaluator:
             'tp': all_results[0]['tp'] if all_results else 0,
             'fp': all_results[0]['fp'] if all_results else 0,
             'fn': all_results[0]['fn'] if all_results else 0,
-            'num_truths': len(truth_gdf),
-            'num_preds': len(infer_gdf),
+            'num_truths': context.num_truths,
+            'num_preds': len(selected_preds),
             'num_images': 1,
             # Keep sorted per-IoU scores to log downstream
             'precision_per_iou': precisions,
