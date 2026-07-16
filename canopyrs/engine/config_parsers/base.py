@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict, Any
 
 import yaml
 from pydantic import BaseModel
@@ -36,11 +35,6 @@ class BaseConfig(BaseModel):
         validate_assignment = True
 
     @classmethod
-    def from_dict(cls, data_dict):
-        """Create a config from a dictionary."""
-        return cls(**data_dict)
-
-    @classmethod
     def from_yaml(cls, path: str or Path) -> 'BaseConfig':
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
@@ -49,11 +43,3 @@ class BaseConfig(BaseModel):
     def to_yaml(self, path: str or Path) -> None:
         with open(path, 'w') as f:
             yaml.safe_dump(self.model_dump(), f)
-
-    def update(self, updates: Dict[str, Any]) -> None:
-        """Update configuration using a dictionary."""
-        for key, value in updates.items():
-            if key in self.model_fields:
-                setattr(self, key, value)
-            else:
-                raise KeyError(f"Invalid key '{key}' for config class '{self.__class__.__name__}'")

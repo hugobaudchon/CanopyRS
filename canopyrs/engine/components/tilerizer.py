@@ -32,32 +32,27 @@ class Tilerizer(Component):
     def __init__(self, config, aois_config=None):
         super().__init__(config)
         self.aois_config = aois_config   # geodataset AOIConfig (run-level, from Pipeline.from_config); None = whole raster
-        if config.tile_type == "tile":
-            self.requires = (Need(Sources),)
-            self.produces = Need(Tiles, links=("parent",))
-        elif config.tile_type == "polygon":
-            # the objects' imagery link supplies the files to crop from (CRS objects over a raster,
-            # or tile-pixel detections over tiles) — no separate imagery input.
-            self.requires = (Need(Objects, links=("imagery",)),)
+        modes = {
+            "tile": (self._grid, (Need(Sources),), Need(Tiles, links=("parent",))),
+            # polygon: the objects' imagery link supplies the files to crop from (CRS objects over a
+            # raster, or tile-pixel detections over tiles) — no separate imagery input. Produces the
             # crops (children of each object's image) + the input objects carried forward (each -> its crop).
-            self.produces = (Need(Crops, links=("parent",)),
-                             Need(Objects, links=("imagery", "prev_objects"), crs=True, on=Crops))
-        elif config.tile_type == "labeled":
-            self.requires = (Need(Sources), Need(Objects, crs=True))
-            # grid tiles + re-tiled label objects in tile-pixel coords (crs=False).
-            self.produces = (Need(Tiles, links=("parent",)),
-                             Need(Objects, links=("imagery", "prev_objects"), crs=False, on=Tiles))
-        else:
+            "polygon": (self._per_object,
+                        (Need(Objects, links=("imagery",)),),
+                        (Need(Crops, links=("parent",)),
+                         Need(Objects, links=("imagery", "prev_objects"), crs=True, on=Crops))),
+            # labeled: grid tiles + re-tiled label objects in tile-pixel coords (crs=False).
+            "labeled": (self._labeled,
+                        (Need(Sources), Need(Objects, crs=True)),
+                        (Need(Tiles, links=("parent",)),
+                         Need(Objects, links=("imagery", "prev_objects"), crs=False, on=Tiles))),
+        }
+        if config.tile_type not in modes:
             raise ValueError(f"unknown tile_type '{config.tile_type}'")
+        self._mode_run, self.requires, self.produces = modes[config.tile_type]
 
     def run(self, *inputs):
-        if self.config.tile_type == "tile":
-            return self._grid(*inputs)
-        if self.config.tile_type == "polygon":
-            return self._per_object(*inputs)
-        if self.config.tile_type == "labeled":
-            return self._labeled(*inputs)
-        raise ValueError(f"unknown tile_type '{self.config.tile_type}'")
+        return self._mode_run(*inputs)
 
     def _meta_and_paths(self, gdf):
         """Serialized tile metadata + per-tile paths (the on-disk tile when saved, else None)."""

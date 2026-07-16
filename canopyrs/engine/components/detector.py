@@ -26,7 +26,7 @@ class Detector(Component):
     def run(self, tiles: Tiles) -> Objects:
         detector = self._model_class(self.config)
         loader = self._loader(tiles, batch_size=self.config.batch_size)
-        image_ids, boxes, scores, classes = detector.infer_v2(loader)
+        image_ids, boxes, scores, classes = detector.infer(loader)
 
         # Flatten per-tile predictions into one row per box, carrying each box's image (the FK).
         flat_image_ids, columns = flatten_by_tile(

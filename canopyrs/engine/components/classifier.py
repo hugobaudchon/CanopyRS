@@ -32,16 +32,12 @@ class Classifier(Component):
         classifier = self._model_class(self.config)
         crops = objects.linked("imagery")   # the per-object crops (one crop per object)
         loader = self._loader(crops, batch_size=self.config.batch_size)
-        image_ids, predictions, class_scores = classifier.infer_v2(loader)
+        image_ids, predictions, class_scores = classifier.infer(loader)
 
-        by_image = objects.df.set_index(Col.IMAGE_ID)   # one crop per object
-        geometry, geom_kind, prev_object_ids = [], [], []
-        for image_id in image_ids:
-            object_row = by_image.loc[image_id]
-            geometry.append(object_row[Col.GEOMETRY])
-            geom_kind.append(object_row[Col.GEOM_KIND])
-            prev_object_ids.append(object_row[Col.OBJECT_ID])
-        out = Objects.build(geometry=geometry, geom_kind=geom_kind, prev_object_id=prev_object_ids,
+        rows = objects.df.set_index(Col.IMAGE_ID).loc[image_ids]   # one crop per object, in loader order
+        out = Objects.build(geometry=rows[Col.GEOMETRY].values,
+                            geom_kind=rows[Col.GEOM_KIND].values,
+                            prev_object_id=rows[Col.OBJECT_ID].values,
                             crs=objects.df.crs, prev_objects=objects,
                             **self._class_columns(predictions, class_scores))
         print(f"Classifier: classified {len(out)} objects.")

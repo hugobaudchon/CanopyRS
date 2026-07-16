@@ -116,33 +116,23 @@ def test_schema_undeclared_attributes_skip_checks():
 
 
 # --- input matching: newest of the requested type, checked strictly -----------
+# The caller (pipeline) passes the newest table of the need's type; resolve checks that one candidate.
 
-def test_matching_selects_by_type(sources_seed, tiles_seed):
-    """A Sources need binds the source seed no matter how many tiles exist (the tilerizer-after-
-    tiles case is a plain type lookup now)."""
-    available = {Sources: [sources_seed], Tiles: [tiles_seed]}
-    desc, err = Need(Sources).resolve(lambda t: available.get(t, ()))
+def test_matching_binds_the_newest(sources_seed):
+    desc, err = Need(Sources).resolve(sources_seed)
     assert desc is sources_seed and err == ""
 
 
-def test_matching_takes_newest_of_type(sources_seed, tiles_seed):
-    newer = Tiles.build(metadata=[make_tile_metadata()])
-    available = {Tiles: [tiles_seed, newer]}   # oldest -> newest
-    desc, _ = Need(Tiles).resolve(lambda t: available.get(t, ()))
-    assert desc is newer
-
-
-def test_matching_missing_type_reports(tiles_seed):
-    desc, err = Need(Sources).resolve(lambda t: {Tiles: [tiles_seed]}.get(t, ()))
+def test_matching_missing_type_reports():
+    desc, err = Need(Sources).resolve(None)
     assert desc is None and "requires Sources" in err
 
 
-def test_matching_never_falls_back_past_a_broken_newest(tiles_seed):
+def test_matching_never_falls_back_past_a_broken_newest():
     """When the newest table of the requested type fails the check, matching errors instead of
     silently binding an older table (config errors stay loud)."""
-    unlinked_tiles = Tiles.build(metadata=[make_tile_metadata()])
-    available = {Tiles: [tiles_seed, unlinked_tiles]}   # oldest -> newest; only the old one has 'parent'
-    desc, err = Need(Tiles, links=("parent",)).resolve(lambda t: available.get(t, ()))
+    unlinked_tiles = Tiles.build(metadata=[make_tile_metadata()])   # no 'parent' link
+    desc, err = Need(Tiles, links=("parent",)).resolve(unlinked_tiles)
     assert desc is None and "must be linked" in err
 
 
@@ -169,7 +159,7 @@ def test_validate_class_aware_pipeline(sources_seed):
 
 def test_validate_source_need_survives_produced_tiles(sources_seed):
     """A second tilerizer's Sources requirement stays satisfiable after the first produced tiles
-    (per-type schema lists, not overwrite)."""
+    (types are separate keys — produced tiles never shadow the source)."""
     pipe = Pipeline([_tilerizer(), _tilerizer()], sources=sources_seed)
     assert len(pipe.components) == 2
 

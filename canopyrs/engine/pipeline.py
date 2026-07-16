@@ -12,7 +12,8 @@ as parquet under ``{id}_{name}/`` and recorded in the run record (``run.json``).
 names its predecessor, only the type and shape of data it needs.
 
 ``validate`` (called at construction) runs the same checks statically: ``thread_schemas`` threads each
-component's ``produces`` forward as declared ``Schema``s, kept as per-type lists exactly like runtime.
+component's ``produces`` forward as declared ``Schema``s, newest per type — matching only ever binds
+the newest instance of a type, so that's all the simulation keeps.
 
 Beyond running: ``from_config`` builds components from ``(kind, config)`` steps; ``resume`` skips the
 contiguous prefix already done (config unchanged + outputs on disk); ``from_dir`` reloads a saved run;
@@ -29,7 +30,7 @@ from canopyrs.engine.utils import green_print, parse_tilerizer_aoi_config
 from canopyrs.engine.raster_validation import validate_raster_rgb_bands
 from canopyrs.engine import store
 from canopyrs.engine.constants import Col, GeomKind, Modality
-from canopyrs.engine.contracts import Need, Schema, as_requirements
+from canopyrs.engine.contracts import Schema, as_requirements
 from canopyrs.engine.data import Crops, Imagery, Objects, Sources, Tiles, has_usable_values
 from canopyrs.engine.components import COMPONENT_REGISTRY
 from canopyrs.engine.visualizer import PipelineFlowVisualizer
@@ -87,20 +88,26 @@ class Pipeline:
                 seeds.append(Objects.from_gpkg(objects, imagery=imagery_seed))
         return seeds + self._derive_seeds(seeds)
 
+    def _requires_before_produced(self):
+        """Yield ``(need, produced)`` for every ``requires`` entry, in component order — ``produced``
+        is the set of data types produced by earlier components. The shared scan behind the seed
+        rules: "what does the pipeline ask for that nothing earlier makes?"."""
+        produced = set()
+        for component in self.components:
+            for need in as_requirements(component.requires):
+                yield need, produced
+            produced |= {need.data_type for need in as_requirements(component.produces)}
+
     def _seed_image_type(self):
         """The role of a seeded image folder: scan the components in order and take the first
         requirement referencing an imagery role — by its data type, or by an
         Objects need's ``on=`` — that no earlier component produces. Default ``Tiles``: a folder
         nothing asks for by role is only ever consumed through object links, where the label doesn't
         change behavior."""
-        produced = set()
-        for component in self.components:
-            for req in component.requires:
-                need = Need.coerce(req)
-                role = need.data_type if need.data_type in (Tiles, Crops) else need.on
-                if role in (Tiles, Crops) and role not in produced:
-                    return role
-            produced |= {need.data_type for need in as_requirements(component.produces)}
+        for need, produced in self._requires_before_produced():
+            role = need.data_type if need.data_type in (Tiles, Crops) else need.on
+            if role in (Tiles, Crops) and role not in produced:
+                return role
         return Tiles
 
     def _derive_seeds(self, seeds):
@@ -109,20 +116,14 @@ class Pipeline:
         Object per crop (its footprint) — '1 image = 1 class' expressed in the data model, so a
         classifier-only run over a crops folder just works. Extend by adding rules here, never
         by special-casing components."""
-        derived = []
         crops_seed = next((s for s in seeds if isinstance(s, Crops)), None)
-        has_objects = any(isinstance(s, Objects) for s in seeds)
-        if crops_seed is None or has_objects:
-            return derived
-        produced = set()
-        for component in self.components:
-            for req in component.requires:
-                need = Need.coerce(req)
-                if need.data_type is Objects and Objects not in produced and need.on is Crops:
-                    print("Derived one Object per seeded crop (a component needs Objects on Crops).")
-                    return [Objects.from_imagery(crops_seed)]
-            produced |= {need.data_type for need in as_requirements(component.produces)}
-        return derived
+        if crops_seed is None or any(isinstance(s, Objects) for s in seeds):
+            return []
+        for need, produced in self._requires_before_produced():
+            if need.data_type is Objects and Objects not in produced and need.on is Crops:
+                print("Derived one Object per seeded crop (a component needs Objects on Crops).")
+                return [Objects.from_imagery(crops_seed)]
+        return []
 
     @classmethod
     def from_config(cls, steps, sources=None, tiles=None, objects=None, output_dir=None, aoi=None,
@@ -185,7 +186,7 @@ class Pipeline:
             component = self.components[i]
             green_print(f"Running {component.label}...")
             component.out_dir = self._component_dir(component)
-            args = [self._resolve(req, component) for req in component.requires]
+            args = [self._resolve(need, component) for need in as_requirements(component.requires)]
             out = component.run(*args)
             produced = list(out) if isinstance(out, tuple) else [out]   # a component returns one table or a tuple
             self._check_produced(component, produced)
@@ -203,16 +204,20 @@ class Pipeline:
         return self
 
     def _validate_sources(self, strict_rgb_validation):
-        """Pre-flight on the seed source rasters before any compute: first 3 bands are RGB-tagged (per
-        ``strict_rgb_validation``), uint8, and in [0, 255]. Only rgb source scenes are checked — other
-        modalities aren't RGB rasters, and a tiles/objects-seeded run has no sources to check."""
+        """Pre-flight on the seed imagery before any compute: first 3 bands are RGB-tagged (per
+        ``strict_rgb_validation``), uint8, and in [0, 255]. Every rgb source scene is checked; a
+        seeded tiles/crops folder is spot-checked on its first image (one folder shares one format).
+        Other modalities aren't RGB rasters and are skipped."""
         for seed in self.seeds:
-            if not isinstance(seed, Sources):
+            if not isinstance(seed, Imagery) or Col.PATH not in seed.df.columns:
                 continue
             df = seed.df
             if Col.MODALITY in df.columns:
                 df = df[df[Col.MODALITY] == Modality.RGB]
-            for path in df[Col.PATH].dropna():
+            paths = df[Col.PATH].dropna()
+            if not isinstance(seed, Sources):
+                paths = paths.iloc[:1]
+            for path in paths:
                 validate_raster_rgb_bands(Path(path), strict_color_interp=strict_rgb_validation)
 
     def _write_final_gpkg(self):
@@ -230,35 +235,38 @@ class Pipeline:
 
     def validate(self):
         """Pre-flight wiring check, no compute: thread each component's ``produces`` forward as Schemas
-        (per-type lists, mirroring runtime input matching) and confirm every ``requires`` is satisfiable.
+        (newest per type, mirroring runtime input matching) and confirm every ``requires`` is satisfiable.
         Raises on the first unmet requirement. Called at construction. Optimistic about ancestry (a
         produced column stays reachable while the chain links ``prev_objects``); ``run``'s checks are
         the ground truth."""
         for component, before, _ in self.thread_schemas():
             if component is None:
                 continue
-            for req in component.requires:
-                desc, err = Need.coerce(req).resolve(lambda t: before.get(t, ()))
+            for need in as_requirements(component.requires):
+                desc, err = need.resolve(before.get(need.data_type))
                 if desc is None:
                     raise ValueError(f"{type(component).__name__} {err}")
         return self
 
     def thread_schemas(self):
         """Yield ``(component, before, after)`` per step — ``before``/``after`` are ``{data_type:
-        [Schema, ...]}`` snapshots (oldest -> newest, appended, never overwritten — an older table's
-        schema stays resolvable, exactly like runtime) of what's available immediately before/after the
-        component. The first yield is ``(None, None, seeds)``. Pure simulation, no compute: the single
-        source of "what's available when", consumed by ``validate`` and the flow chart."""
-        available = {}
+        Schema}`` snapshots of the newest schema per type immediately before/after the component
+        (matching only ever binds the newest instance of a type, so that's all the simulation keeps;
+        types are separate keys, so e.g. produced tiles never shadow the source raster). The first
+        yield is ``(None, None, seeds)``. Pure simulation, no compute: the single source of "what's
+        available when", consumed by ``validate`` and the flow chart."""
+        available, newest_imagery = {}, None
         for seed in self.seeds:
-            available.setdefault(type(seed), []).append(seed.schema())
-        yield None, None, self._snapshot(available)
+            available[type(seed)] = seed.schema()
+            if isinstance(seed, Imagery):
+                newest_imagery = available[type(seed)]
+        yield None, None, dict(available)
         for component in self.components:
-            before = self._snapshot(available)
-            consumed_objects = self._consumes(component, before, Objects)
+            before = dict(available)
+            consumes_objects = Objects in before and any(
+                need.data_type is Objects for need in as_requirements(component.requires))
             for need in as_requirements(component.produces):
-                prevs = available.get(need.data_type, [])
-                prev = prevs[-1] if prevs else None
+                prev = available.get(need.data_type)
                 columns = set(need.columns)
                 links = set(need.links)
                 fks = getattr(need.data_type, "fks", {})
@@ -266,36 +274,20 @@ class Pipeline:
                 # Ancestry: an Objects-consuming component's Objects output chains lineage at runtime
                 # (prev_objects), so everything reachable on the input stays reachable on the output.
                 if prev is not None and need.data_type is Objects \
-                        and ("prev_objects" in need.links or consumed_objects):
+                        and ("prev_objects" in need.links or consumes_objects):
                     columns |= prev.columns
                     links |= prev.links
                 # Modalities propagate producer <- input: a tilerizer's tiles hold its source's modalities.
                 modalities = None
-                if issubclass(need.data_type, Imagery):
-                    newest_imagery = [s for t, schemas in available.items()
-                                      if issubclass(t, Imagery) for s in schemas]
-                    modalities = newest_imagery[-1].modalities if newest_imagery else None
+                if issubclass(need.data_type, Imagery) and newest_imagery is not None:
+                    modalities = newest_imagery.modalities
                 on = need.on if not isinstance(need.on, tuple) else None   # a tuple is a requires-only OR
-                available.setdefault(need.data_type, []).append(
-                    Schema(columns=columns, links=links, crs=need.crs, on=on,
-                           modalities=modalities))
-            yield component, before, self._snapshot(available)
-
-    @staticmethod
-    def _snapshot(available):
-        return {data_type: list(schemas) for data_type, schemas in available.items()}
-
-    @staticmethod
-    def _consumes(component, available, data_type) -> bool:
-        """Whether one of the component's ``requires`` entries binds an instance of ``data_type``
-        against the ``available`` schema lists (the matched schema is identity-checked against that
-        type's list, since Schemas don't carry their type)."""
-        schemas = available.get(data_type, ())
-        for req in component.requires:
-            desc, _ = Need.coerce(req).resolve(lambda t: available.get(t, ()))
-            if any(desc is schema for schema in schemas):
-                return True
-        return False
+                schema = Schema(columns=columns, links=links, crs=need.crs, on=on,
+                                modalities=modalities)
+                available[need.data_type] = schema
+                if issubclass(need.data_type, Imagery):
+                    newest_imagery = schema
+            yield component, before, dict(available)
 
     def print_flow_chart(self):
         PipelineFlowVisualizer(self).print()
@@ -535,11 +527,11 @@ class Pipeline:
         if isinstance(data, Imagery):
             self._imagery_log.append(data)
 
-    def _resolve(self, req, component):
-        """The input for a ``requires`` entry (a bare type or a ``Need``): the newest
-        stored instance of the requested type, strictly checked — a mismatch raises instead of
-        falling back to an older instance."""
-        inst, err = Need.coerce(req).resolve(lambda t: self._lists.get(t, ()))
+    def _resolve(self, need, component):
+        """The input for a ``requires`` Need: the newest stored instance of the requested type,
+        strictly checked — a mismatch raises instead of falling back to an older instance."""
+        tables = self._lists.get(need.data_type)
+        inst, err = need.resolve(tables[-1] if tables else None)
         if inst is None:
             raise ValueError(f"{type(component).__name__} {err}")
         return inst

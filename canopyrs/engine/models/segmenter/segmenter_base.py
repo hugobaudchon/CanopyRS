@@ -160,8 +160,8 @@ class SegmenterWrapperBase(ABC):
 
         return n_masks_processed
 
-    def infer_v2(self, loader, boxes_by_tile=None):
-        """v2 inference: consume a loader yielding ``(object_ids, images)`` batches and return per-tile
+    def infer(self, loader, boxes_by_tile=None):
+        """Consume a loader yielding ``(object_ids, images)`` batches and return per-tile
         ``(tile_object_ids, mask_object_ids, mask_polygons, mask_scores)`` — polygons in tile-pixel
         coords. Reuses ``forward`` and the multiprocessing mask->polygon postprocessing; builds no
         DataLoader of its own.

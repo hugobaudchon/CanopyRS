@@ -3,9 +3,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torchmetrics
-from geodataset.dataset import UnlabeledRasterDataset
 from shapely import box
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from canopyrs.engine.models.utils import load_state_dict_with_key_repair
@@ -29,36 +27,10 @@ class DetectorWrapperBase(ABC):
     def forward(self, images, targets=None):
         pass
 
-    def _infer(self, data_loader):
-        self.model.eval()
-
-        predictions = []
-
-        with torch.no_grad():
-            data_loader_with_progress = tqdm(data_loader,
-                                             desc="Inferring detector...",
-                                             leave=True)
-            for images in data_loader_with_progress:
-                images = list(img.to(self.device) for img in images)
-                outputs = self.forward(images)
-                predictions.extend(outputs)
-
-        return predictions
-
-    def infer(self, infer_ds: UnlabeledRasterDataset, collate_fn: callable):
-        infer_dl = DataLoader(infer_ds, batch_size=self.config.batch_size, shuffle=False,
-                              collate_fn=collate_fn,
-                              num_workers=3, persistent_workers=True)
-
-        results = self._infer(infer_dl)
-        boxes, boxes_scores, classes = detector_result_to_lists(results)
-        tiles_paths = infer_ds.tile_paths
-        return tiles_paths, boxes, boxes_scores, classes
-
-    def infer_v2(self, loader):
-        """v2 inference: consume a loader yielding ``(object_ids, images)`` batches (e.g. the v2
-        ``tile_loader``) and return ``(object_ids, boxes, scores, classes)`` as aligned per-tile
-        lists. Reuses ``forward``; builds no DataLoader of its own."""
+    def infer(self, loader):
+        """Consume a loader yielding ``(object_ids, images)`` batches (e.g. ``tile_loader``) and
+        return ``(object_ids, boxes, scores, classes)`` as aligned per-tile lists. Reuses
+        ``forward``; builds no DataLoader of its own."""
         self.model.eval()
         object_ids, results = [], []
         with torch.no_grad():

@@ -6,18 +6,15 @@ The pipeline has typed tables, and a component's contract is ``Need(type, column
 CROPS / OBJECTS); within each, a row per **link** (``→parent`` / ``→imagery`` / ``→prev_objects``), a
 **crs** row (tri-state ✓/✗/?), then a row per **column**. Each cell is marked available / produced /
 required / required+produced / missing / passthrough per component — read off the *same*
-``Pipeline.thread_schemas`` simulation that ``validate`` uses (per-type schema *lists*; cells display
-the newest schema of each type), so the chart never re-derives "what's available when".
+``Pipeline.thread_schemas`` simulation that ``validate`` uses, so the chart never re-derives "what's
+available when". A cell is a plain ``(role, char)`` pair — ``("both", (req_char, prod_char))`` for
+the required+produced split — and color + width are applied once, at render time.
 """
 
-import re
 import sys
 
-from canopyrs.engine.contracts import Need, as_requirements
+from canopyrs.engine.contracts import as_requirements
 from canopyrs.engine.data import Crops, Objects, Sources, Tiles
-
-
-_ANSI_ESCAPE_RE = re.compile(r'\033\[[0-9;]*m')
 
 
 def _stdout_supports_unicode() -> bool:
@@ -29,72 +26,42 @@ def _stdout_supports_unicode() -> bool:
         return False
 
 
-class _Colors:
-    RESET = "\033[0m"
-    GREEN = "\033[92m"
-    BLUE = "\033[94m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    GRAY = "\033[90m"
-
-
 _USE_UNICODE = _stdout_supports_unicode()
+_BLOCK = '▬' if _USE_UNICODE else '#'
+_DOT = '·' if _USE_UNICODE else '.'
+_YES = '✓' if _USE_UNICODE else 'y'
+_NO = '✗' if _USE_UNICODE else 'n'
+_UNK = '?'
+
+_RESET = "\033[0m"
+_GREEN, _BLUE, _YELLOW, _RED, _GRAY = "\033[92m", "\033[94m", "\033[93m", "\033[91m", "\033[90m"
+_ROLE_COLOR = {"available": _GREEN, "produced": _BLUE, "required": _YELLOW,
+               "missing": _RED, "passthrough": _GRAY}
+
+EMPTY = ("empty", " ")
 
 
-class _Symbols:
-    _BLOCK = '▬' if _USE_UNICODE else '#'
-    _DOT = '·' if _USE_UNICODE else '.'
-    _YES = '✓' if _USE_UNICODE else 'y'
-    _NO = '✗' if _USE_UNICODE else 'n'
-    _UNK = '?'
-    AVAILABLE = f"{_Colors.GREEN}{_BLOCK}{_Colors.RESET}"    # available at input (seed)
-    PRODUCED = f"{_Colors.BLUE}{_BLOCK}{_Colors.RESET}"      # produced by this component
-    REQUIRED = f"{_Colors.YELLOW}{_BLOCK}{_Colors.RESET}"    # required and available (consumed)
-    REQ_AND_PROD = f"{_Colors.YELLOW}{_BLOCK}{_Colors.BLUE}{_BLOCK}{_Colors.RESET}"  # required + produced
-    MISSING = f"{_Colors.RED}{_BLOCK}{_Colors.RESET}"        # required but MISSING
-    PASSTHROUGH = f"{_Colors.GRAY}{_DOT}{_Colors.RESET}"     # passthrough (still available, unused here)
-    EMPTY = " "                                               # not yet available
-
-    _ROLE_COLOR = {"available": _Colors.GREEN, "produced": _Colors.BLUE, "required": _Colors.YELLOW,
-                   "missing": _Colors.RED, "passthrough": _Colors.GRAY}
-
-    @classmethod
-    def _glyph(cls, value):
-        return cls._YES if value is True else cls._NO if value is False else cls._UNK
-
-    @classmethod
-    def crs(cls, role, value, req_value=None):
-        """A single crs cell — a ✓/✗/? glyph encoding the CRS-ness, colored by role. ``both`` shows the
-        required value then the produced value as a two-color split (e.g. yellow ✗ + blue ✓ = requires
-        pixel, produces CRS)."""
-        if role == "both":
-            return f"{_Colors.YELLOW}{cls._glyph(req_value)}{_Colors.BLUE}{cls._glyph(value)}{_Colors.RESET}"
-        color = cls._ROLE_COLOR.get(role)
-        return f"{color}{cls._glyph(value)}{_Colors.RESET}" if color else cls.EMPTY
+def _glyph(value):
+    """The tri-state crs glyph: True -> CRS, False -> pixel, None -> undeclared."""
+    return _YES if value is True else _NO if value is False else _UNK
 
 
-def _fill_width(s: str, width: int) -> str:
-    """Fill `width` by repeating the visible symbol character, preserving ANSI color wrapping."""
-    visible_char = _ANSI_ESCAPE_RE.sub('', s)
-    if not visible_char or visible_char == ' ':
-        return ' ' * width
-    if len(visible_char) == 2:                              # two-color split (REQ_AND_PROD / crs both)
-        half1 = width // 2
-        half2 = width - half1
-        parts = re.findall(r'(\033\[[0-9;]*m)(.+?)(?=\033)', s)
-        if len(parts) == 2:
-            return parts[0][0] + parts[0][1] * half1 + parts[1][0] + parts[1][1] * half2 + _Colors.RESET
-    match = re.match(r'(\033\[[0-9;]*m)?(.+?)(\033\[[0-9;]*m)?$', s)
-    if match:
-        prefix = match.group(1) or ''
-        char = match.group(2)
-        suffix = match.group(3) or ''
-        return prefix + (char * width) + suffix
-    return s.center(width)
+def _render_cell(cell, width):
+    """A cell as its colored, width-filled string. ``("both", (req_char, prod_char))`` renders as a
+    yellow/blue split (requires-value then produces-value)."""
+    role, char = cell
+    if role == "empty":
+        return " " * width
+    if role == "both":
+        req_char, prod_char = char
+        half = width // 2
+        return f"{_YELLOW}{req_char * half}{_BLUE}{prod_char * (width - half)}{_RESET}"
+    return f"{_ROLE_COLOR[role]}{char * width}{_RESET}"
 
 
 class _Step:
-    """Per-column state for one pipeline step (the seed, or one component)."""
+    """Per-column state for one pipeline step (the seed, or one component). ``before`` / ``after``
+    are ``{data_type: Schema}`` snapshots from ``Pipeline.thread_schemas``."""
 
     def __init__(self, label, before, after, produced_types, req, miss, seed=False):
         self.label = label
@@ -109,8 +76,8 @@ class _Step:
 class PipelineFlowVisualizer:
     """Visualize the typed data flow through a pipeline.
 
-    Legend (colored blocks): green ▬ = input · blue ▬ = produced · yellow ▬ = required · yellow+blue =
-    required+produced · red ▬ = MISSING · gray · = passthrough. crs row: ✓ = CRS, ✗ = tile-pixel,
+    Legend (colored blocks): green = input · blue = produced · yellow = required · yellow+blue =
+    required+produced · red = MISSING · gray · = passthrough. crs row: ✓ = CRS, ✗ = tile-pixel,
     ? = undeclared.
     """
 
@@ -126,24 +93,16 @@ class PipelineFlowVisualizer:
             pass  # terminals that can't display the chart (e.g. Windows subprocess workers)
 
     # --- tracking ------------------------------------------------------------
-    @staticmethod
-    def _newest_view(available):
-        """The newest schema per type — cells display the newest instance of each type; requirement
-        matching (which may pick an older one) runs on the full lists."""
-        return {data_type: schemas[-1] for data_type, schemas in available.items() if schemas}
-
     def _track(self):
         steps = []
         for component, before, after in self.pipeline.thread_schemas():
             if component is None:
-                after_view = self._newest_view(after)
-                steps.append(_Step("input", {}, after_view, set(after_view),
+                steps.append(_Step("input", {}, after, set(after),
                                    self._empty_marks(), self._empty_marks(), seed=True))
             else:
                 req, miss = self._requirement_marks(component, before)
                 produced_types = {need.data_type for need in as_requirements(component.produces)}
-                steps.append(_Step(component.label, self._newest_view(before), self._newest_view(after),
-                                   produced_types, req, miss))
+                steps.append(_Step(component.label, before, after, produced_types, req, miss))
 
         labels = [step.label for step in steps]
         sections = []
@@ -151,10 +110,10 @@ class PipelineFlowVisualizer:
             rows = []
             for name in data_type.fks:                                  # link rows: →parent / →imagery / ...
                 cells = [self._link_cell(data_type, name, step) for step in steps]
-                if any(cell != _Symbols.EMPTY for cell in cells):
+                if any(cell != EMPTY for cell in cells):
                     rows.append((f"→{name}", cells))
             crs_cells = [self._crs_cell(data_type, step) for step in steps]
-            if any(cell != _Symbols.EMPTY for cell in crs_cells):
+            if any(cell != EMPTY for cell in crs_cells):
                 rows.append(("crs", crs_cells))
             for col in sorted(self._shown_columns(data_type, steps)):   # column rows
                 rows.append((col, [self._col_cell(data_type, col, step) for step in steps]))
@@ -176,11 +135,9 @@ class PipelineFlowVisualizer:
         return {"cols": {}, "links": {}, "crs": {}}
 
     def _requirement_marks(self, component, before):
-        get = lambda t: before.get(t, ())   # noqa: E731 — resolve over the full per-type schema lists
         req, miss = self._empty_marks(), self._empty_marks()
-        for entry in component.requires:
-            need = Need.coerce(entry)
-            desc, _ = need.resolve(get)
+        for need in as_requirements(component.requires):
+            desc, _ = need.resolve(before.get(need.data_type))
             self._add_need(req if desc is not None else miss, need)
         return req, miss
 
@@ -191,7 +148,7 @@ class PipelineFlowVisualizer:
         if need.crs is not None:
             acc["crs"][need.data_type] = need.crs
 
-    # --- per-cell symbols ----------------------------------------------------
+    # --- per-cell roles --------------------------------------------------------
     def _col_cell(self, data_type, col, step):
         avail_before = data_type in step.before and col in step.before[data_type].columns
         in_after = data_type in step.after and col in step.after[data_type].columns
@@ -211,38 +168,38 @@ class PipelineFlowVisualizer:
     @staticmethod
     def _block(seed, in_after, avail_before, produced, required, missing):
         if seed:
-            return _Symbols.AVAILABLE if in_after else _Symbols.EMPTY
+            return ("available", _BLOCK) if in_after else EMPTY
         if missing:
-            return _Symbols.MISSING
+            return ("missing", _BLOCK)
         if required and produced:
-            return _Symbols.REQ_AND_PROD
+            return ("both", (_BLOCK, _BLOCK))
         if required:
-            return _Symbols.REQUIRED
+            return ("required", _BLOCK)
         if produced:
-            return _Symbols.PRODUCED
+            return ("produced", _BLOCK)
         if avail_before:
-            return _Symbols.PASSTHROUGH
-        return _Symbols.EMPTY
+            return ("passthrough", _DOT)
+        return EMPTY
 
     def _crs_cell(self, data_type, step):
         before_crs = step.before[data_type].crs_set if data_type in step.before else None
         after_crs = step.after[data_type].crs_set if data_type in step.after else None
         if step.seed:
-            return _Symbols.crs("available", after_crs) if (data_type in step.after and after_crs is not None) else _Symbols.EMPTY
+            return ("available", _glyph(after_crs)) if (data_type in step.after and after_crs is not None) else EMPTY
         produced = (data_type in step.produced_types and after_crs is not None
                     and (data_type not in step.before or before_crs != after_crs))
         required = data_type in step.req["crs"]
         if data_type in step.miss["crs"]:
-            return _Symbols.crs("missing", step.miss["crs"][data_type])
+            return ("missing", _glyph(step.miss["crs"][data_type]))
         if required and produced:
-            return _Symbols.crs("both", after_crs, req_value=step.req["crs"][data_type])
+            return ("both", (_glyph(step.req["crs"][data_type]), _glyph(after_crs)))
         if required:
-            return _Symbols.crs("required", step.req["crs"][data_type])
+            return ("required", _glyph(step.req["crs"][data_type]))
         if produced:
-            return _Symbols.crs("produced", after_crs)
+            return ("produced", _glyph(after_crs))
         if data_type in step.before and before_crs is not None:
-            return _Symbols.crs("passthrough", before_crs)
-        return _Symbols.EMPTY
+            return ("passthrough", _glyph(before_crs))
+        return EMPTY
 
     # --- rendering -----------------------------------------------------------
     def _render(self, tracked):
@@ -259,7 +216,7 @@ class PipelineFlowVisualizer:
 
         def line(label, cells):
             return f"{label.ljust(row_label_width)}  {v_bar} " + f' {v_bar} '.join(
-                _fill_width(cell, width) for cell, width in zip(cells, col_widths))
+                _render_cell(cell, width) for cell, width in zip(cells, col_widths))
 
         header = f"{'DATA'.ljust(row_label_width)}  {v_bar} " + f' {v_bar} '.join(
             label.center(width) for label, width in zip(labels, col_widths))
@@ -268,16 +225,18 @@ class PipelineFlowVisualizer:
 
         print("\n" + "=" * len(header))
         print("PIPELINE FLOW CHART")
-        print(f"Legend: {_Symbols.AVAILABLE}=input  {_Symbols.PRODUCED}=produced  "
-              f"{_Symbols.REQUIRED}=required  {_Symbols.REQ_AND_PROD}=required+produced  "
-              f"{_Symbols.MISSING}=MISSING!  {_Symbols.PASSTHROUGH}=passthrough   "
-              f"crs: {_Symbols._YES}=CRS {_Symbols._NO}=pixel {_Symbols._UNK}=undeclared   "
-              f"kind: s=source t=tile")
+        print(f"Legend: {_render_cell(('available', _BLOCK), 1)}=input  "
+              f"{_render_cell(('produced', _BLOCK), 1)}=produced  "
+              f"{_render_cell(('required', _BLOCK), 1)}=required  "
+              f"{_render_cell(('both', (_BLOCK, _BLOCK)), 2)}=required+produced  "
+              f"{_render_cell(('missing', _BLOCK), 1)}=MISSING!  "
+              f"{_render_cell(('passthrough', _DOT), 1)}=passthrough   "
+              f"crs: {_YES}=CRS {_NO}=pixel {_UNK}=undeclared")
         print("=" * len(header))
         print(header)
         print(separator)
 
-        blank = [_Symbols.EMPTY] * len(labels)
+        blank = [EMPTY] * len(labels)
         for name, rows in sections:
             print(line(name, blank))
             for key, cells in rows:

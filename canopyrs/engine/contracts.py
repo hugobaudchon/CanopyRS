@@ -21,9 +21,9 @@ finds the raster no matter how many tiles were produced after it.
 
 def as_requirements(spec):
     """Normalize a ``requires`` / ``produces`` declaration (a type, a Need, or a tuple of those)
-    into a list of Needs."""
+    into a list of Needs — a bare type becomes a no-constraint Need."""
     items = spec if isinstance(spec, tuple) else (spec,)
-    return [Need.coerce(item) for item in items]
+    return [item if isinstance(item, Need) else Need(item) for item in items]
 
 
 class Need:
@@ -40,15 +40,9 @@ class Need:
 
     A bare type in ``requires`` is the no-extra-constraints case. The pipeline binds each input to the
     newest available instance of its type and checks the Need against it — a mismatch is an error,
-    never a silent fallback to an older instance. ``resolve(get)`` does that binding: ``get`` maps a
-    data type to the *list* of available descriptors, oldest -> newest — live tables at runtime,
-    ``Schema``s in static ``validate`` — or an empty sequence."""
-
-    @classmethod
-    def coerce(cls, spec):
-        """A ``requires`` / ``produces`` entry as a Need: a bare type becomes a no-constraint ``Need``;
-        an existing Need passes through."""
-        return spec if isinstance(spec, cls) else cls(spec)
+    never a silent fallback to an older instance. ``resolve(newest)`` does that check: ``newest`` is
+    the newest available descriptor of this need's type — a live table at runtime, a ``Schema`` in
+    static ``validate`` — or None when no table of the type exists."""
 
     def __init__(self, data_type, columns=(), links=(), crs=None, on=None, modalities=None):
         self.data_type = data_type
@@ -81,18 +75,16 @@ class Need:
             return f"{name} must hold a modality in {sorted(self.modalities)} (got {sorted(schema.modalities)})"
         return ""
 
-    def resolve(self, get):
-        candidates = list(get(self.data_type) or ())
-        if not candidates:
+    def resolve(self, newest):
+        """Bind ``newest`` — the newest available descriptor of this need's type (a live table or a
+        ``Schema``), or None when no table of the type exists. Returns ``(descriptor, "")`` on
+        success, ``(None, error)`` otherwise — never a silent fallback to an older table."""
+        if newest is None:
             return None, f"requires {self.data_type.__name__}, but none is available"
-        newest = candidates[-1]
         err = self.check(newest.schema())
         if err:
             return None, f"requires {self.data_type.__name__} but the newest doesn't satisfy it: {err}"
         return newest, ""
-
-
-__all__ = ["Need", "Schema", "as_requirements"]
 
 
 class Schema:
@@ -118,3 +110,6 @@ class Schema:
 
     def has_link(self, name) -> bool:
         return name in self.links
+
+
+__all__ = ["Need", "Schema", "as_requirements"]

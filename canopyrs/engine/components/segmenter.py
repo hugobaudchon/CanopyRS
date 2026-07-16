@@ -50,7 +50,7 @@ class Segmenter(Component):
 
     def _automatic(self, tiles: Tiles, segmenter) -> Objects:
         loader = self._loader(tiles, batch_size=self.config.image_batch_size)
-        image_ids, _, polygons_per_tile, scores_per_tile = segmenter.infer_v2(loader)
+        image_ids, _, polygons_per_tile, scores_per_tile = segmenter.infer(loader)
 
         flat_image_ids, columns = flatten_by_tile(
             image_ids, **{Col.GEOMETRY: polygons_per_tile, Col.SEGMENTER_SCORE: scores_per_tile},
@@ -78,7 +78,7 @@ class Segmenter(Component):
         frame = tiles.reading_frame()
         frame = frame[frame[Col.IMAGE_ID].isin(boxes_by_tile)].reset_index(drop=True)   # only images with prompts
         loader = self._loader(frame, batch_size=self.config.image_batch_size)
-        image_ids, prompt_ids_per_tile, polygons_per_tile, scores_per_tile = segmenter.infer_v2(loader, boxes_by_tile)
+        image_ids, prompt_ids_per_tile, polygons_per_tile, scores_per_tile = segmenter.infer(loader, boxes_by_tile)
 
         flat_image_ids, columns = flatten_by_tile(
             image_ids,

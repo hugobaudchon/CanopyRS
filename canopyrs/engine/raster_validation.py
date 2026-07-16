@@ -7,7 +7,6 @@ for RGB imagery processing (color interpretation, dtype, value ranges).
 
 import warnings
 from pathlib import Path
-from typing import Optional
 
 import rasterio
 from rasterio.enums import ColorInterp
@@ -112,43 +111,3 @@ def validate_raster_rgb_bands(
 
     except rasterio.errors.RasterioError as e:
         raise RasterValidationError(f"Failed to open raster file: {raster_path}. Error: {e}")
-
-
-def validate_input_raster_or_tiles(
-    imagery_path: Optional[str] = None,
-    tiles_path: Optional[str] = None,
-    strict_color_interp: bool = True
-) -> None:
-    """
-    Validate input raster or tiles at pipeline start.
-
-    If imagery_path is provided, validates the raster.
-    If only tiles_path is provided, validates the first tile.
-
-    Args:
-        imagery_path: Path to the main raster file (optional)
-        tiles_path: Path to directory containing tiles (optional)
-        strict_color_interp: If True, raise error for incorrect color interpretation.
-                            If False, only warn if color interpretation is not R,G,B.
-
-    Raises:
-        RasterValidationError: If validation fails
-    """
-    if imagery_path:
-        # Validate the main raster
-        imagery_path = Path(imagery_path)
-        validate_raster_rgb_bands(imagery_path, strict_color_interp)
-
-    elif tiles_path:
-        # Validate the first tile
-        tiles_path = Path(tiles_path)
-
-        # Find first tile (assumes tiles are .tif files)
-        tile_files = list(tiles_path.glob("*.tif")) + list(tiles_path.glob("*.tiff"))
-
-        if not tile_files:
-            warnings.warn(f"No .tif/.tiff files found in tiles_path: {tiles_path}")
-            return
-
-        first_tile = sorted(tile_files)[0]
-        validate_raster_rgb_bands(first_tile, strict_color_interp)
