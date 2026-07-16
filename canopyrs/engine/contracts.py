@@ -3,8 +3,8 @@
 See ``canopyrs/engine/README.md`` for the model in five sentences.
 
 A component declares ``requires`` (a tuple of contract entries) and ``produces`` (a contract entry, or
-a tuple). An entry is a data-class *type* (no extra constraints), a ``Need`` (a type plus required
-columns / links / CRS-ness / what the objects live on / modalities), or a ``one_of`` over alternatives.
+a tuple). An entry is a data-class *type* (no extra constraints) or a ``Need`` (a type plus required
+columns / links / CRS-ness / what the objects live on / modalities).
 
 Every check runs on a ``Schema`` — a plain description of what a table exposes. Live tables render
 themselves as one via ``.schema()``; the pipeline's static ``validate`` threads declared Schemas
@@ -19,35 +19,14 @@ finds the raster no matter how many tiles were produced after it.
 """
 
 
-class Requirement:
-    """A ``requires`` entry the pipeline resolves against the available data. ``resolve(get)`` returns
-    ``(descriptor, '')`` for the chosen input, or ``(None, error)``. ``get`` maps a data type to the
-    *list* of available descriptors, oldest -> newest — live tables at runtime, ``Schema``s in static
-    ``validate`` — or an empty sequence. ``Need`` is the basic spec; ``one_of`` builds an OR
-    (alternatives may even span different types)."""
-
-    def resolve(self, get):
-        raise NotImplementedError
-
-    def needs(self):
-        """This requirement's Needs, in declaration order (a ``one_of`` lists its alternatives)."""
-        raise NotImplementedError
-
-    @classmethod
-    def coerce(cls, spec):
-        """A ``requires`` / ``produces`` entry as a Requirement: a bare type becomes a no-constraint
-        ``Need``; an existing Requirement passes through."""
-        return spec if isinstance(spec, Requirement) else Need(spec)
-
-
 def as_requirements(spec):
-    """Normalize a ``requires`` / ``produces`` declaration (a type, a Requirement, or a tuple of those)
-    into a list of Requirements."""
+    """Normalize a ``requires`` / ``produces`` declaration (a type, a Need, or a tuple of those)
+    into a list of Needs."""
     items = spec if isinstance(spec, tuple) else (spec,)
-    return [Requirement.coerce(item) for item in items]
+    return [Need.coerce(item) for item in items]
 
 
-class Need(Requirement):
+class Need:
     """A precondition on one component input, declared in a component's ``requires``. The input must be
     an instance of ``data_type`` and additionally:
       - expose every column in ``columns`` (present with usable values; for Objects, resolvable through
@@ -61,7 +40,15 @@ class Need(Requirement):
 
     A bare type in ``requires`` is the no-extra-constraints case. The pipeline binds each input to the
     newest available instance of its type and checks the Need against it — a mismatch is an error,
-    never a silent fallback to an older instance."""
+    never a silent fallback to an older instance. ``resolve(get)`` does that binding: ``get`` maps a
+    data type to the *list* of available descriptors, oldest -> newest — live tables at runtime,
+    ``Schema``s in static ``validate`` — or an empty sequence."""
+
+    @classmethod
+    def coerce(cls, spec):
+        """A ``requires`` / ``produces`` entry as a Need: a bare type becomes a no-constraint ``Need``;
+        an existing Need passes through."""
+        return spec if isinstance(spec, cls) else cls(spec)
 
     def __init__(self, data_type, columns=(), links=(), crs=None, on=None, modalities=None):
         self.data_type = data_type
@@ -104,38 +91,8 @@ class Need(Requirement):
             return None, f"requires {self.data_type.__name__} but the newest doesn't satisfy it: {err}"
         return newest, ""
 
-    def needs(self):
-        return (self,)
 
-
-class AnyOf(Requirement):
-    """Satisfied by the FIRST alternative Need the available data meets — alternatives are tried in
-    order and may span different types (e.g. classify per-object crops if Objects-on-Crops are
-    present, else bare Crops). Built via ``one_of``."""
-
-    def __init__(self, alternatives):
-        assert alternatives, "one_of needs at least one alternative"
-        self.alternatives = tuple(alternatives)
-
-    def resolve(self, get):
-        msgs = []
-        for alt in self.alternatives:
-            desc, err = alt.resolve(get)
-            if desc is not None:
-                return desc, ""
-            msgs.append(err)
-        return None, " OR ".join(msgs)
-
-    def needs(self):
-        return self.alternatives
-
-
-def one_of(*alternatives) -> AnyOf:
-    """An OR over requirement alternatives, tried in order (they may span different data types)."""
-    return AnyOf(alternatives)
-
-
-__all__ = ["Requirement", "Need", "AnyOf", "one_of", "Schema", "as_requirements"]
+__all__ = ["Need", "Schema", "as_requirements"]
 
 
 class Schema:

@@ -88,7 +88,7 @@ component order, each config's hash, and what each step produced. It is what mak
 |---|---|
 | `constants.py` | column names (`Col`) and value vocab (`GeomKind`, `Modality`) |
 | `data.py` | the tables (`Sources`/`Tiles`/`Crops`/`Objects`), FK validation, both ancestry walks (`column`/`linked`, `resolved_paths`) |
-| `contracts.py` | `Need` / `one_of` / `Schema`: the declarations and how they're checked and matched |
+| `contracts.py` | `Need` / `Schema`: the declarations and how they're checked and matched |
 | `pipeline.py` | running, the construction-time wiring check (`thread_schemas`), the seed rules, resume, reload (`from_dir`), export |
 | `store.py` | parquet persistence, the run record (`run.json`), seed persistence, GPKG/COCO writers |
 | `loader.py` | torch Dataset/DataLoader loading images (own file, or window into `read_path`) |

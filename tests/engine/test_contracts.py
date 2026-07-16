@@ -1,9 +1,9 @@
-"""Unit tests for the data contracts (Need / one_of / Schema) and the pipeline's input matching
+"""Unit tests for the data contracts (Need / Schema) and the pipeline's input matching
 (newest table of the requested type, checked strictly) + static validation + seed rules."""
 
 import pytest
 
-from canopyrs.engine.contracts import Need, one_of, Schema
+from canopyrs.engine.contracts import Need, Schema
 from canopyrs.engine.data import Crops, Objects, Sources, Tiles
 from canopyrs.engine.constants import Col, Modality
 from canopyrs.engine.pipeline import Pipeline
@@ -113,20 +113,6 @@ def test_schema_undeclared_attributes_skip_checks():
     schema = Schema(columns=(), links=())
     assert Need(Objects, on=Crops).check(schema) == ""
     assert Need(Tiles, modalities=(Modality.RGB,)).check(schema) == ""
-
-
-# --- one_of ------------------------------------------------------------------
-
-def test_one_of_picks_first_available(tiles_seed):
-    req = one_of(Need(Sources), Need(Tiles))
-    desc, err = req.resolve(lambda t: {Tiles: [tiles_seed]}.get(t, ()))
-    assert desc is tiles_seed and err == ""
-
-
-def test_one_of_none_available():
-    req = one_of(Need(Sources), Need(Tiles))
-    desc, err = req.resolve(lambda t: ())
-    assert desc is None and "OR" in err
 
 
 # --- input matching: newest of the requested type, checked strictly -----------

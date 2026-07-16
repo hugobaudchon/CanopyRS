@@ -13,7 +13,7 @@ the newest schema of each type), so the chart never re-derives "what's available
 import re
 import sys
 
-from canopyrs.engine.contracts import Requirement, as_requirements
+from canopyrs.engine.contracts import Need, as_requirements
 from canopyrs.engine.data import Crops, Objects, Sources, Tiles
 
 
@@ -179,19 +179,10 @@ class PipelineFlowVisualizer:
         get = lambda t: before.get(t, ())   # noqa: E731 — resolve over the full per-type schema lists
         req, miss = self._empty_marks(), self._empty_marks()
         for entry in component.requires:
-            spec = Requirement.coerce(entry)
-            desc, _ = spec.resolve(get)
-            if desc is not None:
-                self._add_need(req, self._chosen_need(spec, get))
-            else:
-                for need in spec.needs():
-                    self._add_need(miss, need)
+            need = Need.coerce(entry)
+            desc, _ = need.resolve(get)
+            self._add_need(req if desc is not None else miss, need)
         return req, miss
-
-    @staticmethod
-    def _chosen_need(spec, get):
-        """The Need the available data actually binds (for a one_of, the first satisfiable alternative)."""
-        return next(need for need in spec.needs() if need.resolve(get)[0] is not None)
 
     @staticmethod
     def _add_need(acc, need):

@@ -29,7 +29,7 @@ from canopyrs.engine.utils import green_print, parse_tilerizer_aoi_config
 from canopyrs.engine.raster_validation import validate_raster_rgb_bands
 from canopyrs.engine import store
 from canopyrs.engine.constants import Col, GeomKind, Modality
-from canopyrs.engine.contracts import Requirement, Schema, as_requirements
+from canopyrs.engine.contracts import Need, Schema, as_requirements
 from canopyrs.engine.data import Crops, Imagery, Objects, Sources, Tiles
 from canopyrs.engine.components import COMPONENT_REGISTRY
 from canopyrs.engine.visualizer import PipelineFlowVisualizer
@@ -88,18 +88,18 @@ class Pipeline:
         return seeds + self._derive_seeds(seeds)
 
     def _seed_image_type(self):
-        """The role of a seeded image folder: scan the components in order (flattening ``one_of``)
-        and take the first requirement referencing an imagery role — by its data type, or by an
+        """The role of a seeded image folder: scan the components in order and take the first
+        requirement referencing an imagery role — by its data type, or by an
         Objects need's ``on=`` — that no earlier component produces. Default ``Tiles``: a folder
         nothing asks for by role is only ever consumed through object links, where the label doesn't
         change behavior."""
         produced = set()
         for component in self.components:
             for req in component.requires:
-                for need in Requirement.coerce(req).needs():
-                    role = need.data_type if need.data_type in (Tiles, Crops) else need.on
-                    if role in (Tiles, Crops) and role not in produced:
-                        return role
+                need = Need.coerce(req)
+                role = need.data_type if need.data_type in (Tiles, Crops) else need.on
+                if role in (Tiles, Crops) and role not in produced:
+                    return role
             produced |= {need.data_type for need in as_requirements(component.produces)}
         return Tiles
 
@@ -117,10 +117,10 @@ class Pipeline:
         produced = set()
         for component in self.components:
             for req in component.requires:
-                for need in Requirement.coerce(req).needs():
-                    if need.data_type is Objects and Objects not in produced and need.on is Crops:
-                        print("Derived one Object per seeded crop (a component needs Objects on Crops).")
-                        return [Objects.from_imagery(crops_seed)]
+                need = Need.coerce(req)
+                if need.data_type is Objects and Objects not in produced and need.on is Crops:
+                    print("Derived one Object per seeded crop (a component needs Objects on Crops).")
+                    return [Objects.from_imagery(crops_seed)]
             produced |= {need.data_type for need in as_requirements(component.produces)}
         return derived
 
@@ -237,7 +237,7 @@ class Pipeline:
             if component is None:
                 continue
             for req in component.requires:
-                desc, err = Requirement.coerce(req).resolve(lambda t: before.get(t, ()))
+                desc, err = Need.coerce(req).resolve(lambda t: before.get(t, ()))
                 if desc is None:
                     raise ValueError(f"{type(component).__name__} {err}")
         return self
@@ -291,7 +291,7 @@ class Pipeline:
         type's list, since Schemas don't carry their type)."""
         schemas = available.get(data_type, ())
         for req in component.requires:
-            desc, _ = Requirement.coerce(req).resolve(lambda t: available.get(t, ()))
+            desc, _ = Need.coerce(req).resolve(lambda t: available.get(t, ()))
             if any(desc is schema for schema in schemas):
                 return True
         return False
@@ -543,10 +543,10 @@ class Pipeline:
             self._imagery_log.append(data)
 
     def _resolve(self, req, component):
-        """The input for a ``requires`` entry (a bare type, a ``Need``, or an ``AnyOf``): the newest
+        """The input for a ``requires`` entry (a bare type or a ``Need``): the newest
         stored instance of the requested type, strictly checked — a mismatch raises instead of
         falling back to an older instance."""
-        inst, err = Requirement.coerce(req).resolve(lambda t: self._lists.get(t, ()))
+        inst, err = Need.coerce(req).resolve(lambda t: self._lists.get(t, ()))
         if inst is None:
             raise ValueError(f"{type(component).__name__} {err}")
         return inst
