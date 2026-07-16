@@ -33,20 +33,14 @@ import pandas as pd
 import rasterio
 from rasterio.windows import Window
 
-from canopyrs.engine.constants import Col, GeomKind, Modality
+from canopyrs.engine.constants import Col, GeomKind, Modality, RGB_BANDS
 from canopyrs.engine.contracts import Schema
 from canopyrs.engine.tilemeta import affine_params, box_of, window_meta
 
-RGB = [1, 2, 3]
-
 _SOURCE_PATH = "_source_path"   # internal grouping key in group_by_materialized_source, never persisted
 
-# Column of Imagery.reading_frame(): the file this row's pixels are actually read from — its own
-# ``path`` when materialized, else its nearest materialized ancestor's (see ``resolved_paths``).
-READ_PATH = "read_path"
 
-
-def _has_usable_values(df, col) -> bool:
+def has_usable_values(df, col) -> bool:
     """Whether ``df`` exposes usable values for ``col``: the column is present and — unless the frame
     is empty — has at least one non-null value."""
     return col in df.columns and (len(df) == 0 or df[col].notna().any())
@@ -93,7 +87,7 @@ class Table:
     def provides(self, col) -> bool:
         """Whether this table exposes usable values for ``col`` (present and non-null). Objects also
         searches its ancestry."""
-        return _has_usable_values(self.df, col)
+        return has_usable_values(self.df, col)
 
     def linked(self, name):
         """The table at relation ``name`` — hydrated directly, or resolved back through the
@@ -199,7 +193,7 @@ class Imagery(Table):
         window is then read from that file at the region's bounds)."""
         cols = [c for c in (Col.IMAGE_ID, Col.METADATA, Col.BANDS, Col.PATH) if c in self.df.columns]
         frame = self.df[cols].copy()
-        frame[READ_PATH] = self.resolved_paths().values
+        frame[Col.READ_PATH] = self.resolved_paths().values
         return frame
 
     @classmethod
@@ -222,7 +216,7 @@ class Imagery(Table):
         return cls.with_ids(pd.DataFrame(data))
 
     @classmethod
-    def from_image_dir(cls, path, bands=RGB) -> "Imagery":
+    def from_image_dir(cls, path, bands=RGB_BANDS) -> "Imagery":
         """A table of this type from a folder of pre-cut georeferenced GeoTIFFs (e.g. a geodataset
         tiles output, or a folder of crops). Each image's window metadata is recovered from the file
         itself (full-image window) and ``path`` points at it. Roots (no parent): the loader reads each
@@ -237,7 +231,7 @@ class Imagery(Table):
         return cls.build(metadata=metadata, path=[str(p) for p in paths], bands=bands)
 
     @classmethod
-    def build(cls, *, metadata, parent_id=None, path=None, bands=RGB, modality=Modality.RGB,
+    def build(cls, *, metadata, parent_id=None, path=None, bands=RGB_BANDS, modality=Modality.RGB,
               timestamp=None, image_id=None, parent=None) -> "Imagery":
         """Construct flat imagery rows from per-row arrays — one (modality, timestamp) per row.
         ``parent_id`` / ``modality`` / ``timestamp`` may be a scalar (broadcast) or per-row.
@@ -297,7 +291,7 @@ class Objects(Table):
     def provides(self, col) -> bool:
         """``col`` is exposed here (present, non-null) or resolvable through the ``prev_objects`` ancestry."""
         if col in self.df.columns:
-            return _has_usable_values(self.df, col)
+            return has_usable_values(self.df, col)
         return self.prev_objects is not None and self.prev_objects.provides(col)
 
     def schema(self) -> Schema:

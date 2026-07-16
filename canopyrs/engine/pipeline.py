@@ -30,7 +30,7 @@ from canopyrs.engine.raster_validation import validate_raster_rgb_bands
 from canopyrs.engine import store
 from canopyrs.engine.constants import Col, GeomKind, Modality
 from canopyrs.engine.contracts import Need, Schema, as_requirements
-from canopyrs.engine.data import Crops, Imagery, Objects, Sources, Tiles
+from canopyrs.engine.data import Crops, Imagery, Objects, Sources, Tiles, has_usable_values
 from canopyrs.engine.components import COMPONENT_REGISTRY
 from canopyrs.engine.visualizer import PipelineFlowVisualizer
 
@@ -186,7 +186,8 @@ class Pipeline:
             green_print(f"Running {component.label}...")
             component.out_dir = self._component_dir(component)
             args = [self._resolve(req, component) for req in component.requires]
-            produced = self._collect(component.run(*args))
+            out = component.run(*args)
+            produced = list(out) if isinstance(out, tuple) else [out]   # a component returns one table or a tuple
             self._check_produced(component, produced)
             for table in produced:
                 self._store(table)
@@ -508,7 +509,7 @@ class Pipeline:
         if imagery is not None:
             related["imagery"] = imagery
         prev = self.latest(Objects)
-        if prev is not None and self._has_fk(df, Col.PREV_OBJECT_ID):
+        if prev is not None and has_usable_values(df, Col.PREV_OBJECT_ID):
             related["prev_objects"] = prev
         return Objects(df, **related)
 
@@ -520,10 +521,6 @@ class Pipeline:
         return next((table for table in reversed(self._imagery_log)
                      if values <= set(table.df[table.pk])), None)
 
-    @staticmethod
-    def _has_fk(df, col) -> bool:
-        return col in df.columns and df[col].notna().any()
-
     # --- internals -----------------------------------------------------------
     def _component_dir(self, component):
         return self.output_dir / f"{component.component_id}_{component.name}" if self.output_dir else None
@@ -532,10 +529,6 @@ class Pipeline:
         directory = self._component_dir(component)
         for table in produced:
             store.save_table(table, directory)
-
-    @staticmethod
-    def _collect(outputs):
-        return list(outputs if isinstance(outputs, tuple) else (outputs,))
 
     def _store(self, data):
         self._lists[type(data)].append(data)

@@ -22,11 +22,9 @@ import torch
 from rasterio.enums import Resampling
 from rasterio.windows import from_bounds
 
-from canopyrs.engine.constants import Col
-from canopyrs.engine.data import READ_PATH
+from canopyrs.engine.constants import Col, RGB_BANDS
 from canopyrs.engine.tilemeta import bounds_of
 
-RGB = [1, 2, 3]
 
 
 def _clean(v):
@@ -45,10 +43,10 @@ class TileDataset(Dataset):
         metas = list(frame[Col.METADATA]) if Col.METADATA in cols else [None] * n
         self.image_ids = list(frame[Col.IMAGE_ID])
         self.own_paths = [_clean(v) for v in frame[Col.PATH]] if Col.PATH in cols else [None] * n
-        self.read_paths = [_clean(v) for v in frame[READ_PATH]] if READ_PATH in cols else [None] * n
+        self.read_paths = [_clean(v) for v in frame[Col.READ_PATH]] if Col.READ_PATH in cols else [None] * n
         self.bounds = [bounds_of(m) if m is not None else None for m in metas]   # window from metadata
         self.sizes = [(m["height"], m["width"]) if m is not None else None for m in metas]  # region's grid
-        self.bands = list(frame[Col.BANDS]) if Col.BANDS in cols else [RGB] * n   # per-row band indices
+        self.bands = list(frame[Col.BANDS]) if Col.BANDS in cols else [RGB_BANDS] * n   # per-row band indices
         self._handles = {}  # read_path -> open dataset, lazily, once per worker
 
     def __len__(self):

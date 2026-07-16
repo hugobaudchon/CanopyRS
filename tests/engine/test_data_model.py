@@ -97,10 +97,9 @@ def test_resolved_paths_prefer_own_file(sources_seed):
 
 
 def test_reading_frame_carries_read_path(tiles_seed):
-    from canopyrs.engine.data import READ_PATH
     frame = tiles_seed.reading_frame()
-    assert READ_PATH in frame.columns
-    assert frame[READ_PATH].notna().all()   # windows resolve to the source raster
+    assert Col.READ_PATH in frame.columns
+    assert frame[Col.READ_PATH].notna().all()   # windows resolve to the source raster
 
 
 def test_group_by_materialized_source_single_raster(objects_seed):

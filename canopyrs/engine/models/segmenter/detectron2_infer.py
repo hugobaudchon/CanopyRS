@@ -8,7 +8,6 @@ from detectron2.data.transforms import AugmentationList, AugInput, ResizeShortes
 from detectron2.modeling import build_model
 from detrex.checkpoint import DetectionCheckpointer as DetrexDetectionCheckpointer
 from detectron2.checkpoint import DetectionCheckpointer as Detectron2DetectionCheckpointer
-from geodataset.dataset import UnlabeledRasterDataset
 
 from canopyrs.engine.config_parsers import SegmenterConfig
 from canopyrs.engine.models.detector.train_detectron2.augmentation import AugmentationAdder
@@ -17,7 +16,6 @@ from canopyrs.engine.models.detector.train_detectron2.train_detrex import get_ba
 from canopyrs.engine.models.segmenter.detectree2 import setup_detectree2_cfg
 from canopyrs.engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
-from canopyrs.engine.models.utils import collate_fn_trivial
 
 
 @SEGMENTER_REGISTRY.register('detectree2', 'mask_rcnn_detectron2', 'mask2former_detrex')
@@ -127,7 +125,4 @@ class Detectron2SegmenterWrapper(SegmenterWrapperBase):
                 image_boxes_object_ids = [None] * masks.shape[0]
 
                 _ = self.queue_masks(image_boxes_object_ids, masks, image_size, scores, tile_idx, n_masks_processed, queue)
-
-    def infer_on_dataset(self, dataset: UnlabeledRasterDataset):
-        return self._infer_on_dataset(dataset, collate_fn_trivial)
 

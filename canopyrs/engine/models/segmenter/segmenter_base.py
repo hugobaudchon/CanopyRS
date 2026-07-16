@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 import psutil
 import torch
-from torch.utils.data import DataLoader
 
 warnings.filterwarnings(
     "ignore",
@@ -22,7 +21,6 @@ from shapely import box
 from shapely.affinity import scale
 from tqdm import tqdm
 
-from geodataset.dataset import DetectionLabeledRasterCocoDataset, UnlabeledRasterDataset, BaseDataset
 from geodataset.utils import mask_to_polygon
 
 from canopyrs.engine.config_parsers import SegmenterConfig
@@ -120,10 +118,6 @@ class SegmenterWrapperBase(ABC):
                 queue: multiprocessing.JoinableQueue):
         pass
 
-    @abstractmethod
-    def infer_on_dataset(self, dataset: BaseDataset):
-        pass
-
     def queue_masks(self,
                     box_object_ids: List[int or None],
                     masks: np.array,
@@ -169,8 +163,8 @@ class SegmenterWrapperBase(ABC):
     def infer_v2(self, loader, boxes_by_tile=None):
         """v2 inference: consume a loader yielding ``(object_ids, images)`` batches and return per-tile
         ``(tile_object_ids, mask_object_ids, mask_polygons, mask_scores)`` — polygons in tile-pixel
-        coords. Reuses ``forward`` and the same multiprocessing mask->polygon postprocessing as
-        ``_infer_on_dataset``; builds no DataLoader of its own.
+        coords. Reuses ``forward`` and the multiprocessing mask->polygon postprocessing; builds no
+        DataLoader of its own.
 
         boxes_by_tile : {tile_object_id: (boxes np[N,4] xyxy pixel, box_object_ids list[N])} for
         box-prompted models; None for automatic mask generation.
@@ -227,100 +221,3 @@ class SegmenterWrapperBase(ABC):
 
         return tile_object_ids, mask_object_ids, mask_polygons, mask_scores
 
-    def _infer_on_dataset(self, dataset: BaseDataset, collate_fn: object):
-        infer_dl = DataLoader(dataset, batch_size=self.config.image_batch_size, shuffle=False,
-                              collate_fn=collate_fn,
-                              num_workers=3, persistent_workers=True)
-
-        tiles_paths = []
-        tiles_boxes_object_ids = []
-        tiles_masks_polygons = []
-        tiles_masks_scores = []
-        queue = multiprocessing.JoinableQueue()  # Create a JoinableQueue
-
-        print(f"Setting up {self.config.pp_n_workers} post-processing workers...")
-        # Create a manager to share data across processes
-        manager = multiprocessing.Manager()
-        output_dict = manager.dict()
-        processed_counter = multiprocessing.Value('i', 0)
-        output_dict_lock = multiprocessing.Lock()
-
-        # Start post-processing processes
-        post_process_processes = []
-        for _ in range(self.config.pp_n_workers):
-            p = multiprocessing.Process(target=process_masks,
-                                        args=(queue,
-                                              output_dict,
-                                              output_dict_lock,
-                                              self.config.pp_simplify_tolerance,
-                                              self.config.pp_remove_rings,
-                                              self.config.pp_remove_small_geoms,
-                                              processed_counter))
-            p.start()
-            post_process_processes.append(p)
-
-        print("Post-processing workers are set up.")
-
-        dataset_with_progress = tqdm(infer_dl,
-                                     desc="Inferring the segmenter...",
-                                     leave=True)                            # TODO check why its so slow here, like 30 seconds
-
-        for i, sample in enumerate(dataset_with_progress):
-            tiles_idx = list(range(i * self.config.image_batch_size, (i + 1) * self.config.image_batch_size))[:len(sample)]
-            if isinstance(dataset, DetectionLabeledRasterCocoDataset):
-                images, boxes, boxes_object_ids = sample
-                tiles_paths.extend([dataset.tiles[tile_idx]['path'] for tile_idx in tiles_idx])     # TODO tiles idx should be returned by the dataset __getitem__ method
-            elif isinstance(dataset, UnlabeledRasterDataset):
-                images = list(sample)
-                boxes = [None] * len(images)
-                boxes_object_ids = [None] * len(images)
-                tiles_paths.extend([dataset.tile_paths[tile_idx] for tile_idx in tiles_idx])        # TODO tiles idx should be returned by the dataset __getitem__ method
-            else:
-                raise ValueError("Dataset type not supported.")
-
-            self.forward(
-                images=images,
-                boxes=boxes,
-                boxes_object_ids=boxes_object_ids,
-                tiles_idx=tiles_idx,
-                queue=queue
-            )
-
-        print("Waiting for all postprocessing workers to be finished...")
-
-        # Wait for all tasks in the queue to be completed
-        queue.join()
-
-        # Signal the end of input to the queue
-        for _ in range(self.config.pp_n_workers):
-            queue.put(None)
-
-        # Wait for post-processing processes to finish
-        for p in post_process_processes:
-            p.join()
-
-        # Close the queue
-        queue.close()
-
-        # Sorting the results within each tile_idx by mask_id to maintain order
-        for tile_idx in output_dict.keys():
-            output_dict[tile_idx] = sorted(output_dict[tile_idx], key=lambda x: x[0])
-
-        # Assemble the results into tiles_masks_polygons
-        for tile_idx in sorted(output_dict.keys()):
-            _, box_object_ids, masks_polygons, scores = zip(*output_dict[tile_idx])
-            box_object_ids = list(box_object_ids)
-            masks_polygons = list(masks_polygons)
-            scores = [score.item() for score in scores]
-
-            tiles_boxes_object_ids.append(box_object_ids)
-            tiles_masks_polygons.append(masks_polygons)
-            tiles_masks_scores.append(scores)
-
-        print(f"Finished inferring the segmenter {self.config.model}-{self.config.architecture}.")
-
-        if isinstance(dataset, UnlabeledRasterDataset):
-            # There were no box prompts, so we return None for the boxes_object_ids instead of lists of None values
-            tiles_boxes_object_ids = None
-
-        return tiles_paths, tiles_boxes_object_ids, tiles_masks_polygons, tiles_masks_scores

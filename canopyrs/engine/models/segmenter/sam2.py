@@ -3,14 +3,13 @@ from typing import List
 import numpy as np
 import torch
 from PIL import Image
-from geodataset.dataset import DetectionLabeledRasterCocoDataset
 import multiprocessing
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 from canopyrs.engine.config_parsers import SegmenterConfig
 from canopyrs.engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
-from canopyrs.engine.models.utils import collate_fn_infer_image_box, load_finetuned_checkpoint
+from canopyrs.engine.models.utils import load_finetuned_checkpoint
 
 @SEGMENTER_REGISTRY.register('sam2')
 class Sam2PredictorWrapper(SegmenterWrapperBase):
@@ -71,5 +70,3 @@ class Sam2PredictorWrapper(SegmenterWrapperBase):
                         box_object_ids_batch, masks, image_size, scores, tile_idx, n_masks_processed, queue
                     )
 
-    def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
-        return self._infer_on_dataset(dataset, collate_fn_infer_image_box)

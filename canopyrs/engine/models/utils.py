@@ -7,7 +7,6 @@ import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
 
-from canopyrs.engine.utils import object_id_column_name
 
 
 def collate_fn_trivial(image_batch):
@@ -54,27 +53,7 @@ def collate_fn_detection(batch):
     return data, labels
 
 
-def collate_fn_infer_image_box(data_batch):
-    image_batch = [data[0] for data in data_batch]
-    boxes_batch = [np.array(data[1]['boxes']) for data in data_batch]
-    boxes_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
-    return image_batch, boxes_batch, boxes_object_ids
 
-
-def collate_fn_infer_image_masks(data_batch):
-    image_batch = [data[0] for data in data_batch]
-    masks_batch = [np.array(data[1]['masks']) for data in data_batch]
-    masks_object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
-    return image_batch, masks_batch, masks_object_ids
-
-
-def collate_fn_infer_image_classification(data_batch):
-    # ClassificationLabeledRasterCocoDataset yields the image crop + a single GT
-    # label (ignored at inference) + the object id. We only consume image + id.
-    image_batch = [data[0] for data in data_batch]
-    labels_batch = [data[1]['labels'] for data in data_batch]
-    object_ids = [data[1]['other_attributes'][object_id_column_name] for data in data_batch]
-    return image_batch, labels_batch, object_ids
 
 
 def collate_fn_images(batch):

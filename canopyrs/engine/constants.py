@@ -25,7 +25,10 @@ class Col:
     # imagery
     PATH = "path"                       # file on disk; null = a window into the parent image
     METADATA = "metadata"               # per-row dict; grid rows: transform/crs/size (see tilemeta)
-    BANDS = "bands"                     # band indices to read (rgb = [1, 2, 3])
+    BANDS = "bands"                     # band indices to read (see RGB_BANDS)
+    READ_PATH = "read_path"             # ephemeral (reading_frame/loader only, never persisted): the file
+                                        # this row's pixels are read from — own path, else the nearest
+                                        # materialized ancestor's (see Imagery.resolved_paths)
 
     # objects
     GEOMETRY = "geometry"
@@ -40,6 +43,10 @@ class Col:
     CLASSIFIER_CLASS_NAME = "classifier_class_name"  # human-readable name (from config.class_names)
     CLASSIFIER_SCORES = "classifier_scores"          # full per-class score list
     AGGREGATOR_SCORE = "aggregator_score"
+
+
+# Default Col.BANDS value: the 1-indexed band triplet of an RGB raster.
+RGB_BANDS = [1, 2, 3]
 
 
 class GeomKind:
