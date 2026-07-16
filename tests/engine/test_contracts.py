@@ -145,6 +145,19 @@ def test_validate_accepts_wired_pipeline(sources_seed):
     assert [c.component_id for c in pipe.components] == [0, 1]
 
 
+def test_validate_crop_from_tiles_pipeline(sources_seed):
+    """Benchmark type-1 wiring: grid tilerizer -> detector -> polygon tilerizer validates — the
+    polygon tilerizer needs only the detections' imagery link, no separate source input."""
+    polygon_tilerizer = FakeComponent(
+        requires=Need(Objects, links=("imagery",)),
+        produces=(Need(Imagery, kind=ImageKind.TILE, links=("parent",)),
+                  Need(Objects, links=("imagery", "prev_objects"), crs=True)),
+        name="polygon_tilerizer",
+    )
+    pipe = Pipeline([_tilerizer(), _detector(), polygon_tilerizer], sources=sources_seed)
+    assert len(pipe.components) == 3
+
+
 def test_validate_source_need_survives_produced_tiles(sources_seed):
     """Static mirror of input matching: a second tilerizer's kind='source' requirement stays
     satisfiable after the first tilerizer produced tiles (per-type schema lists, not overwrite)."""

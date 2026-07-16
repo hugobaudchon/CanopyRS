@@ -34,9 +34,11 @@ from rasterio.windows import Window
 
 from canopyrs.engine.constants import Col, GeomKind, ImageKind, Modality
 from canopyrs.engine.contracts import Schema
-from canopyrs.engine.tilemeta import window_meta
+from canopyrs.engine.tilemeta import affine_params, window_meta
 
 RGB = [1, 2, 3]
+
+_SOURCE_PATH = "_source_path"   # internal grouping key in group_by_materialized_source, never persisted
 
 # Column of Imagery.reading_frame(): the file this row's pixels are actually read from — its own
 # ``path`` when materialized, else its nearest materialized ancestor's (see ``resolved_paths``).
@@ -276,6 +278,49 @@ class Objects(Table):
             base.columns |= self.prev_objects.schema().columns
         return base
 
+    def group_by_materialized_source(self):
+        """The objects grouped by the file their pixels live in — each object's image resolved to its
+        nearest materialized ancestor — as ``(path, gdf)`` pairs, one per distinct file, so a
+        per-object cropper runs once per file instead of once per window. Each ``gdf`` carries
+        ``object_id``, ``image_id`` and the geometry in the file's CRS: pixel-coord objects are
+        georeferenced through their image's ``metadata`` first (one vectorized transform per distinct
+        image, never per object); CRS objects pass through unchanged."""
+        imagery = self.linked("imagery")
+        if imagery is None:
+            raise ValueError("Objects.imagery must be linked to group by materialized source")
+        image_id = self.column(Col.IMAGE_ID)
+        path_by_image = pd.Series(imagery.resolved_paths().values, index=imagery.df[imagery.pk].values)
+        paths = pd.Series(image_id.values, index=self.df.index).map(path_by_image)
+        if paths.isna().any():
+            raise ValueError("some objects reference imagery with no materialized ancestor "
+                             "(no file to read their pixels from)")
+        frame = pd.DataFrame({
+            Col.OBJECT_ID: self.df[Col.OBJECT_ID].values,
+            Col.IMAGE_ID: image_id.values,
+            Col.GEOMETRY: self.df.geometry.values,
+            _SOURCE_PATH: paths.values,
+        }, index=self.df.index)
+        meta_by_id = (imagery.df.set_index(imagery.pk)[Col.METADATA]
+                      if Col.METADATA in imagery.df.columns else None)
+        groups = []
+        for path, group in frame.groupby(_SOURCE_PATH, sort=False):
+            group = group.drop(columns=_SOURCE_PATH)
+            if self.crs_set:
+                gdf = gpd.GeoDataFrame(group, geometry=Col.GEOMETRY, crs=self.df.crs)
+            else:
+                if meta_by_id is None:
+                    raise ValueError("pixel-coord objects need their imagery's metadata to be georeferenced")
+                geoms = pd.concat([
+                    gpd.GeoSeries(g[Col.GEOMETRY].values, index=g.index)
+                       .affine_transform(affine_params(meta_by_id[iid]))
+                    for iid, g in group.groupby(Col.IMAGE_ID, sort=False)
+                ]).reindex(group.index)
+                crs = meta_by_id[group[Col.IMAGE_ID].iloc[0]]["crs"]
+                gdf = gpd.GeoDataFrame(group.assign(**{Col.GEOMETRY: geoms}),
+                                       geometry=Col.GEOMETRY, crs=crs)
+            groups.append((path, gdf))
+        return groups
+
     def column(self, col) -> pd.Series:
         """Values of ``col`` for these objects, aligned to ``self.df``'s rows. Returned from this table
         if it carries the column, else followed back through the ``prev_objects`` ancestry (each row's
@@ -294,10 +339,14 @@ class Objects(Table):
     def from_gpkg(cls, path, imagery=None, prev_objects=None) -> "Objects":
         """Seed an Objects table from a GeoPackage previously written by the pipeline (round-trip): it
         carries geometry, ``geom_kind``, ``object_id`` and any FK columns. Pass ``imagery`` /
-        ``prev_objects`` to re-link whichever FK columns the file holds (so the ancestry walk works)."""
+        ``prev_objects`` to re-link whichever FK columns the file holds (so the ancestry walk works).
+        A file without ``image_id`` over a single-scene ``imagery`` gets it stamped (every object is
+        in that scene)."""
         gdf = gpd.read_file(path)
         if Col.GEOM_KIND not in gdf.columns:
             raise ValueError(f"{path} has no '{Col.GEOM_KIND}' column; not a pipeline-written Objects gpkg")
+        if imagery is not None and Col.IMAGE_ID not in gdf.columns and len(imagery.df) == 1:
+            gdf[Col.IMAGE_ID] = imagery.df[Col.IMAGE_ID].iloc[0]
         related = {}
         if imagery is not None and Col.IMAGE_ID in gdf.columns:
             related["imagery"] = imagery

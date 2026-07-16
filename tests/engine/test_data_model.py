@@ -103,3 +103,35 @@ def test_reading_frame_carries_read_path(tiles_seed):
     frame = tiles_seed.reading_frame()
     assert READ_PATH in frame.columns
     assert frame[READ_PATH].notna().all()   # windows resolve to the source raster
+
+
+def test_group_by_materialized_source_single_raster(objects_seed):
+    """Pixel objects on window tiles bucket into their raster's single file, georeferenced through
+    each tile's own affine (tile 0 at CRS origin (0, 64), tile 1 at (64, 64), 1 unit/pixel, north-up)."""
+    (path, gdf), = objects_seed.group_by_materialized_source()
+    assert path == objects_seed.imagery.resolved_paths().iloc[0]
+    assert str(gdf.crs) == "EPSG:32618"
+    assert list(gdf[Col.OBJECT_ID]) == list(objects_seed.df[Col.OBJECT_ID])
+    assert gdf.geometry.iloc[0].bounds == (1.0, 54.0, 10.0, 63.0)     # box(1, 1, 10, 10) on tile 0
+    assert gdf.geometry.iloc[1].bounds == (69.0, 44.0, 84.0, 59.0)    # box(5, 5, 20, 20) on tile 1
+
+
+def test_group_by_materialized_source_many_files(tmp_path):
+    """CRS objects over on-disk tiles bucket once per tile file, geometry passing through unchanged."""
+    tiles = Imagery.build(kind=ImageKind.TILE,
+                          metadata=[make_tile_metadata(), make_tile_metadata(x0=64.0)],
+                          path=[str(tmp_path / "a.tif"), str(tmp_path / "b.tif")])
+    geoms = [box(1, 1, 10, 10), box(70, 1, 80, 10)]
+    objs = Objects.build(geometry=geoms, geom_kind=GeomKind.BOX,
+                         image_id=list(tiles.df[Col.IMAGE_ID]), imagery=tiles, crs="EPSG:32618")
+    groups = objs.group_by_materialized_source()
+    assert [path for path, _ in groups] == [str(tmp_path / "a.tif"), str(tmp_path / "b.tif")]
+    assert all(len(gdf) == 1 for _, gdf in groups)
+    assert groups[0][1].geometry.iloc[0].equals(geoms[0])
+
+
+def test_group_by_materialized_source_needs_imagery(tiles_seed):
+    objs = Objects.build(geometry=[box(0, 0, 1, 1)], geom_kind=GeomKind.BOX,
+                         image_id=[tiles_seed.df[Col.IMAGE_ID].iloc[0]])
+    with pytest.raises(ValueError, match="must be linked"):
+        objs.group_by_materialized_source()

@@ -1,5 +1,5 @@
-"""Tilerizer: source Imagery -> tile Imagery. Modes: a window grid over each source, one crop per
-Object, or grid + re-tiled labels.
+"""Tilerizer: produces tile Imagery. Modes: a window grid over each source, one crop per Object
+(cut from each object's own image file), or grid + re-tiled labels.
 
 Reuses geodataset for the actual tiling. Tiles are flat: one row per (footprint, modality, timestamp),
 each a child of the source it was cut from (``parent_id``) — read from its own ``path`` if materialized,
@@ -36,8 +36,10 @@ class Tilerizer(Component):
             self.requires = (Need(Imagery, kind=ImageKind.SOURCE),)
             self.produces = Need(Imagery, kind=ImageKind.TILE, links=("parent",))
         elif config.tile_type == "polygon":
-            self.requires = (Need(Imagery, kind=ImageKind.SOURCE), Need(Objects, crs=True))
-            # crops (children of the source) + the input objects carried forward (each -> its crop).
+            # the objects' imagery link supplies the files to crop from (CRS objects over a raster,
+            # or tile-pixel detections over tiles) — no separate Imagery input.
+            self.requires = (Need(Objects, links=("imagery",)),)
+            # crops (children of each object's image) + the input objects carried forward (each -> its crop).
             self.produces = (Need(Imagery, kind=ImageKind.TILE, links=("parent",)),
                              Need(Objects, links=("imagery", "prev_objects"), crs=True))
         elif config.tile_type == "labeled":
@@ -48,13 +50,13 @@ class Tilerizer(Component):
         else:
             raise ValueError(f"unknown tile_type '{config.tile_type}'")
 
-    def run(self, sources: Imagery, objects: Objects = None):
+    def run(self, *inputs):
         if self.config.tile_type == "tile":
-            return self._grid(sources)
+            return self._grid(*inputs)
         if self.config.tile_type == "polygon":
-            return self._per_object(sources, objects)
+            return self._per_object(*inputs)
         if self.config.tile_type == "labeled":
-            return self._labeled(sources, objects)
+            return self._labeled(*inputs)
         raise ValueError(f"unknown tile_type '{self.config.tile_type}'")
 
     def _meta_and_paths(self, gdf):
@@ -83,39 +85,50 @@ class Tilerizer(Component):
         return Imagery.build(kind=ImageKind.TILE, parent_id=parent_ids, metadata=metadata,
                              path=tile_paths, parent=sources)
 
-    def _per_object(self, sources: Imagery, objects: Objects):
-        """One crop per input Object. Returns (Imagery, Objects): the crops (children of the source),
-        and the input objects carried forward — each re-parented to its crop (``image_id`` -> the crop)
-        with a ``prev_object_id`` -> the original (so the ancestry walk still reaches its scores). The
-        classifier consumes these objects, each finding its crop via ``object.imagery``."""
-        assert len(sources.df) == 1, "object tilerizer currently supports a single source"
-        source = sources.df.iloc[0]
-        gdf = RasterPolygonTilerizer(
-            raster_path=source[Col.PATH],
-            labels_path=None,
-            labels_gdf=objects.df[[Col.OBJECT_ID, Col.GEOMETRY]],
-            output_path=self.out_dir,
-            tile_size=self.config.tile_size,
-            use_variable_tile_size=self.config.use_variable_tile_size,
-            variable_tile_size_pixel_buffer=self.config.variable_tile_size_pixel_buffer,
-            aois_config=self.aois_config,
-            other_labels_attributes_column_names=[Col.OBJECT_ID],   # carry the source object id through geodataset
-            scale_factor=self.config.scale_factor,
-            ground_resolution=self.config.ground_resolution,
-        ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
-        metadata, tile_paths = self._meta_and_paths(gdf)
-        crops = Imagery.build(kind=ImageKind.TILE, parent_id=source[Col.IMAGE_ID], metadata=metadata,
-                              path=tile_paths, parent=sources)
+    def _per_object(self, objects: Objects):
+        """One crop per input Object, cut from each object's own image file — its nearest materialized
+        ancestor — with one cropper run per distinct file: a single raster degenerates to one run, a
+        folder of on-disk tiles runs once per tile file. Returns (Imagery, Objects): the crops
+        (children of each object's image) and the input objects carried forward — each re-parented to
+        its crop (``image_id`` -> the crop) with a ``prev_object_id`` -> the original (so the ancestry
+        walk still reaches its scores), geometry in CRS coords. The classifier consumes these objects,
+        each finding its crop via ``object.imagery``."""
+        metadata, tile_paths, parent_ids, source_object_ids, geometry, crs = [], [], [], [], [], None
+        for path, group in objects.group_by_materialized_source():
+            gdf = RasterPolygonTilerizer(
+                raster_path=path,
+                labels_path=None,
+                labels_gdf=group[[Col.OBJECT_ID, Col.GEOMETRY]],
+                output_path=self.out_dir,
+                tile_size=self.config.tile_size,
+                use_variable_tile_size=self.config.use_variable_tile_size,
+                variable_tile_size_pixel_buffer=self.config.variable_tile_size_pixel_buffer,
+                aois_config=self.aois_config,
+                other_labels_attributes_column_names=[Col.OBJECT_ID],   # carry the source object id through geodataset
+                scale_factor=self.config.scale_factor,
+                ground_resolution=self.config.ground_resolution,
+            ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
+            group_meta, group_paths = self._meta_and_paths(gdf)
+            kept = gdf[Col.OBJECT_ID].values                      # crop order; geodataset may drop empty crops
+            by_object = group.set_index(Col.OBJECT_ID)
+            metadata += group_meta
+            tile_paths += group_paths
+            parent_ids += list(by_object.loc[kept, Col.IMAGE_ID].values)   # crop's parent = the object's image
+            geometry += list(by_object.loc[kept, Col.GEOMETRY].values)     # the CRS geometry from the grouping
+            source_object_ids += list(kept)
+            assert crs is None or group.crs == crs, "crop sources span multiple CRS; not supported"
+            crs = group.crs
+        crops = Imagery.build(kind=ImageKind.TILE, parent_id=parent_ids, metadata=metadata,
+                              path=tile_paths, parent=objects.linked("imagery"))
 
-        # Carry each crop's source object forward (same geometry/kind), now pointing at its crop.
-        source_object_ids = gdf[Col.OBJECT_ID].values             # the input object each crop came from, in crop order
+        # Carry each crop's source object forward (same kind, CRS geometry), now pointing at its crop.
         by_id = objects.df.set_index(Col.OBJECT_ID)
         carried = Objects.build(
-            geometry=by_id.loc[source_object_ids, Col.GEOMETRY].values,
+            geometry=geometry,
             geom_kind=by_id.loc[source_object_ids, Col.GEOM_KIND].values,
             image_id=crops.df[Col.IMAGE_ID].values,               # crop per object (1:1, same order)
             prev_object_id=source_object_ids,
-            crs=objects.df.crs,                                   # carried geometry stays in the input's CRS
+            crs=crs,
             imagery=crops,
             prev_objects=objects,
         )

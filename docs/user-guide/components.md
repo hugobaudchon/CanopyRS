@@ -18,10 +18,12 @@ Splits a source scene into tiles.
 | `labeled` | grid tiles with input objects re-tiled onto them |
 | `polygon` | one crop per input object (input to a classifier) |
 
-**Requires:** `Imagery` (kind=source) — plus `Objects` for `labeled` and `polygon`
+**Requires:** `Imagery` (kind=source) for `tile` and `labeled` (plus the input `Objects` for
+`labeled`). `polygon` needs only `Objects` linked to their imagery — each crop is cut from the
+object's own image file, whether that is a source raster or an on-disk tile.
 
-**Produces:** `Imagery` (kind=tile, children of the source) — plus the carried `Objects` for `labeled`
-and `polygon`
+**Produces:** `Imagery` (kind=tile, children of the image they were cut from) — plus the carried
+`Objects` for `labeled` and `polygon`
 
 ---
 
