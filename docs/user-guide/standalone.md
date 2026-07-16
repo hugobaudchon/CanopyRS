@@ -1,6 +1,6 @@
 # Standalone Usage
 
-There's no separate standalone API — running one component is just a one-step pipeline. Seed it with the data that component needs (`sources=` a raster, `tiles=` a folder of pre-cut tiles, or `objects=` a GeoPackage of prior detections) and read the result from `pipe.latest(...)` or an export.
+There's no separate standalone API — running one component is just a one-step pipeline. Seed it with the data that component needs (`sources=` a raster, `tiles=` a folder of pre-cut images, or `objects=` a GeoPackage of prior detections). A seeded folder is typed by what the pipeline asks for: tiles for a detector or segmenter, crops for a classifier-only run — you never choose and read the result from `pipe.latest(...)` or an export.
 
 For config parameters (tile size, NMS thresholds, score weights, etc.), see [Configuration](configuration.md).
 
@@ -9,14 +9,14 @@ For config parameters (tile size, NMS thresholds, score weights, etc.), see [Con
 ```python
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import TilerizerConfig
-from canopyrs.engine.data import Imagery
+from canopyrs.engine.data import Tiles
 
 pipe = Pipeline.from_config(
     [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=512, save_tiles_to_disk=True))],
     sources='raster.tif',
     output_dir='./out',
 ).run()
-print(pipe.latest(Imagery))
+print(pipe.latest(Tiles))
 ```
 
 ## Detector
@@ -58,12 +58,12 @@ The aggregator georeferences and de-duplicates existing detections, so seed it f
 ```python
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import AggregatorConfig
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.data import Objects, Tiles
 
 prior = Pipeline.from_dir('./detector_run')
 pipe = Pipeline.from_config(
     [('aggregator', AggregatorConfig(nms_algorithm='iou', nms_threshold=0.5, score_threshold=0.3))],
-    tiles=prior.latest(Imagery),
+    tiles=prior.latest(Tiles),
     objects=prior.latest(Objects),
     output_dir='./out',
 ).run()
@@ -88,6 +88,14 @@ pipe = Pipeline.from_config(
     objects='detections.gpkg',
     output_dir='./out',
 ).run()
+```
+
+To classify a folder of pre-cut crops directly (one class per image, no detections), seed a
+classifier-only pipeline — the folder is used as crops and one object per crop is derived
+automatically:
+
+```python
+pipe = Pipeline.from_config([('classifier', config)], tiles='./crops', output_dir='./out').run()
 ```
 
 ## How it works

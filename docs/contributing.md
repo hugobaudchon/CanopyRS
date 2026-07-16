@@ -49,7 +49,7 @@ Before touching `canopyrs/engine/`, read [`canopyrs/engine/README.md`](https://g
 2. Create `canopyrs/engine/components/mycomponent.py`
 3. Subclass `Component` and decorate it with `@register_component("mykind")` (the kind used in the pipeline YAML)
 4. In `__init__`, declare `requires` and `produces` as data contracts — a type, a `Need(type, columns=..., links=..., crs=...)`, or a `one_of(...)` over alternatives
-5. Implement `run(self, *inputs)` (the pipeline passes the required tables in order) and return the produced `Imagery`/`Objects` table(s)
+5. Implement `run(self, *inputs)` (the pipeline passes the required tables in order) and return the produced `Sources`/`Tiles`/`Crops`/`Objects` table(s)
 6. Import the module in `canopyrs/engine/components/__init__.py` so its `@register_component` runs
 7. Add a docs entry in `docs/user-guide/components.md` and a new page under `docs/api/components/` (then register it in `mkdocs.yml` nav)
 

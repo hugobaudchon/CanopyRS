@@ -3,14 +3,13 @@ Pipeline: run components in order, threading typed data by need.
 
 See ``canopyrs/engine/README.md`` for the model in five sentences.
 
-The pipeline keeps one list per data type (``imagery`` / ``objects``, latest last) and, per component,
-binds each ``requires`` entry to the **newest instance of its type whose kind matches**, then checks
-the rest of the Need against it — a ``kind='source'`` requirement finds the seed raster past freshly
-produced tiles, but any other mismatch fails loudly instead of falling back to an older table. The
-returned
+The pipeline keeps one list per data type (``sources`` / ``tiles`` / ``crops`` / ``objects``, latest
+last) and, per component, binds each ``requires`` entry to the **newest instance of its type**, then
+checks the Need against it — a mismatch fails loudly instead of falling back to an older table. Roles
+are types, so a ``Need(Sources)`` finds the raster no matter how many tiles exist. The returned
 tables are checked against ``produces`` (postcondition), stored, and — with an ``output_dir`` — saved
 as parquet under ``{id}_{name}/`` and recorded in the run record (``run.json``). A component never
-names its predecessor, only the kind and shape of data it needs.
+names its predecessor, only the type and shape of data it needs.
 
 ``validate`` (called at construction) runs the same checks statically: ``thread_schemas`` threads each
 component's ``produces`` forward as declared ``Schema``s, kept as per-type lists exactly like runtime.
@@ -24,13 +23,14 @@ import shutil
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 
 from canopyrs.engine.utils import green_print, parse_tilerizer_aoi_config
 from canopyrs.engine.raster_validation import validate_raster_rgb_bands
 from canopyrs.engine import store
-from canopyrs.engine.constants import Col, GeomKind, ImageKind, Modality
+from canopyrs.engine.constants import Col, GeomKind, Modality
 from canopyrs.engine.contracts import Requirement, Schema, as_requirements
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.data import Crops, Imagery, Objects, Sources, Tiles
 from canopyrs.engine.components import COMPONENT_REGISTRY
 from canopyrs.engine.visualizer import PipelineFlowVisualizer
 
@@ -39,10 +39,10 @@ class Pipeline:
     def __init__(self, components, sources=None, tiles=None, objects=None, output_dir=None):
         """Seeds — at least one is needed to ``run``:
           - ``sources``: the input scenes — a raster path, a list of paths, or ``{path, modality,
-            timestamp}`` descriptors (built into a kind='source' ``Imagery`` seed; an ``Imagery``
-            instance passes through);
-          - ``tiles``: a pre-cut tiles folder path (``Imagery.from_tiles_dir``) or a kind='tile'
-            ``Imagery`` instance;
+            timestamp}`` descriptors (built into a ``Sources`` seed; an imagery instance passes through);
+          - ``tiles``: a folder of pre-cut images, or an imagery instance. A folder is typed by what
+            the components ask for (``Tiles`` for a detector, ``Crops`` for a classifier-only run) —
+            see ``_seed_image_type``;
           - ``objects``: a gpkg path (``Objects.from_gpkg``) or an ``Objects`` instance (prior detections).
         Given the seeds and components, the wiring is validated here so a bad pipeline fails at
         construction, before any compute."""
@@ -52,33 +52,77 @@ class Pipeline:
         self.output_dir = Path(output_dir) if output_dir else None
         if self.output_dir is not None:
             self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.sources, self.tiles, self.crops, self.objects = [], [], [], []
+        self._lists = {Sources: self.sources, Tiles: self.tiles, Crops: self.crops, Objects: self.objects}
+        self._imagery_log = []   # every stored imagery table, any type, chronological (reload relinking)
         self.seeds = self._build_seeds(sources, tiles, objects)
-        self.imagery, self.objects = [], []
-        self._lists = {Imagery: self.imagery, Objects: self.objects}
         self.outputs = []   # per-component list of produced tables (aligned to self.components)
         self.run_record = None
         self._resume_requested = False   # set by from_config(resume_from=...); run() honors it by default
         if self.seeds and self.components:
             self.validate()
 
-    @staticmethod
-    def _build_seeds(sources, tiles, objects):
-        """The seed tables from whatever inputs were given, in dependency order (source scenes, tiles,
-        objects). A path is built into its table; an instance passes through. A path-seeded Objects is
-        linked to the imagery seed its rows were found in (tiles preferred), so its ancestry walk works."""
+    def _build_seeds(self, sources, tiles, objects):
+        """The seed tables from whatever inputs were given, in dependency order (source scenes,
+        images, objects). A path is built into its table; an instance passes through. A path-seeded
+        Objects is linked to the imagery seed its rows were found in (the images seed preferred), so
+        its ancestry walk works. Ends with the canonical derivations (``_derive_seeds``)."""
         seeds = []
         if sources is not None:
-            seeds.append(Imagery.from_paths(sources))
+            seeds.append(Sources.from_paths(sources))
         if tiles is not None:
-            seeds.append(tiles if isinstance(tiles, Imagery) else Imagery.from_tiles_dir(tiles))
+            if isinstance(tiles, Imagery):
+                seeds.append(tiles)
+            else:
+                image_type = self._seed_image_type()
+                if image_type is Crops:
+                    print("Seeded images are used as Crops (the pipeline needs crops and no component makes them).")
+                seeds.append(image_type.from_image_dir(tiles))
         if objects is not None:
             if isinstance(objects, Objects):
                 seeds.append(objects)
             else:
                 imagery_seed = next(
-                    (s for s in reversed(seeds) if isinstance(s, Imagery)), None)   # tiles seed preferred
+                    (s for s in reversed(seeds) if isinstance(s, Imagery)), None)   # images seed preferred
                 seeds.append(Objects.from_gpkg(objects, imagery=imagery_seed))
-        return seeds
+        return seeds + self._derive_seeds(seeds)
+
+    def _seed_image_type(self):
+        """The role of a seeded image folder: scan the components in order (flattening ``one_of``)
+        and take the first requirement referencing an imagery role — by its data type, or by an
+        Objects need's ``on=`` — that no earlier component produces. Default ``Tiles``: a folder
+        nothing asks for by role is only ever consumed through object links, where the label doesn't
+        change behavior."""
+        produced = set()
+        for component in self.components:
+            for req in component.requires:
+                for need in Requirement.coerce(req).needs():
+                    role = need.data_type if need.data_type in (Tiles, Crops) else need.on
+                    if role in (Tiles, Crops) and role not in produced:
+                        return role
+            produced |= {need.data_type for need in as_requirements(component.produces)}
+        return Tiles
+
+    def _derive_seeds(self, seeds):
+        """Canonical derivations for needs no seed or component covers — data statements, not
+        guesses. Today one rule: an unmet ``Need(Objects, on=Crops)`` over a Crops seed derives one
+        Object per crop (its footprint) — '1 image = 1 class' expressed in the data model, so a
+        classifier-only run over a crops folder just works. Extend by adding rules here, never
+        by special-casing components."""
+        derived = []
+        crops_seed = next((s for s in seeds if isinstance(s, Crops)), None)
+        has_objects = any(isinstance(s, Objects) for s in seeds)
+        if crops_seed is None or has_objects:
+            return derived
+        produced = set()
+        for component in self.components:
+            for req in component.requires:
+                for need in Requirement.coerce(req).needs():
+                    if need.data_type is Objects and Objects not in produced and need.on is Crops:
+                        print("Derived one Object per seeded crop (a component needs Objects on Crops).")
+                        return [Objects.from_imagery(crops_seed)]
+            produced |= {need.data_type for need in as_requirements(component.produces)}
+        return derived
 
     @classmethod
     def from_config(cls, steps, sources=None, tiles=None, objects=None, output_dir=None, aoi=None,
@@ -121,7 +165,7 @@ class Pipeline:
     # --- run -----------------------------------------------------------------
     def run(self, resume=None, verbose=True, strict_rgb_validation=True):
         """Run the components in order over the seeds (given at construction), and return ``self``
-        (inspect ``self.imagery`` / ``self.objects`` after). With ``output_dir`` set, each output is
+        (inspect ``self.tiles`` / ``self.objects`` / ... after). With ``output_dir`` set, each output is
         saved and the run record written. ``resume`` (defaulting to what ``from_config`` recorded)
         skips an already-completed prefix (unchanged config + outputs on disk).
         ``strict_rgb_validation``: raise (True) or warn (False) when a source raster's bands aren't
@@ -162,7 +206,7 @@ class Pipeline:
         ``strict_rgb_validation``), uint8, and in [0, 255]. Only rgb source scenes are checked — other
         modalities aren't RGB rasters, and a tiles/objects-seeded run has no sources to check."""
         for seed in self.seeds:
-            if not isinstance(seed, Imagery) or seed.kind != ImageKind.SOURCE:
+            if not isinstance(seed, Sources):
                 continue
             df = seed.df
             if Col.MODALITY in df.columns:
@@ -210,6 +254,7 @@ class Pipeline:
         yield None, None, self._snapshot(available)
         for component in self.components:
             before = self._snapshot(available)
+            consumed_objects = self._consumes(component, before, Objects)
             for need in as_requirements(component.produces):
                 prevs = available.get(need.data_type, [])
                 prev = prevs[-1] if prevs else None
@@ -217,13 +262,21 @@ class Pipeline:
                 links = set(need.links)
                 fks = getattr(need.data_type, "fks", {})
                 columns |= {fks[link] for link in need.links if link in fks}   # a link's FK column is a column too
-                if prev is not None and "prev_objects" in need.links:          # ancestry: reach back through the chain
+                # Ancestry: an Objects-consuming component's Objects output chains lineage at runtime
+                # (prev_objects), so everything reachable on the input stays reachable on the output.
+                if prev is not None and need.data_type is Objects \
+                        and ("prev_objects" in need.links or consumed_objects):
                     columns |= prev.columns
                     links |= prev.links
                 # Modalities propagate producer <- input: a tilerizer's tiles hold its source's modalities.
-                modalities = prev.modalities if (need.data_type is Imagery and prev is not None) else None
+                modalities = None
+                if issubclass(need.data_type, Imagery):
+                    newest_imagery = [s for t, schemas in available.items()
+                                      if issubclass(t, Imagery) for s in schemas]
+                    modalities = newest_imagery[-1].modalities if newest_imagery else None
+                on = need.on if not isinstance(need.on, tuple) else None   # a tuple is a requires-only OR
                 available.setdefault(need.data_type, []).append(
-                    Schema(columns=columns, links=links, crs=need.crs, kind=need.kind,
+                    Schema(columns=columns, links=links, crs=need.crs, on=on,
                            modalities=modalities))
             yield component, before, self._snapshot(available)
 
@@ -231,11 +284,26 @@ class Pipeline:
     def _snapshot(available):
         return {data_type: list(schemas) for data_type, schemas in available.items()}
 
+    @staticmethod
+    def _consumes(component, available, data_type) -> bool:
+        """Whether one of the component's ``requires`` entries binds an instance of ``data_type``
+        against the ``available`` schema lists (the matched schema is identity-checked against that
+        type's list, since Schemas don't carry their type)."""
+        schemas = available.get(data_type, ())
+        for req in component.requires:
+            desc, _ = Requirement.coerce(req).resolve(lambda t: available.get(t, ()))
+            if any(desc is schema for schema in schemas):
+                return True
+        return False
+
     def print_flow_chart(self):
         PipelineFlowVisualizer(self).print()
 
     def latest(self, data_type):
-        """The most recently produced (or seeded) instance of ``data_type``, or None."""
+        """The most recently produced (or seeded) instance of ``data_type``, or None. ``Imagery``
+        (the base) means the newest imagery of any role."""
+        if data_type is Imagery:
+            return self._imagery_log[-1] if self._imagery_log else None
         produced = self._lists[data_type]
         return produced[-1] if produced else None
 
@@ -282,9 +350,15 @@ class Pipeline:
             image_id = anchor.column(Col.IMAGE_ID)
         except KeyError:
             raise ValueError("COCO export needs each object's image_id (none reachable in the ancestry)")
-        if Col.PATH not in imagery.df.columns:
-            raise ValueError("COCO export needs tile images on disk (re-run the tilerizer with save_tiles_to_disk=True)")
-        paths = image_id.map(imagery.df.set_index(Col.IMAGE_ID)[Col.PATH])
+        # CRS geometry converts per image file, so window images (e.g. crops) may export against their
+        # materialized ancestor's file; pixel geometry is only valid against the image's own file.
+        if anchor.crs_set:
+            paths = image_id.map(pd.Series(imagery.resolved_paths().values,
+                                           index=imagery.df[Col.IMAGE_ID].values))
+        elif Col.PATH in imagery.df.columns:
+            paths = image_id.map(imagery.df.set_index(Col.IMAGE_ID)[Col.PATH])
+        else:
+            paths = pd.Series([None] * len(anchor.df))
         if paths.isna().any() or (paths.astype(str) == "").any():
             raise ValueError("COCO export needs tile images on disk (re-run the tilerizer with save_tiles_to_disk=True)")
 
@@ -422,21 +496,29 @@ class Pipeline:
             self.outputs.append(produced)
 
     def _rebuild(self, data_type, df):
-        """A typed table from its saved dataframe, re-linking FKs to the latest loaded parent of each
-        linked type (matching how tables were threaded at run time: a table's parents were the newest
-        of their type when it was produced, and tables reload in the same order)."""
-        if data_type is Imagery:
-            parent = self.latest(Imagery)
-            related = {"parent": parent} if (parent is not None and self._has_fk(df, Col.PARENT_ID)) else {}
-            return Imagery(df, **related)
+        """A typed table from its saved dataframe, re-linking FKs (matching how tables were threaded
+        at run time: tables reload in the same order, so a table's imagery relations point at the most
+        recently loaded imagery whose ids cover the FK values)."""
+        if issubclass(data_type, Imagery):
+            parent = self._covering_imagery(df, Col.PARENT_ID)
+            related = {"parent": parent} if parent is not None else {}
+            return data_type(df, **related)
         related = {}
-        imagery = self.latest(Imagery)
-        if imagery is not None and self._has_fk(df, Col.IMAGE_ID):
+        imagery = self._covering_imagery(df, Col.IMAGE_ID)
+        if imagery is not None:
             related["imagery"] = imagery
         prev = self.latest(Objects)
         if prev is not None and self._has_fk(df, Col.PREV_OBJECT_ID):
             related["prev_objects"] = prev
         return Objects(df, **related)
+
+    def _covering_imagery(self, df, col):
+        """The most recently loaded imagery table (any role) whose ids cover ``df[col]``, or None."""
+        values = set(df[col].dropna()) if col in df.columns else set()
+        if not values:
+            return None
+        return next((table for table in reversed(self._imagery_log)
+                     if values <= set(table.df[table.pk])), None)
 
     @staticmethod
     def _has_fk(df, col) -> bool:
@@ -457,19 +539,16 @@ class Pipeline:
 
     def _store(self, data):
         self._lists[type(data)].append(data)
+        if isinstance(data, Imagery):
+            self._imagery_log.append(data)
 
     def _resolve(self, req, component):
         """The input for a ``requires`` entry (a bare type, a ``Need``, or an ``AnyOf``): the newest
-        stored instance of the type whose kind matches, then strictly checked — a mismatch raises
-        instead of falling back to an older instance. Binding anything but the newest of a type only
-        ever happens on kind (a tilerizer reaching past tiles to the source), and is made visible."""
+        stored instance of the requested type, strictly checked — a mismatch raises instead of
+        falling back to an older instance."""
         inst, err = Requirement.coerce(req).resolve(lambda t: self._lists.get(t, ()))
         if inst is None:
             raise ValueError(f"{type(component).__name__} {err}")
-        stored = self._lists.get(type(inst), ())
-        if stored and inst is not stored[-1]:
-            print(f"{type(component).__name__}: bound an older {type(inst).__name__} "
-                  f"({len(inst)} rows) — the newest is a different kind.")
         return inst
 
     def _check_produced(self, component, produced):

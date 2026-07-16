@@ -18,12 +18,12 @@ Splits a source scene into tiles.
 | `labeled` | grid tiles with input objects re-tiled onto them |
 | `polygon` | one crop per input object (input to a classifier) |
 
-**Requires:** `Imagery` (kind=source) for `tile` and `labeled` (plus the input `Objects` for
-`labeled`). `polygon` needs only `Objects` linked to their imagery — each crop is cut from the
-object's own image file, whether that is a source raster or an on-disk tile.
+**Requires:** `Sources` for `tile` and `labeled` (plus the input `Objects` for `labeled`).
+`polygon` needs only `Objects` linked to their imagery — each crop is cut from the object's own image
+file, whether that is a source raster or an on-disk tile.
 
-**Produces:** `Imagery` (kind=tile, children of the image they were cut from) — plus the carried
-`Objects` for `labeled` and `polygon`
+**Produces:** `Tiles` (`tile` / `labeled`) or `Crops` (`polygon`), children of the image they were cut
+from — plus the carried `Objects` for `labeled` and `polygon`
 
 ---
 
@@ -31,7 +31,7 @@ object's own image file, whether that is a source raster or an on-disk tile.
 
 Runs object detection on tiles, one box per detection.
 
-**Requires:** `Imagery` (kind=tile)
+**Requires:** `Tiles`
 
 **Produces:** `Objects` (boxes, tile-pixel coords) with `detector_score`, `detector_class`
 
@@ -41,7 +41,7 @@ Runs object detection on tiles, one box per detection.
 
 Produces instance masks — prompted by input objects (e.g. SAM) or automatically over each tile.
 
-**Requires:** `Objects` (prompted) or `Imagery` kind=tile (automatic)
+**Requires:** `Objects` on tiles (prompted) or `Tiles` (automatic)
 
 **Produces:** `Objects` (masks, tile-pixel coords) with `segmenter_score`
 
@@ -52,7 +52,8 @@ Produces instance masks — prompted by input objects (e.g. SAM) or automaticall
 Merges overlapping detections across tiles with non-maximum suppression (NMS), georeferencing them to
 raster coordinates.
 
-**Requires:** `Objects` carrying the weighted score column(s) and with their `imagery` linked
+**Requires:** `Objects` carrying the weighted score column(s) (raw detections, or classified objects
+on crops), plus the `Tiles` they were detected in — the NMS tile frames
 
 **Produces:** georeferenced `Objects` with `aggregator_score`
 
@@ -62,7 +63,8 @@ raster coordinates.
 
 Classifies each object.
 
-**Requires:** per-object crop `Objects` (preferred) or `Imagery` kind=tile
+**Requires:** `Objects` living on `Crops` — one crop per object, made by a `polygon` tilerizer (or
+derived automatically for a classifier-only run over a crops folder)
 
 **Produces:** `Objects` with `classifier_class`, `classifier_score`, `classifier_scores` (and
 `classifier_class_name` if `class_names` is set)

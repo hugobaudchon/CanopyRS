@@ -1,4 +1,4 @@
-"""Tilerizer: produces tile Imagery. Modes: a window grid over each source, one crop per Object
+"""Tilerizer: produces Tiles or Crops. Modes: a window grid over each source, one crop per Object
 (cut from each object's own image file), or grid + re-tiled labels.
 
 Reuses geodataset for the actual tiling. Tiles are flat: one row per (footprint, modality, timestamp),
@@ -10,8 +10,8 @@ rows sharing an ``instance_id`` (TODO).
 from geodataset.tilerize import RasterTilerizer, RasterPolygonTilerizer, LabeledRasterTilerizer
 
 from canopyrs.engine.tilemeta import serialize_meta
-from canopyrs.engine.constants import Col, ImageKind
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.constants import Col
+from canopyrs.engine.data import Crops, Objects, Sources, Tiles
 from canopyrs.engine.contracts import Need
 from canopyrs.engine.components.base import Component, register_component
 
@@ -24,29 +24,29 @@ GD_TILE_PATH = "tile_path"
 @register_component("tilerizer")
 class Tilerizer(Component):
     """``config.tile_type``:
-      - ``'tile'``    : grid over each source            -> Imagery (tiles)
-      - ``'polygon'`` : one crop per Object              -> (Imagery, Objects)
-      - ``'labeled'`` : grid + input Objects re-tiled    -> (Imagery, Objects)
+      - ``'tile'``    : grid over each source            -> Tiles
+      - ``'polygon'`` : one crop per Object              -> (Crops, Objects)
+      - ``'labeled'`` : grid + input Objects re-tiled    -> (Tiles, Objects)
     ``requires`` / ``produces`` reflect the mode."""
 
     def __init__(self, config, aois_config=None):
         super().__init__(config)
         self.aois_config = aois_config   # geodataset AOIConfig (run-level, from Pipeline.from_config); None = whole raster
         if config.tile_type == "tile":
-            self.requires = (Need(Imagery, kind=ImageKind.SOURCE),)
-            self.produces = Need(Imagery, kind=ImageKind.TILE, links=("parent",))
+            self.requires = (Need(Sources),)
+            self.produces = Need(Tiles, links=("parent",))
         elif config.tile_type == "polygon":
             # the objects' imagery link supplies the files to crop from (CRS objects over a raster,
-            # or tile-pixel detections over tiles) — no separate Imagery input.
+            # or tile-pixel detections over tiles) — no separate imagery input.
             self.requires = (Need(Objects, links=("imagery",)),)
             # crops (children of each object's image) + the input objects carried forward (each -> its crop).
-            self.produces = (Need(Imagery, kind=ImageKind.TILE, links=("parent",)),
-                             Need(Objects, links=("imagery", "prev_objects"), crs=True))
+            self.produces = (Need(Crops, links=("parent",)),
+                             Need(Objects, links=("imagery", "prev_objects"), crs=True, on=Crops))
         elif config.tile_type == "labeled":
-            self.requires = (Need(Imagery, kind=ImageKind.SOURCE), Need(Objects, crs=True))
+            self.requires = (Need(Sources), Need(Objects, crs=True))
             # grid tiles + re-tiled label objects in tile-pixel coords (crs=False).
-            self.produces = (Need(Imagery, kind=ImageKind.TILE, links=("parent",)),
-                             Need(Objects, links=("imagery", "prev_objects"), crs=False))
+            self.produces = (Need(Tiles, links=("parent",)),
+                             Need(Objects, links=("imagery", "prev_objects"), crs=False, on=Tiles))
         else:
             raise ValueError(f"unknown tile_type '{config.tile_type}'")
 
@@ -66,7 +66,7 @@ class Tilerizer(Component):
                  else [None] * len(metadata))
         return metadata, paths
 
-    def _grid(self, sources: Imagery) -> Imagery:
+    def _grid(self, sources: Sources) -> Tiles:
         metadata, tile_paths, parent_ids = [], [], []
         for _, source in sources.df.iterrows():
             gdf = RasterTilerizer(
@@ -82,13 +82,13 @@ class Tilerizer(Component):
             metadata += source_metadata
             tile_paths += source_paths
             parent_ids += [source[Col.IMAGE_ID]] * len(source_metadata)
-        return Imagery.build(kind=ImageKind.TILE, parent_id=parent_ids, metadata=metadata,
-                             path=tile_paths, parent=sources)
+        return Tiles.build(parent_id=parent_ids, metadata=metadata,
+                           path=tile_paths, parent=sources)
 
     def _per_object(self, objects: Objects):
         """One crop per input Object, cut from each object's own image file — its nearest materialized
         ancestor — with one cropper run per distinct file: a single raster degenerates to one run, a
-        folder of on-disk tiles runs once per tile file. Returns (Imagery, Objects): the crops
+        folder of on-disk tiles runs once per tile file. Returns (Crops, Objects): the crops
         (children of each object's image) and the input objects carried forward — each re-parented to
         its crop (``image_id`` -> the crop) with a ``prev_object_id`` -> the original (so the ancestry
         walk still reaches its scores), geometry in CRS coords. The classifier consumes these objects,
@@ -118,8 +118,8 @@ class Tilerizer(Component):
             source_object_ids += list(kept)
             assert crs is None or group.crs == crs, "crop sources span multiple CRS; not supported"
             crs = group.crs
-        crops = Imagery.build(kind=ImageKind.TILE, parent_id=parent_ids, metadata=metadata,
-                              path=tile_paths, parent=objects.linked("imagery"))
+        crops = Crops.build(parent_id=parent_ids, metadata=metadata,
+                            path=tile_paths, parent=objects.linked("imagery"))
 
         # Carry each crop's source object forward (same kind, CRS geometry), now pointing at its crop.
         by_id = objects.df.set_index(Col.OBJECT_ID)
@@ -134,9 +134,9 @@ class Tilerizer(Component):
         )
         return crops, carried
 
-    def _labeled(self, sources: Imagery, labels: Objects):
+    def _labeled(self, sources: Sources, labels: Objects):
         """Grid tiles + the input label Objects re-tiled into each tile (tile-pixel coords), via
-        geodataset's LabeledRasterTilerizer. Returns (Imagery, Objects): each output object -> its tile
+        geodataset's LabeledRasterTilerizer. Returns (Tiles, Objects): each output object -> its tile
         (image_id) and its source label (prev_object_id)."""
         assert len(sources.df) == 1, "labeled tilerizer currently supports a single source"
         source = sources.df.iloc[0]
@@ -155,9 +155,9 @@ class Tilerizer(Component):
         ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
 
         metadata, tile_paths = self._meta_and_paths(tiles_gdf)
-        tiles = Imagery.build(kind=ImageKind.TILE, parent_id=source[Col.IMAGE_ID],
-                              image_id=tiles_gdf[GD_TILE_ID].values,
-                              metadata=metadata, path=tile_paths, parent=sources)
+        tiles = Tiles.build(parent_id=source[Col.IMAGE_ID],
+                            image_id=tiles_gdf[GD_TILE_ID].values,
+                            metadata=metadata, path=tile_paths, parent=sources)
 
         objects = Objects.build(
             geometry=labels_gdf.geometry.values,

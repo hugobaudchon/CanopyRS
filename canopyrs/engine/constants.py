@@ -1,6 +1,6 @@
 """Column vocabulary and value classes. Keys (PK/FK) drive the data classes; the rest are data columns
-that just ride in the dataframes. ``Col`` names the columns; ``ImageKind`` / ``GeomKind`` / ``Modality``
-name their values. Kept here so names stay consistent and ideas don't get lost."""
+that just ride in the dataframes. ``Col`` names the columns; ``GeomKind`` / ``Modality`` name their
+values. Kept here so names stay consistent and ideas don't get lost."""
 
 
 class Col:
@@ -23,7 +23,6 @@ class Col:
     TIMESTAMP = "timestamp"             # acquisition date
 
     # imagery
-    KIND = "kind"                       # see ImageKind; uniform per table, checked by Need like crs
     PATH = "path"                       # file on disk; null = a window into the parent image
     METADATA = "metadata"               # per-row dict; grid rows: transform/crs/size (see tilemeta)
     BANDS = "bands"                     # band indices to read (rgb = [1, 2, 3])
@@ -41,14 +40,6 @@ class Col:
     CLASSIFIER_CLASS_NAME = "classifier_class_name"  # human-readable name (from config.class_names)
     CLASSIFIER_SCORES = "classifier_scores"          # full per-class score list
     AGGREGATOR_SCORE = "aggregator_score"
-
-
-class ImageKind:
-    """What an Imagery row is: a whole input scene, or a model-consumable tile (crops included).
-    Closed set — contracts and components branch on it."""
-    SOURCE = "source"
-    TILE = "tile"
-    ALL = {SOURCE, TILE}
 
 
 class GeomKind:

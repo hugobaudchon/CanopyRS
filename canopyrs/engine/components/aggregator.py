@@ -1,10 +1,12 @@
 """Aggregator: cross-tile NMS over the latest Objects, reusing geodataset's ``Aggregator``.
 
-Inputs arrive in tile-pixel coords (crs=None) — detector boxes or segmenter masks. Each object's image
-is looked up in its linked Imagery (by ``image_id``), and its geometry mapped from that image's pixels
-to CRS via the image's own transform — applied per image group in one vectorized call, never per
-object. The CRS polygons go to geodataset's ``Aggregator`` for NMS. Aggregation only suppresses, so
-each survivor points back to the input object it kept (``prev_object_id``).
+Two inputs: the objects (detector boxes, segmenter masks, or a classifier's output) and the grid
+tiles they were detected in — the NMS tile frames, requested explicitly as ``Tiles`` so per-object
+crops never stand in for them. Each object is mapped to its tile (identity for
+detections; a parent hop for objects sitting on crops), pixel geometry is mapped to CRS via its
+tile's transform — applied per tile group in one vectorized call, never per object — and already-CRS
+geometry passes through. The CRS polygons go to geodataset's ``Aggregator`` for NMS. Aggregation only
+suppresses, so each survivor points back to the input object it kept (``prev_object_id``).
 
 The NMS weights (detector / segmenter / classifier) decide which score columns matter — and a weighted
 score may have been produced several components back (e.g. ``detector_score`` at a late, post-classifier
@@ -18,7 +20,7 @@ import pandas as pd
 from geodataset.aggregator import Aggregator as GdAggregator
 
 from canopyrs.engine.constants import Col
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.data import Crops, Objects, Tiles
 from canopyrs.engine.contracts import Need
 from canopyrs.engine.components.base import Component, register_component
 from canopyrs.engine.tilemeta import affine_params, box_of
@@ -32,22 +34,28 @@ class Aggregator(Component):
     def __init__(self, config):
         super().__init__(config)
         self._score_cols = self._weighted_score_columns()
-        # Aggregator needs the input Objects to carry every weighted score column, and to have their
-        # imagery linked (for georeferencing).
-        self.requires = (Need(Objects, links=("imagery",), columns=tuple(self._score_cols), crs=False),)
+        # Aggregator needs the input Objects to carry every weighted score column — raw detections on
+        # tiles, or classified objects on crops of tiles (pixel or CRS coords both work) — and the
+        # grid tiles the detections were found in: the NMS tile frames, asked for explicitly so
+        # per-object crops can never stand in for them.
+        self.requires = (Need(Objects, links=("imagery",), columns=tuple(self._score_cols),
+                              on=(Tiles, Crops)),
+                         Need(Tiles))
         # Survivors in CRS coords, pointing back to the input each kept (prev_objects). No imagery link:
         # they're image-agnostic, and a consumer that needs the image resolves it through the ancestry.
         self.produces = Need(Objects, columns=(Col.AGGREGATOR_SCORE,), links=("prev_objects",), crs=True)
 
-    def run(self, objects: Objects) -> Objects:
+    def run(self, objects: Objects, tiles: Tiles) -> Objects:
         assert self.out_dir is not None, "Aggregator needs an output dir (set Pipeline(output_dir=...))"
-        tiles = objects.linked("imagery")   # the input's imagery — directly, or resolved through its ancestry
         crs = tiles.df[Col.METADATA].iloc[0]["crs"] if len(tiles) else None
         if len(objects) == 0:
             print("Aggregator: no input objects; nothing to aggregate.")
             return self._empty(objects, crs)
 
-        polygons_gdf, tiles_extent_gdf = self._georeference(objects, tiles, crs)
+        # Each object's tile: its image expressed at the tiles level — identity for detections (their
+        # images are the tiles), one parent hop for objects sitting on per-object crops.
+        tile_id = objects.linked("imagery").ancestor_ids(objects.column(Col.IMAGE_ID), tiles)
+        polygons_gdf, tiles_extent_gdf = self._georeference(objects, tiles, tile_id, crs)
         scores_names, scores_weights = self._scores()
 
         self.out_dir.mkdir(parents=True, exist_ok=True)
@@ -81,36 +89,34 @@ class Aggregator(Component):
         print(f"Aggregator: kept {len(out)} of {len(objects)} objects.")
         return out
 
-    def _georeference(self, objects: Objects, imagery: Imagery, crs):
-        """Map each object from its image's pixel coords to CRS via the image's own affine transform
-        (origin + GSD). Each object's ``image_id`` is resolved through the ancestry (so an aggregated
-        input finds the image of the detection it kept), then grouped by image and transformed with one
-        vectorized ``affine_transform`` per group — the affine is constant within an image, so the loop
-        runs over distinct images, never over objects. Returns the CRS ``polygons_gdf`` (with its
-        scores + the ``prev_object_id`` carry) and the per-image ``tiles_extent_gdf`` geodataset needs."""
-        image_id = objects.column(Col.IMAGE_ID)
-        meta_by_id = imagery.df.set_index(Col.IMAGE_ID)[Col.METADATA]
-
+    def _georeference(self, objects: Objects, tiles: Tiles, tile_id, crs):
+        """The CRS ``polygons_gdf`` (with its scores + the ``prev_object_id`` carry) and the per-tile
+        ``tiles_extent_gdf`` geodataset needs. Pixel geometry is mapped to CRS via its tile's affine
+        transform (origin + GSD), grouped by tile and transformed with one vectorized
+        ``affine_transform`` per group — the affine is constant within a tile, so the loop runs over
+        distinct tiles, never over objects. CRS geometry passes through unchanged."""
         data = {
             Col.GEOMETRY: objects.df.geometry.values,
-            GD_TILE_ID: image_id.values,
+            GD_TILE_ID: tile_id.values,
             Col.PREV_OBJECT_ID: objects.df[Col.OBJECT_ID].values,   # the input object each survivor came from
         }
         for col in self._score_cols:
             data[col] = objects.column(col).values                 # walk the ancestry for each weighted score
         polygons_gdf = gpd.GeoDataFrame(data, geometry=Col.GEOMETRY, crs=crs)
 
-        transformed = [group.geometry.affine_transform(affine_params(meta_by_id[iid]))
-                       for iid, group in polygons_gdf.groupby(GD_TILE_ID, sort=False)]
-        polygons_gdf[Col.GEOMETRY] = pd.concat(transformed).reindex(polygons_gdf.index)
+        if not objects.crs_set:
+            meta_by_id = tiles.df.set_index(Col.IMAGE_ID)[Col.METADATA]
+            transformed = [group.geometry.affine_transform(affine_params(meta_by_id[iid]))
+                           for iid, group in polygons_gdf.groupby(GD_TILE_ID, sort=False)]
+            polygons_gdf[Col.GEOMETRY] = pd.concat(transformed).reindex(polygons_gdf.index)
 
         tiles_extent_gdf = gpd.GeoDataFrame({
-            GD_TILE_ID: imagery.df[Col.IMAGE_ID].values,
-            Col.GEOMETRY: imagery.df[Col.METADATA].map(box_of).values,
+            GD_TILE_ID: tiles.df[Col.IMAGE_ID].values,
+            Col.GEOMETRY: tiles.df[Col.METADATA].map(box_of).values,
         }, geometry=Col.GEOMETRY, crs=crs)
         return polygons_gdf, tiles_extent_gdf
 
-    def _tile_paths(self, imagery: Imagery, image_ids):
+    def _tile_paths(self, imagery: Tiles, image_ids):
         """image_id -> file path for geodataset. Real ``path`` when tiles were cut to disk; else a
         clearly-fake ``unsaved_tile_{id}`` (windows read on demand have no file)."""
         paths = imagery.df.set_index(Col.IMAGE_ID)[Col.PATH] if Col.PATH in imagery.df.columns else None

@@ -10,8 +10,8 @@ import geopandas as gpd
 from shapely.geometry import Polygon, box
 from pathlib import Path
 
-from canopyrs.engine.constants import Col, GeomKind, ImageKind
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.constants import Col, GeomKind
+from canopyrs.engine.data import Objects, Sources, Tiles
 from canopyrs.engine.utils import init_spawn_method
 
 # The segmenter's mask post-processing (and the benchmark grid-search) use multiprocessing; with a
@@ -59,17 +59,16 @@ def make_tile_metadata(*, width=64, height=64, gsd=1.0, x0=0.0, y0=0.0, crs="EPS
 
 @pytest.fixture
 def sources_seed(tmp_path):
-    """A single-raster kind='source' Imagery seed (path need not exist for wiring/persistence tests)."""
-    return Imagery.from_paths(str(tmp_path / "product.tif"))
+    """A single-raster Sources seed (path need not exist for wiring/persistence tests)."""
+    return Sources.from_paths(str(tmp_path / "product.tif"))
 
 
 @pytest.fixture
 def tiles_seed(sources_seed):
-    """Two grid tiles over the seed source — children of the source (windows, no files on disk)."""
+    """Two grid Tiles over the seed source — children of the source (windows, no files on disk)."""
     metadata = [make_tile_metadata(x0=0.0, y0=64.0), make_tile_metadata(x0=64.0, y0=64.0)]
-    return Imagery.build(kind=ImageKind.TILE,
-                         parent_id=sources_seed.df[Col.IMAGE_ID].iloc[0],
-                         metadata=metadata, parent=sources_seed)
+    return Tiles.build(parent_id=sources_seed.df[Col.IMAGE_ID].iloc[0],
+                       metadata=metadata, parent=sources_seed)
 
 
 @pytest.fixture
@@ -127,7 +126,7 @@ def synthetic_raster(tmp_path):
 
 @pytest.fixture
 def tiles_dir(synthetic_raster, tmp_path):
-    """A folder of two pre-cut georeferenced GeoTIFF tiles (for Imagery.from_tiles_dir)."""
+    """A folder of two pre-cut georeferenced GeoTIFF tiles (for Tiles.from_image_dir)."""
     import rasterio
     from rasterio.windows import Window
     from rasterio.windows import transform as window_transform

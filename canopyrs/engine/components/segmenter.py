@@ -16,8 +16,8 @@ under a ``__main__`` guard — otherwise the workers deadlock on the live CUDA c
 import geopandas as gpd
 
 from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
-from canopyrs.engine.constants import Col, GeomKind, ImageKind
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.constants import Col, GeomKind
+from canopyrs.engine.data import Objects, Tiles
 from canopyrs.engine.contracts import Need
 from canopyrs.engine.components.base import Component, flatten_by_tile, register_component
 from canopyrs.engine.tilemeta import crs_to_pixel
@@ -30,24 +30,25 @@ class Segmenter(Component):
         self._model_class = self._model(SEGMENTER_REGISTRY)
         self.prompted = self._model_class.REQUIRES_BOX_PROMPT
         if self.prompted:
-            # prompt boxes that point at their image (object.imagery) — pixels are read from there. No
-            # CRS constraint: a CRS prompt is inverse-transformed, a tile-pixel one used as-is.
-            self.requires = (Need(Objects, links=("imagery",)),)
+            # prompt boxes living on tiles (object.imagery) — pixels are read from there. No CRS
+            # constraint: a CRS prompt is inverse-transformed, a tile-pixel one used as-is.
+            self.requires = (Need(Objects, links=("imagery",), on=Tiles),)
             self.produces = Need(Objects, columns=(Col.SEGMENTER_SCORE,),
-                                 links=("imagery", "prev_objects"), crs=False)
+                                 links=("imagery", "prev_objects"), crs=False, on=Tiles)
         else:
-            self.requires = (Need(Imagery, kind=ImageKind.TILE),)
-            self.produces = Need(Objects, columns=(Col.SEGMENTER_SCORE,), links=("imagery",), crs=False)
+            self.requires = (Need(Tiles),)
+            self.produces = Need(Objects, columns=(Col.SEGMENTER_SCORE,), links=("imagery",),
+                                 crs=False, on=Tiles)
 
     def run(self, data) -> Objects:
-        """``data`` is the prompts (Objects) in prompted mode, or the tiles (Imagery) in automatic mode
+        """``data`` is the prompts (Objects) in prompted mode, or the tiles (Tiles) in automatic mode
         — matching ``requires``."""
         segmenter = self._model_class(self.config)
         out = self._prompted(data, segmenter) if self.prompted else self._automatic(data, segmenter)
         print(f"Segmenter[{'prompted' if self.prompted else 'auto'}]: {len(out)} masks.")
         return out
 
-    def _automatic(self, tiles: Imagery, segmenter) -> Objects:
+    def _automatic(self, tiles: Tiles, segmenter) -> Objects:
         loader = self._loader(tiles, batch_size=self.config.image_batch_size)
         image_ids, _, polygons_per_tile, scores_per_tile = segmenter.infer_v2(loader)
 

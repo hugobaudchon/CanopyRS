@@ -5,18 +5,20 @@ front, saves every step, and can reload or resume a run.
 
 ## Data model
 
-Instead of one mutable state object, the pipeline keeps two typed tables and hands each component the
-newest instance of the kind it asks for, checked against its declared needs:
+Instead of one mutable state object, the pipeline keeps typed tables and hands each component the
+newest instance of the type it asks for, checked against its declared needs:
 
 | Table | What it holds |
 |---|---|
-| `Imagery` | georeferenced image regions — source scenes, grid tiles, per-object crops — one tree |
+| `Sources` | the input scenes (orthomosaics, rasters) — roots of the imagery tree |
+| `Tiles` | model-ready input frames — grid tiles cut from a source, or a seeded folder |
+| `Crops` | per-object views, one crop per object (made by the polygon tilerizer) |
 | `Objects` | detected/segmented things (boxes or masks), each found in an image |
 
-An `Imagery` row is either **materialized** (it has a file `path`) or a **window into its parent**
-(`parent_id` — a tile in its raster, a crop in its tile). Reading is one rule: resolve a region to its
-nearest materialized ancestor and read the region's window from that file. A `kind` attribute separates
-whole source scenes from model-consumable tiles.
+The three imagery roles share one structure (an `Imagery` base) and form one containment tree: a row
+is either **materialized** (it has a file `path`) or a **window into its parent** (`parent_id` — a
+tile in its raster, a crop in its tile). Reading is one rule: resolve a region to its nearest
+materialized ancestor and read the region's window from that file.
 
 Tables are never mutated or merged. Each component appends new tables, and because objects keep a link
 to the object they came from (`prev_object_id`), a late component can reach a value produced several
@@ -26,21 +28,22 @@ classifier never carried forward.
 ## Contracts
 
 Every component declares what it `requires` and what it `produces`: a data type, the columns and links
-it needs, whether geometry is georeferenced or in tile-pixel coordinates, and — for imagery — the
-`kind` it consumes (so a detector statically refuses an untiled source scene) and optionally the
-modalities it supports. The pipeline checks each requirement **before** running a component and checks
-the output **after** — a misconfigured pipeline fails at construction, not three components later.
+it needs, whether geometry is georeferenced or in tile-pixel coordinates, what imagery its objects
+live on (`on=Crops` — so a classifier statically refuses objects sitting on whole tiles), and
+optionally the modalities it supports. The pipeline checks each requirement **before** running a
+component and checks the output **after** — a misconfigured pipeline fails at construction, not three
+components later.
 
-Each component receives the *newest* table of the `kind` it asks for — a second tilerizer's
-`kind="source"` requirement finds the seed raster past freshly produced tiles. Everything else must
-hold on that table: a mismatch is an error, never a silent fallback to an older table.
+Each component receives the *newest* table of the **type** it asks for — a second tilerizer's
+`Need(Sources)` finds the seed raster no matter how many tiles exist, and the aggregator's
+`Need(Tiles)` is never shadowed by crops. Everything else must hold on that table: a mismatch is an
+error, never a silent fallback to an older table.
 
 ## Flow chart
 
-Constructing a pipeline prints a colored chart of the two tables showing, per component, which columns
-and links are available, produced, required, or missing, the imagery `kind` (s=source, t=tile), and
-whether geometry is in CRS or pixel coordinates. It's the fastest way to catch a wiring error before
-any inference runs.
+Constructing a pipeline prints a colored chart of the typed tables showing, per component, which
+columns and links are available, produced, required, or missing, and whether geometry is in CRS or
+pixel coordinates. It's the fastest way to catch a wiring error before any inference runs.
 
 ## Running
 
@@ -54,8 +57,8 @@ pipe = Pipeline.from_config(config.components_configs, sources='raster.tif', out
 pipe.run()
 ```
 
-Seed a run from a raster (`sources=`), a folder of pre-cut tiles (`tiles=`), or prior detections
-(`objects=`). With `output_dir` set, each component's tables are saved as parquet under `{id}_{name}/`,
+Seed a run from a raster (`sources=`), a folder of pre-cut images (`tiles=` — typed automatically:
+tiles for a detector run, crops for a classifier-only run), or prior detections (`objects=`). With `output_dir` set, each component's tables are saved as parquet under `{id}_{name}/`,
 a `run.json` **run record** (written by the pipeline, never hand-edited) describes the run, and the
 final georeferenced result is written to `out/final.gpkg`. Inspect results in memory with
 `pipe.latest(Objects)`.

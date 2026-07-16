@@ -4,7 +4,7 @@ Each produced table is saved as parquet in its component's folder (Objects via t
 geo-parquet writer — it keeps geometry, a null CRS, and nested columns; Imagery via plain parquet).
 A ``run.json`` **run record** at the run root — written by the pipeline, never hand-edited — records
 the component order, each config's hash (for resume drift detection), and what each produced (type,
-file, declared columns/links/crs/kind, plus the actual modality and timestamp sets) so a run can be
+file, declared columns/links/crs, plus the actual modality and timestamp sets) so a run can be
 reloaded, resumed, or exported. The GPKG/COCO writers here take an already-assembled GeoDataFrame; the
 pipeline picks and widens the right tables (it owns the lineage).
 """
@@ -19,13 +19,14 @@ import pandas as pd
 from canopyrs.engine.utils import generate_coco               # geodataset-backed COCO writer
 from canopyrs.engine.constants import Col
 from canopyrs.engine.contracts import as_requirements
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.data import Crops, Objects, Sources, Tiles
 
 RUN_RECORD = "run.json"
 SEED_DIR = "_seed"
 SEED_RECORD = "seeds.json"
-FILENAME = {Imagery: "imagery.parquet", Objects: "objects.parquet"}
-TYPE_BY_NAME = {cls.__name__: cls for cls in (Imagery, Objects)}
+FILENAME = {Sources: "sources.parquet", Tiles: "tiles.parquet", Crops: "crops.parquet",
+            Objects: "objects.parquet"}
+TYPE_BY_NAME = {cls.__name__: cls for cls in (Sources, Tiles, Crops, Objects)}
 
 # Column name used in *exported* GPKG/COCO files for the per-object image path (output convention,
 # consumed by the benchmark evaluators / geodataset — not an Imagery table column).
@@ -70,7 +71,7 @@ def _table_sets(table):
 
 def write_run_record(root, components, outputs) -> list:
     """Write (and return) the run record: per component its id/name/config_hash and what it produced —
-    type + file + declared columns/links/crs/kind, and the actual modality/timestamp sets. ``outputs``
+    type + file + declared columns/links/crs, and the actual modality/timestamp sets. ``outputs``
     is the pipeline's per-component list of produced tables, aligned to ``components``."""
     entries = []
     for component, produced_tables in zip(components, outputs):
@@ -84,7 +85,6 @@ def write_run_record(root, components, outputs) -> list:
                 "columns": list(need.columns),
                 "links": list(need.links),
                 "crs": need.crs,
-                "kind": need.kind,
                 "modalities": modalities,
                 "timestamps": timestamps,
             })

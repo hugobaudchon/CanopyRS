@@ -2,15 +2,15 @@
 
 from canopyrs.engine.components.aggregator import Aggregator
 from canopyrs.engine.config_parsers import AggregatorConfig
-from canopyrs.engine.contracts import AnyOf
-from canopyrs.engine.data import Objects
+from canopyrs.engine.data import Crops, Objects, Tiles
 from canopyrs.engine.constants import Col
 
 
 def _need(component_requires):
-    """The single Need in a one-entry requires tuple (unwrapping an AnyOf is not needed here)."""
-    assert not isinstance(component_requires[0], AnyOf)
-    return component_requires[0]
+    """The Objects Need in the aggregator's (objects, tiles) requires pair."""
+    need, tiles_need = component_requires
+    assert tiles_need.data_type is Tiles   # the NMS tile frames, asked for explicitly
+    return need
 
 
 def test_requires_carries_weighted_score_columns():
@@ -21,7 +21,8 @@ def test_requires_carries_weighted_score_columns():
     assert need.data_type is Objects
     assert set(need.columns) == {Col.DETECTOR_SCORE}
     assert need.links == ("imagery",)
-    assert need.crs is False   # inputs arrive in tile-pixel coords
+    assert need.crs is None                  # pixel detections and CRS classified objects both work
+    assert need.on == (Tiles, Crops)         # raw detections, or classified objects on crops
 
 
 def test_requires_reflects_multiple_weights():

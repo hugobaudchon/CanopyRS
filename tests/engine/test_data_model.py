@@ -5,8 +5,8 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import box
 
-from canopyrs.engine.data import Imagery, Objects
-from canopyrs.engine.constants import Col, GeomKind, ImageKind
+from canopyrs.engine.data import Crops, Objects, Sources, Tiles
+from canopyrs.engine.constants import Col, GeomKind
 from tests.conftest import make_tile_metadata
 
 
@@ -42,8 +42,8 @@ def test_linked_resolves_through_ancestry(objects_seed):
 
 def test_dangling_fk_raises(sources_seed):
     with pytest.raises(ValueError):
-        Imagery.build(kind=ImageKind.TILE, parent_id=[999],
-                      metadata=[make_tile_metadata()], parent=sources_seed)   # 999 not in sources
+        Tiles.build(parent_id=[999],
+                    metadata=[make_tile_metadata()], parent=sources_seed)   # 999 not in sources
 
 
 def test_missing_geom_kind_column_raises(tiles_seed):
@@ -69,9 +69,9 @@ def test_fresh_ids_are_stamped(objects_seed):
 
 # --- Imagery containment tree --------------------------------------------------
 
-def test_kind_and_modalities(sources_seed, tiles_seed):
-    assert sources_seed.kind == ImageKind.SOURCE
-    assert tiles_seed.kind == ImageKind.TILE
+def test_on_and_modalities(sources_seed, tiles_seed, objects_seed):
+    assert objects_seed.on is Tiles          # the objects live on the tiles they were found in
+    assert isinstance(tiles_seed, Tiles) and isinstance(sources_seed, Sources)
     assert sources_seed.modalities == {"rgb"}
 
 
@@ -81,20 +81,18 @@ def test_resolved_paths_walk_to_materialized_ancestor(sources_seed, tiles_seed):
     source_path = sources_seed.df[Col.PATH].iloc[0]
     assert list(tiles_seed.resolved_paths()) == [source_path, source_path]
 
-    crop = Imagery.build(kind=ImageKind.TILE,
-                         parent_id=tiles_seed.df[Col.IMAGE_ID].iloc[0],
-                         metadata=[make_tile_metadata(width=8, height=8)],
-                         parent=tiles_seed)
+    crop = Crops.build(parent_id=tiles_seed.df[Col.IMAGE_ID].iloc[0],
+                       metadata=[make_tile_metadata(width=8, height=8)],
+                       parent=tiles_seed)
     assert crop.resolved_paths().iloc[0] == source_path
 
 
 def test_resolved_paths_prefer_own_file(sources_seed):
     """A materialized tile reads from its own file, not its ancestor's."""
-    tile = Imagery.build(kind=ImageKind.TILE,
-                         parent_id=sources_seed.df[Col.IMAGE_ID].iloc[0],
-                         metadata=[make_tile_metadata()],
-                         path=["/on/disk/tile_0.tif"],
-                         parent=sources_seed)
+    tile = Tiles.build(parent_id=sources_seed.df[Col.IMAGE_ID].iloc[0],
+                       metadata=[make_tile_metadata()],
+                       path=["/on/disk/tile_0.tif"],
+                       parent=sources_seed)
     assert tile.resolved_paths().iloc[0] == "/on/disk/tile_0.tif"
 
 
@@ -118,9 +116,8 @@ def test_group_by_materialized_source_single_raster(objects_seed):
 
 def test_group_by_materialized_source_many_files(tmp_path):
     """CRS objects over on-disk tiles bucket once per tile file, geometry passing through unchanged."""
-    tiles = Imagery.build(kind=ImageKind.TILE,
-                          metadata=[make_tile_metadata(), make_tile_metadata(x0=64.0)],
-                          path=[str(tmp_path / "a.tif"), str(tmp_path / "b.tif")])
+    tiles = Tiles.build(metadata=[make_tile_metadata(), make_tile_metadata(x0=64.0)],
+                        path=[str(tmp_path / "a.tif"), str(tmp_path / "b.tif")])
     geoms = [box(1, 1, 10, 10), box(70, 1, 80, 10)]
     objs = Objects.build(geometry=geoms, geom_kind=GeomKind.BOX,
                          image_id=list(tiles.df[Col.IMAGE_ID]), imagery=tiles, crs="EPSG:32618")
@@ -128,6 +125,24 @@ def test_group_by_materialized_source_many_files(tmp_path):
     assert [path for path, _ in groups] == [str(tmp_path / "a.tif"), str(tmp_path / "b.tif")]
     assert all(len(gdf) == 1 for _, gdf in groups)
     assert groups[0][1].geometry.iloc[0].equals(geoms[0])
+
+
+def test_from_imagery_one_object_per_image(tiles_seed):
+    """One footprint Object per image, in the images' CRS — the '1 image = 1 class' derivation."""
+    objs = Objects.from_imagery(tiles_seed)
+    assert len(objs) == len(tiles_seed)
+    assert list(objs.df[Col.IMAGE_ID]) == list(tiles_seed.df[Col.IMAGE_ID])
+    assert objs.on is Tiles and str(objs.df.crs) == "EPSG:32618"
+    assert objs.df.geometry.iloc[0].bounds == (0.0, 0.0, 64.0, 64.0)   # tile 0 footprint at (0, 64)
+
+
+def test_ancestor_ids_identity_and_parent_hop(tiles_seed):
+    crops = Crops.build(parent_id=list(tiles_seed.df[Col.IMAGE_ID]),
+                        metadata=[make_tile_metadata(), make_tile_metadata()], parent=tiles_seed)
+    assert list(crops.ancestor_ids(crops.df[Col.IMAGE_ID], crops)) == list(crops.df[Col.IMAGE_ID])
+    assert list(crops.ancestor_ids(crops.df[Col.IMAGE_ID], tiles_seed)) == list(tiles_seed.df[Col.IMAGE_ID])
+    with pytest.raises(ValueError):
+        tiles_seed.ancestor_ids(tiles_seed.df[Col.IMAGE_ID], crops)   # crops are below, not above
 
 
 def test_group_by_materialized_source_needs_imagery(tiles_seed):

@@ -1,17 +1,18 @@
-"""The relational data model: two typed tables threaded through the pipeline.
+"""The relational data model: typed tables threaded through the pipeline.
 
 See ``canopyrs/engine/README.md`` for the model in five sentences.
 
 Everything is a ``Table`` — a (Geo)DataFrame plus a primary key:
-  - ``Imagery`` : georeferenced image regions — whole source scenes, grid tiles, per-object crops —
-                  one self-referential tree. A row is materialized (has a ``path``) or a window into
-                  its parent (``parent_id``); ``kind`` says whether it's a source scene or a
-                  model-consumable tile.
+  - ``Sources`` / ``Tiles`` / ``Crops`` : georeferenced image regions, three roles of one shared
+                  ``Imagery`` base — whole input scenes, model-ready input frames, and per-object
+                  crops. Together they form one containment tree: a row is materialized (has a
+                  ``path``) or a window into its parent (``parent_id``), and parents may live in
+                  another imagery table (a tile's parent is a source, a crop's parent a tile).
   - ``Objects`` : detected/segmented things (boxes or masks), found in an image, optionally derived
                   from a previous Object.
 
 Relations are foreign-key *columns* (``parent_id`` / ``image_id`` / ``prev_object_id``) plus a hydrated
-pointer attribute set at build time (``imagery.parent``, ``objects.imagery``, ``objects.prev_objects``).
+pointer attribute set at build time (``tiles.parent``, ``objects.imagery``, ``objects.prev_objects``).
 The column is the source of truth; the pointer is convenience. Two ancestries, one rule each:
   - Imagery containment (``parent``): to *read* a region, resolve it to its nearest materialized
     ancestor (``resolved_paths``) and read the region's window from that file.
@@ -32,9 +33,9 @@ import pandas as pd
 import rasterio
 from rasterio.windows import Window
 
-from canopyrs.engine.constants import Col, GeomKind, ImageKind, Modality
+from canopyrs.engine.constants import Col, GeomKind, Modality
 from canopyrs.engine.contracts import Schema
-from canopyrs.engine.tilemeta import affine_params, window_meta
+from canopyrs.engine.tilemeta import affine_params, box_of, window_meta
 
 RGB = [1, 2, 3]
 
@@ -115,8 +116,8 @@ class Table:
         return getattr(self.df, "crs", None) is not None
 
     @property
-    def kind(self):
-        """The table's uniform ImageKind, or None when not applicable / mixed (checks skip on None)."""
+    def on(self):
+        """The imagery type this table's rows live on — Objects only; None elsewhere (checks skip)."""
         return None
 
     @property
@@ -126,10 +127,10 @@ class Table:
 
     def schema(self) -> Schema:
         """This table as a ``Schema`` — the snapshot every contract check runs on: usable columns,
-        resolvable links, crs / kind / modalities. Objects extends it with ancestry-reachable columns."""
+        resolvable links, crs / on / modalities. Objects extends it with ancestry-reachable columns."""
         cols = {c for c in self.df.columns if self.provides(c)}
         links = {name for name in self.fks if self.has_link(name)}
-        return Schema(columns=cols, links=links, crs=self.crs_set, kind=self.kind,
+        return Schema(columns=cols, links=links, crs=self.crs_set, on=self.on,
                       modalities=self.modalities)
 
     def __len__(self):
@@ -140,12 +141,14 @@ class Table:
 
 
 class Imagery(Table):
-    """Georeferenced image regions, one self-referential tree: a source scene is a root with a
+    """Shared base of the three imagery roles (``Sources`` / ``Tiles`` / ``Crops``): georeferenced
+    image regions forming one containment tree across tables — a source scene is a root with a
     ``path``; a grid tile is a child of its source (a window, or materialized to disk); a crop is a
-    child of its tile. ``kind`` (uniform per table) separates whole scenes from model-consumable tiles.
-    Imagery never points to Objects: the image<->object relationship is one-image-to-many-objects, so
-    the foreign key lives on the Object side (``image_id``) — even a one-crop-per-object crop is
-    reached as ``object.imagery``, never the reverse."""
+    child of its tile. The structure and behavior (reading, building, the tree walks) live here; the
+    subclasses carry the role, which is what contracts select on. Imagery never points to Objects:
+    the image<->object relationship is one-image-to-many-objects, so the foreign key lives on the
+    Object side (``image_id``) — even a one-crop-per-object crop is reached as ``object.imagery``,
+    never the reverse."""
 
     pk = Col.IMAGE_ID
     fks = {"parent": Col.PARENT_ID}
@@ -154,11 +157,6 @@ class Imagery(Table):
     def __init__(self, df, **related):
         super().__init__(df, **related)
         self._resolved_paths = None   # memoized nearest-materialized-ancestor paths
-
-    @property
-    def kind(self):
-        values = set(self.df[Col.KIND].dropna()) if Col.KIND in self.df.columns else set()
-        return values.pop() if len(values) == 1 else None
 
     @property
     def modalities(self):
@@ -181,6 +179,19 @@ class Imagery(Table):
             self._resolved_paths = paths
         return self._resolved_paths
 
+    def ancestor_ids(self, ids, ancestor: "Imagery") -> pd.Series:
+        """Map image ids of this table to their ids in ``ancestor``, walking the ``parent`` chain.
+        Identity when ``ancestor`` is this table (an object's image already at that level); one hop
+        per level otherwise (a crop's id -> its tile's id). Raises if the chain doesn't reach."""
+        table, ids = self, pd.Series(ids)
+        while table is not ancestor:
+            if table.parent is None:
+                raise ValueError(f"{type(self).__name__} has no ancestor table matching the requested one")
+            parent_of = pd.Series(table.df[Col.PARENT_ID].values, index=table.df[table.pk].values)
+            ids = ids.map(parent_of)
+            table = table.parent
+        return ids
+
     def reading_frame(self) -> pd.DataFrame:
         """One row per image with everything the loader needs, keyed by ``image_id``: the region's
         window (``metadata``), ``bands``, its own ``path`` (when materialized), and ``read_path`` —
@@ -193,17 +204,16 @@ class Imagery(Table):
 
     @classmethod
     def from_paths(cls, sources) -> "Imagery":
-        """A kind='source' Imagery table from a raster path, a list of paths, or ``{path, modality,
-        timestamp}`` descriptors (a single RGB raster is the common case). An Imagery instance passes
+        """A table of this type from a raster path, a list of paths, or ``{path, modality, timestamp}``
+        descriptors (a single RGB raster is the common case). An already-built imagery instance passes
         through."""
-        if isinstance(sources, cls):
+        if isinstance(sources, Imagery):
             return sources
         if isinstance(sources, (str, Path)):
             sources = [sources]
         rows = [s if isinstance(s, dict) else {"path": s} for s in sources]
         n = len(rows)
         data = {
-            Col.KIND: [ImageKind.SOURCE] * n,
             Col.PATH: [str(row["path"]) for row in rows],
             Col.PARENT_ID: [None] * n,
             Col.MODALITY: [row.get("modality", Modality.RGB) for row in rows],
@@ -212,31 +222,30 @@ class Imagery(Table):
         return cls.with_ids(pd.DataFrame(data))
 
     @classmethod
-    def from_tiles_dir(cls, path, bands=RGB) -> "Imagery":
-        """Seed a kind='tile' Imagery table from a folder of pre-cut georeferenced GeoTIFF tiles (e.g.
-        a geodataset tiles output). Each tile's window metadata is recovered from the file itself
-        (full-raster window) and ``path`` points at it. Roots (no parent): the loader reads each file
-        directly and the aggregator georeferences from ``metadata``."""
+    def from_image_dir(cls, path, bands=RGB) -> "Imagery":
+        """A table of this type from a folder of pre-cut georeferenced GeoTIFFs (e.g. a geodataset
+        tiles output, or a folder of crops). Each image's window metadata is recovered from the file
+        itself (full-image window) and ``path`` points at it. Roots (no parent): the loader reads each
+        file directly and georeferencing comes from ``metadata``."""
         paths = sorted(p for pattern in ("*.tif", "*.tiff") for p in Path(path).glob(pattern))
         if not paths:
-            raise ValueError(f"no .tif/.tiff tiles found in {path}")
+            raise ValueError(f"no .tif/.tiff images found in {path}")
         metadata = []
         for p in paths:
             with rasterio.open(p) as src:
                 metadata.append(window_meta(src, Window(0, 0, src.width, src.height)))
-        return cls.build(kind=ImageKind.TILE, metadata=metadata, path=[str(p) for p in paths],
-                         bands=bands)
+        return cls.build(metadata=metadata, path=[str(p) for p in paths], bands=bands)
 
     @classmethod
-    def build(cls, *, kind, metadata, parent_id=None, path=None, bands=RGB, modality=Modality.RGB,
+    def build(cls, *, metadata, parent_id=None, path=None, bands=RGB, modality=Modality.RGB,
               timestamp=None, image_id=None, parent=None) -> "Imagery":
         """Construct flat imagery rows from per-row arrays — one (modality, timestamp) per row.
-        ``kind`` / ``parent_id`` / ``modality`` / ``timestamp`` may be a scalar (broadcast) or per-row.
+        ``parent_id`` / ``modality`` / ``timestamp`` may be a scalar (broadcast) or per-row.
         ``image_id`` keeps given ids (e.g. geodataset's), else a fresh 0..n is stamped. ``parent`` is
-        the hydrated Imagery table ``parent_id`` resolves against."""
+        the hydrated imagery table ``parent_id`` resolves against (may be another imagery type: a
+        crop's parent is a tile)."""
         n = len(metadata)
         data = {
-            Col.KIND: kind,
             Col.PARENT_ID: parent_id if parent_id is not None else [None] * n,
             Col.PATH: path if path is not None else [None] * n,
             Col.MODALITY: modality,
@@ -246,6 +255,19 @@ class Imagery(Table):
         }
         related = {"parent": parent} if parent is not None else {}
         return cls._assemble(pd.DataFrame(data), image_id, related)
+
+
+class Sources(Imagery):
+    """Whole input scenes (orthomosaics, rasters) — roots of the imagery tree, there to be tiled."""
+
+
+class Tiles(Imagery):
+    """Model-ready input frames: grid tiles cut from a source, or a seeded folder of images."""
+
+
+class Crops(Imagery):
+    """Per-object views, one crop per object — made by the polygon tilerizer, or seeded when a
+    classifier-only run consumes a folder of pre-cut crops."""
 
 
 class Objects(Table):
@@ -263,6 +285,14 @@ class Objects(Table):
         bad = set(df[Col.GEOM_KIND].dropna()) - GeomKind.ALL   # column mandatory; None values = unknown, allowed
         if bad:
             raise ValueError(f"unknown {Col.GEOM_KIND} {sorted(bad)}, expected {sorted(GeomKind.ALL)}")
+
+    @property
+    def on(self):
+        """The imagery type these objects live on — their linked imagery's type, resolved through the
+        ancestry (a classified object lives on the Crops its detection was cropped to). None when no
+        imagery is reachable (checks skip)."""
+        imagery = self.linked("imagery")
+        return type(imagery) if imagery is not None else None
 
     def provides(self, col) -> bool:
         """``col`` is exposed here (present, non-null) or resolvable through the ``prev_objects`` ancestry."""
@@ -354,6 +384,18 @@ class Objects(Table):
             related["prev_objects"] = prev_objects
         ids = gdf[Col.OBJECT_ID].values if Col.OBJECT_ID in gdf.columns else None
         return cls._assemble(gdf, ids, related)
+
+    @classmethod
+    def from_imagery(cls, imagery) -> "Objects":
+        """One object per image — its full footprint (a box over its ``metadata`` window). The data
+        statement behind '1 image = 1 class': a bare crop is one object. The pipeline uses this to
+        seed a classifier-only run over a crops folder."""
+        metadata = imagery.df[Col.METADATA]
+        crs = metadata.iloc[0]["crs"] if len(imagery) else None
+        return cls.build(geometry=[box_of(meta) for meta in metadata],
+                         geom_kind=GeomKind.BOX,
+                         image_id=list(imagery.df[Col.IMAGE_ID]),
+                         imagery=imagery, crs=crs)
 
     @classmethod
     def build(cls, *, geometry, geom_kind, image_id=None, prev_object_id=None, timestamp=None,

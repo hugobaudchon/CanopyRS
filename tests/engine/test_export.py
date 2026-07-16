@@ -7,7 +7,7 @@ import pytest
 from shapely.geometry import box
 
 from canopyrs.engine import store
-from canopyrs.engine.data import Imagery, Objects
+from canopyrs.engine.data import Objects, Tiles
 from canopyrs.engine.constants import Col, GeomKind
 from canopyrs.engine.pipeline import Pipeline
 
@@ -22,9 +22,9 @@ def _georef_objects(tiles_seed):
     )
 
 
-def _produce_entry(data_type, columns=(), links=(), crs=None, kind=None):
+def _produce_entry(data_type, columns=(), links=(), crs=None):
     return {"type": data_type.__name__, "file": store.FILENAME[data_type],
-            "columns": list(columns), "links": list(links), "crs": crs, "kind": kind,
+            "columns": list(columns), "links": list(links), "crs": crs,
             "modalities": None, "timestamps": None}
 
 
@@ -34,7 +34,7 @@ def _write_run_dir(root, sources, tiles, objects):
     store.save_table(objects, root / "1_aggregator")
     record = [
         {"id": 0, "name": "tilerizer", "config_hash": "h0",
-         "produces": [_produce_entry(Imagery, links=["parent"], kind="tile")]},
+         "produces": [_produce_entry(Tiles, links=["parent"])]},
         {"id": 1, "name": "aggregator", "config_hash": "h1",
          "produces": [_produce_entry(Objects, columns=[Col.AGGREGATOR_SCORE], links=["imagery"], crs=True)]},
     ]
@@ -51,10 +51,12 @@ def test_export_gpkg_widens_columns(sources_seed, tiles_seed, tmp_path):
     assert Col.AGGREGATOR_SCORE in gdf.columns
 
 
-def test_export_coco_requires_tiles_on_disk(sources_seed, tiles_seed, tmp_path):
-    # tiles_seed carries no path (windows read on demand), so COCO export must refuse
-    _write_run_dir(tmp_path, sources_seed, tiles_seed, _georef_objects(tiles_seed))
+def test_export_coco_pixel_anchor_requires_tiles_on_disk(sources_seed, tiles_seed, objects_seed, tmp_path):
+    """Pixel-coord objects are only valid against their tile's own file, so window tiles must refuse.
+    (CRS anchors are exempt: they export against the nearest materialized file — geodataset converts
+    CRS geometry per file — which is what lets classified objects on window crops export per tile.)"""
+    _write_run_dir(tmp_path, sources_seed, tiles_seed, objects_seed)
     pipe = Pipeline.from_dir(tmp_path)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="on disk"):
         pipe.export("coco")

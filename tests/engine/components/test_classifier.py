@@ -1,10 +1,10 @@
-"""Contract tests for the Classifier component: its one_of input shape and produced columns."""
+"""Contract tests for the Classifier component: its Objects-on-Crops input and produced columns."""
 
 from canopyrs.engine.components.classifier import Classifier
 from canopyrs.engine.config_parsers import ClassifierConfig
-from canopyrs.engine.contracts import AnyOf
-from canopyrs.engine.data import Imagery, Objects
-from canopyrs.engine.constants import Col, ImageKind
+from canopyrs.engine.contracts import Need
+from canopyrs.engine.data import Crops, Objects
+from canopyrs.engine.constants import Col
 
 
 def _config(**overrides):
@@ -12,14 +12,15 @@ def _config(**overrides):
     return ClassifierConfig(model='resnet', architecture='resnet50', num_classes=2, **overrides)
 
 
-def test_requires_is_one_of_objects_or_tiles():
+def test_requires_objects_on_crops():
     clf = Classifier(_config())
     assert len(clf.requires) == 1
-    req = clf.requires[0]
-    assert isinstance(req, AnyOf)
-    # per-object crops preferred, then whole tiles (readability is guaranteed by the imagery tree)
-    assert [alt.data_type for alt in req.alternatives] == [Objects, Imagery]
-    assert req.alternatives[1].kind == ImageKind.TILE
+    need = clf.requires[0]
+    assert isinstance(need, Need)
+    # one mode only: objects each pointing at their own crop — never whole tiles
+    assert need.data_type is Objects
+    assert need.on is Crops
+    assert "imagery" in need.links
 
 
 def test_produces_class_columns_without_names():
