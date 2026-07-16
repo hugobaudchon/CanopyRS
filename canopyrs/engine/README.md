@@ -12,11 +12,12 @@
    a whole scene or tiles (`kind`). The pipeline checks these declarations before and after every
    component runs, so a mis-wired pipeline fails immediately with a clear message.
 
-3. **Each component receives the newest table that matches its needs.** Several imagery tables can
-   exist at once (the raster, then the tiles cut from it). The pipeline walks them newest to oldest
-   and hands over the first one satisfying the component's declaration — so a component asking for a
-   source raster still finds it after tiles were produced. When a component is given anything other
-   than the newest table, the pipeline prints a line saying so.
+3. **Each component receives the newest table of the right kind.** Several imagery tables can exist
+   at once (the raster, then the tiles cut from it). The pipeline picks the newest one whose `kind`
+   matches the component's declaration — so a component asking for a source raster still finds it
+   after tiles were produced — and then checks everything else the component declared against that
+   one table. A mismatch is an error; the pipeline never falls back to an older table. When a
+   component is given anything other than the newest table, the pipeline prints a line saying so.
 
 4. **Loading pixels is one rule.** An imagery row either has its own file on disk (`path`) or is a
    window into its parent. To load it, the loader walks up the parents to the nearest row that has a
@@ -65,8 +66,9 @@ own Schema; at construction, declared Schemas are threaded through the whole pip
 pipeline fails before any compute.
 
 **Pipeline** — the runner. It takes as input seeds and ordered components, and then iteratively runs
-each component sequentially. It is responsible for handing each component the newest table that
-satisfies its Needs, checking what comes back against the promises, and storing everything.
+each component sequentially. It is responsible for handing each component the newest table of the
+kind it asks for (checked against its Needs), checking what comes back against the promises, and
+storing everything.
 
 **Seeds** — the tables a run starts from, built from the inputs instead of produced by a component: a
 raster (`sources=`), a folder of pre-cut tiles (`tiles=`), or prior detections from a GPKG (`objects=`).

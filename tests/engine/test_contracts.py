@@ -1,5 +1,5 @@
-"""Unit tests for the data contracts (Need / one_of / Schema) and the pipeline's need-aware
-resolution + static validation."""
+"""Unit tests for the data contracts (Need / one_of / Schema) and the pipeline's input matching
+(kind selects, everything else validates) + static validation."""
 
 import pytest
 
@@ -7,6 +7,7 @@ from canopyrs.engine.contracts import Need, one_of, Schema
 from canopyrs.engine.data import Imagery, Objects
 from canopyrs.engine.constants import Col, ImageKind, Modality
 from canopyrs.engine.pipeline import Pipeline
+from tests.conftest import make_tile_metadata
 
 
 class FakeComponent:
@@ -101,9 +102,9 @@ def test_one_of_none_available():
     assert desc is None and "OR" in err
 
 
-# --- need-aware resolution ---------------------------------------------------
+# --- input matching: kind selects, everything else validates ------------------
 
-def test_resolution_reaches_past_newer_table(sources_seed, tiles_seed):
+def test_matching_finds_source_past_newer_tiles(sources_seed, tiles_seed):
     """A kind='source' need binds the source seed even though tiles are newer (the tilerizer-after-
     tiles case)."""
     available = {Imagery: [sources_seed, tiles_seed]}   # oldest -> newest
@@ -111,15 +112,25 @@ def test_resolution_reaches_past_newer_table(sources_seed, tiles_seed):
     assert desc is sources_seed and err == ""
 
 
-def test_resolution_prefers_newest_satisfying(sources_seed, tiles_seed):
+def test_matching_prefers_newest_of_kind(sources_seed, tiles_seed):
     available = {Imagery: [sources_seed, tiles_seed]}
     desc, _ = Need(Imagery, kind=ImageKind.TILE).resolve(lambda t: available.get(t, ()))
     assert desc is tiles_seed
 
 
-def test_resolution_error_reports_candidates(tiles_seed):
+def test_matching_error_reports_candidates(tiles_seed):
     desc, err = Need(Imagery, kind=ImageKind.SOURCE).resolve(lambda t: {Imagery: [tiles_seed]}.get(t, ()))
     assert desc is None and "none of the 1 available" in err
+
+
+def test_matching_never_falls_back_past_a_broken_newest(tiles_seed):
+    """Only kind selects among tables: when the newest table of the right kind fails the rest of the
+    check, matching errors instead of silently binding an older table (config errors stay loud)."""
+    unlinked_tiles = Imagery.build(kind=ImageKind.TILE, metadata=[make_tile_metadata()])
+    available = {Imagery: [tiles_seed, unlinked_tiles]}   # oldest -> newest; only the old one has 'parent'
+    desc, err = Need(Imagery, kind=ImageKind.TILE, links=("parent",)).resolve(
+        lambda t: available.get(t, ()))
+    assert desc is None and "must be linked" in err
 
 
 # --- Pipeline.validate (static wiring check) ---------------------------------
@@ -135,7 +146,7 @@ def test_validate_accepts_wired_pipeline(sources_seed):
 
 
 def test_validate_source_need_survives_produced_tiles(sources_seed):
-    """Static mirror of need-aware resolution: a second tilerizer's kind='source' requirement stays
+    """Static mirror of input matching: a second tilerizer's kind='source' requirement stays
     satisfiable after the first tilerizer produced tiles (per-type schema lists, not overwrite)."""
     pipe = Pipeline([_tilerizer(), _tilerizer()], sources=sources_seed)
     assert len(pipe.components) == 2

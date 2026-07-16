@@ -4,8 +4,10 @@ Pipeline: run components in order, threading typed data by need.
 See ``canopyrs/engine/README.md`` for the model in five sentences.
 
 The pipeline keeps one list per data type (``imagery`` / ``objects``, latest last) and, per component,
-resolves each ``requires`` entry to the **newest instance of its type that satisfies the Need** — so a
-``kind='source'`` requirement reaches past freshly produced tiles back to the seed raster. The returned
+binds each ``requires`` entry to the **newest instance of its type whose kind matches**, then checks
+the rest of the Need against it — a ``kind='source'`` requirement finds the seed raster past freshly
+produced tiles, but any other mismatch fails loudly instead of falling back to an older table. The
+returned
 tables are checked against ``produces`` (postcondition), stored, and — with an ``output_dir`` — saved
 as parquet under ``{id}_{name}/`` and recorded in the run record (``run.json``). A component never
 names its predecessor, only the kind and shape of data it needs.
@@ -457,17 +459,17 @@ class Pipeline:
         self._lists[type(data)].append(data)
 
     def _resolve(self, req, component):
-        """The newest instance satisfying a ``requires`` entry (a bare type, a ``Need``, or an
-        ``AnyOf``). Matching scans each type's stored list newest-first; when it reaches past the
-        newest instance (sometimes intended — a tilerizer reaching past tiles to the source), that's
-        made visible."""
+        """The input for a ``requires`` entry (a bare type, a ``Need``, or an ``AnyOf``): the newest
+        stored instance of the type whose kind matches, then strictly checked — a mismatch raises
+        instead of falling back to an older instance. Binding anything but the newest of a type only
+        ever happens on kind (a tilerizer reaching past tiles to the source), and is made visible."""
         inst, err = Requirement.coerce(req).resolve(lambda t: self._lists.get(t, ()))
         if inst is None:
             raise ValueError(f"{type(component).__name__} {err}")
         stored = self._lists.get(type(inst), ())
         if stored and inst is not stored[-1]:
-            print(f"{type(component).__name__}: resolved an older {type(inst).__name__} "
-                  f"({len(inst)} rows) — the newest didn't satisfy its requirement.")
+            print(f"{type(component).__name__}: bound an older {type(inst).__name__} "
+                  f"({len(inst)} rows) — the newest is a different kind.")
         return inst
 
     def _check_produced(self, component, produced):

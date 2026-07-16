@@ -5,8 +5,8 @@ front, saves every step, and can reload or resume a run.
 
 ## Data model
 
-Instead of one mutable state object, the pipeline keeps two typed tables and resolves, for each
-component, the newest instance that satisfies its declared needs:
+Instead of one mutable state object, the pipeline keeps two typed tables and hands each component the
+newest instance of the kind it asks for, checked against its declared needs:
 
 | Table | What it holds |
 |---|---|
@@ -31,8 +31,9 @@ it needs, whether geometry is georeferenced or in tile-pixel coordinates, and �
 modalities it supports. The pipeline checks each requirement **before** running a component and checks
 the output **after** — a misconfigured pipeline fails at construction, not three components later.
 
-Each component receives the *newest* table that satisfies its requirements — so a second tilerizer's
-`kind="source"` requirement reaches past freshly produced tiles back to the seed raster.
+Each component receives the *newest* table of the `kind` it asks for — a second tilerizer's
+`kind="source"` requirement finds the seed raster past freshly produced tiles. Everything else must
+hold on that table: a mismatch is an error, never a silent fallback to an older table.
 
 ## Flow chart
 

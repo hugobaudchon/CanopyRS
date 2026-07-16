@@ -12,9 +12,10 @@ forward. Contracts check *schema-level* properties only (column presence, links,
 modality sets) — never data values like timestamps or paths; the attribute checks are tri-state,
 skipped when the schema can't say.
 
-Input matching: a requirement is matched against the *list* of available candidates of its type
-(oldest -> newest) and takes the newest one whose schema satisfies it — so e.g. a tilerizer's
-``kind="source"`` need reaches past freshly produced tiles back to the seed raster.
+Input matching: **kind selects, everything else validates**. A requirement binds the newest available
+candidate of its type whose ``kind`` matches (so a tilerizer's ``kind="source"`` need finds the seed
+raster past freshly produced tiles), then the full check runs on that one candidate — any other
+mismatch is an error, never a silent fallback to an older table.
 """
 
 
@@ -53,9 +54,9 @@ class Need(Requirement):
         statically refuse an untiled source scene);
       - if ``modalities`` is given, hold at least one row of a supported modality (set intersection).
 
-    A bare type in ``requires`` is the no-extra-constraints case. The pipeline resolves inputs by
-    scanning each type's available instances newest-first for the first that satisfies the Need, so a
-    component can assume valid inputs."""
+    A bare type in ``requires`` is the no-extra-constraints case. The pipeline binds each input to the
+    newest available instance of its type whose kind matches, then checks the rest of the Need against
+    it — a component can assume valid inputs, and a broken table is never silently skipped."""
 
     def __init__(self, data_type, columns=(), links=(), crs=None, kind=None, modalities=None):
         self.data_type = data_type
@@ -89,14 +90,20 @@ class Need(Requirement):
         candidates = list(get(self.data_type) or ())
         if not candidates:
             return None, f"requires {self.data_type.__name__}, but none is available"
-        newest_err = ""
-        for candidate in reversed(candidates):   # newest first; a live table or a Schema
-            err = self.check(candidate.schema())
-            if not err:
-                return candidate, ""
-            newest_err = newest_err or err
-        return None, (f"requires {self.data_type.__name__} but none of the {len(candidates)} available "
-                      f"satisfies it (newest: {newest_err})")
+        chosen = next((c for c in reversed(candidates) if self._kind_matches(c.schema())), None)
+        if chosen is None:
+            return None, (f"requires {self.data_type.__name__} of kind='{self.kind}', but none of the "
+                          f"{len(candidates)} available is")
+        err = self.check(chosen.schema())
+        if err:
+            which = f"kind='{self.kind}' " if self.kind is not None else ""
+            return None, (f"requires {self.data_type.__name__} but the newest {which}available "
+                          f"doesn't satisfy it: {err}")
+        return chosen, ""
+
+    def _kind_matches(self, schema) -> bool:
+        """The selection test — tri-state like ``check``: an undeclared schema kind can't exclude."""
+        return self.kind is None or schema.kind is None or schema.kind == self.kind
 
 
 class AnyOf(Requirement):
