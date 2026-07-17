@@ -38,6 +38,8 @@ class SegmenterConfig(BaseConfig):
     seed: int = 42
     batch_size: int = 2
     max_epochs: int = 50
+    # mmdet-based trainers (rsprompter) run iteration-based loops instead of epochs
+    max_iters: Optional[int] = None
     lr: float = 1e-5
     eval_epoch_interval: int = 2
     main_metric: str = "val/mIoU"

@@ -45,10 +45,10 @@ detrex_logger.disabled = True
 
 from canopyrs.engine.config_parsers import DetectorConfig
 from canopyrs.engine.config_parsers import SegmenterConfig
-from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import train_detectron2
-from canopyrs.engine.models.detector.train_detectron2.train_detrex import train_detrex, eval_detrex
-from canopyrs.engine.models.segmenter.train_sam.train_sam2 import train_sam2
-from canopyrs.engine.models.segmenter.train_sam.train_sam3 import train_sam3
+from canopyrs.engine.frameworks.detectron2.train_detectron2 import train_detectron2
+from canopyrs.engine.frameworks.detectron2.train_detrex import train_detrex, eval_detrex
+from canopyrs.engine.frameworks.sam.train_sam2 import train_sam2
+from canopyrs.engine.frameworks.sam.train_sam3 import train_sam3
 
 
 def train_detector_main(args, task):
@@ -84,6 +84,10 @@ def train_segmenter_main(args):
         train_detectron2(config, task='segmentation')
     elif config.model in ['maskdino_detrex', 'mask2former_detrex']:
         train_detrex(config, task='segmentation')
+    elif config.model in ['rsprompter_anchor', 'rsprompter_query']:
+        # imported lazily: needs the mmdet stack (`canopyrs setup mmdet`)
+        from canopyrs.engine.frameworks.mmdet.train_rsprompter import train_rsprompter
+        train_rsprompter(config)
     else:
         raise ValueError(f"Unsupported segmenter model: '{config.model}'.")
 
