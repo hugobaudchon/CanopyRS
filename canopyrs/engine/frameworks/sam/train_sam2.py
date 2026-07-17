@@ -19,7 +19,7 @@ import math
 import gc
 import json
 import tempfile
-from canopyrs.engine.models.segmenter.train_sam.dataset import register_sam2_dataset_with_masks, register_sam2_dataset_with_predicted_boxes
+from canopyrs.engine.frameworks.sam.dataset import register_sam2_dataset_with_masks, register_sam2_dataset_with_predicted_boxes
 
 def run_coco_evaluations(
     config: SegmenterConfig,

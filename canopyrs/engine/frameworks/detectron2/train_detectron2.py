@@ -22,10 +22,10 @@ from detectron2.utils.events import get_event_storage
 from fvcore.nn import get_bn_modules
 
 from canopyrs.engine.config_parsers import DetectorConfig
-from canopyrs.engine.models.detector.train_detectron2.augmentation import AugmentationAdder
-from canopyrs.engine.models.detector.train_detectron2.dataset import register_detection_dataset
-from canopyrs.engine.models.detector.train_detectron2.hook import WandbWriterHook
-from canopyrs.engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
+from canopyrs.engine.frameworks.detectron2.augmentation import AugmentationAdder
+from canopyrs.engine.frameworks.detectron2.dataset import register_detection_dataset
+from canopyrs.engine.frameworks.detectron2.hook import WandbWriterHook
+from canopyrs.engine.frameworks.detectron2.lr_scheduler import build_lr_scheduler
 
 
 def _resolve_architecture_path(architecture: str) -> Optional[Path]:
@@ -183,39 +183,7 @@ class TrainerWithValidation(DefaultTrainer):
         return ret
 
 
-def get_base_detectron2_model_cfg(config):
-    cfg = get_cfg()
-
-    # Load base configs for Faster R-CNN
-    cfg.merge_from_file(model_zoo.get_config_file(config.architecture))
-
-    # Load pre-trained model weights
-    if config.backbone_model_pretrained:
-        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config.architecture)
-
-    if config.checkpoint_path is not None:
-        cfg.MODEL.WEIGHTS = config.checkpoint_path
-
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = config.num_classes
-    if config.anchor_sizes is not None:
-        cfg.MODEL.ANCHOR_GENERATOR.SIZES = [list(s) for s in config.anchor_sizes]
-    cfg.SOLVER.AMP.ENABLED = config.use_amp
-
-    if config.box_score_thresh is not None:
-        if cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST != config.box_score_thresh:
-            print(f"Changing box score threshold from {cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST} to {config.box_score_thresh}.")
-        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = config.box_score_thresh
-    if config.box_nms_thresh is not None:
-        if cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST != config.box_nms_thresh:
-            print(f"Changing box NMS threshold from {cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST} to {config.box_nms_thresh}.")
-        cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = config.box_nms_thresh
-
-    # Augmentations
-    AugmentationAdder().modify_detectron2_augmentation_config(config, cfg)
-
-    cfg.TEST.DETECTIONS_PER_IMAGE = config.box_predictions_per_image
-
-    return cfg
+from canopyrs.engine.frameworks.detectron2.cfg import get_base_detectron2_model_cfg  # noqa: E501  (shared with inference)
 
 
 def setup_trainer(train_dataset_names: List[str], valid_dataset_names: List[str], config: DetectorConfig, model_name: str, task):

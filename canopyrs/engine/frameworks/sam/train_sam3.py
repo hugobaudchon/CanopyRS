@@ -15,13 +15,13 @@ from canopyrs.engine.config_parsers import SegmenterConfig
 from transformers import Sam3TrackerProcessor, Sam3TrackerModel
 from detectron2.config import get_cfg
 from detectron2.data import build_detection_train_loader, build_detection_test_loader, DatasetMapper, DatasetCatalog
-from canopyrs.engine.models.segmenter.train_sam.augmentation import AugmentationAdder
-from canopyrs.engine.models.segmenter.train_sam.loss_fns import sam_loss
+from canopyrs.engine.frameworks.sam.augmentation import AugmentationAdder
+from canopyrs.engine.frameworks.sam.loss_fns import sam_loss
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 import cv2
-from canopyrs.engine.models.segmenter.train_sam.dataset import register_sam2_dataset_with_masks, register_sam2_dataset_with_predicted_boxes
+from canopyrs.engine.frameworks.sam.dataset import register_sam2_dataset_with_masks, register_sam2_dataset_with_predicted_boxes
 from canopyrs.engine.config_parsers import PipelineConfig
 from canopyrs.engine.config_parsers.base import get_config_path
 from canopyrs.engine.pipeline import Pipeline
@@ -350,7 +350,7 @@ def setup_sam3_datasets(config: SegmenterConfig):
     """Register SAM3 datasets."""
     print("Setting up datasets...")
     
-    from canopyrs.engine.models.segmenter.train_sam.dataset import register_sam2_dataset_with_masks    
+    from canopyrs.engine.frameworks.sam.dataset import register_sam2_dataset_with_masks    
     use_detector_boxes = getattr(config, 'use_detector_boxes', True)
     if use_detector_boxes:
         print("Using predicted boxes from detector for prompts.")
