@@ -63,9 +63,10 @@ rfdetr = [
     "rfdetr>=1.0",
 ]
 mmdet = [
-    # The mmdet_rsprompter fork installs AS the `mmdet` package (vendored mmdet+mmpretrain with the
-    # rsprompter models and transformers>=5 fixes). Uncomment once the fork is on GitHub:
-    # "mmdet @ git+https://github.com/hugobaudchon/mmdet_rsprompter",
+    # The mmdet_rsprompter fork installs AS the `mmdet` package (vendored mmdet+mmpretrain with
+    # the rsprompter models and transformers>=5 fixes). Developers with a local editable
+    # checkout of the fork should use `canopyrs setup mmdet`, which preserves it.
+    "mmdet @ git+https://github.com/hugobaudchon/mmdet_rsprompter@canopyrs",
     "mmengine",
     "importlib_metadata",
     "modelindex",

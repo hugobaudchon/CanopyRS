@@ -68,7 +68,7 @@ canopyrs setup detrex        # e.g. everything the DINO detector presets need
 | `deepforest` | DeepForest detector | |
 | `sam` | legacy SAM 1 | |
 | `sam3` | SAM 3 | gated model — see access request below |
-| `all` | everything above | |
+| `all` | everything above | very slow -- not recommended|
 
 `canopyrs setup` installs the matching pip extra (`pip install -e ".[detrex]"` etc.), checks
 that `nvcc` matches your torch CUDA version before compiling, and verifies the compiled GPU ops

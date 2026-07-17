@@ -111,8 +111,11 @@ RSPrompter now runs in the same env as detectron2/detrex/SAM (no separate env ne
   `safe_serialization=False`, so write the .bin via torch.save directly.
 - The wall of mmengine "unexpected key" warnings at model load is normal (each submodule loads
   its slice of the full SamModel state dict).
-- TODO: push this modified clone to a fork repo (e.g. hugobaudchon/mmdet_rsprompter) so
-  `canopyrs setup mmdet` can clone it instead of requiring manual patch re-application.
+- DONE 2026-07-16: fork pushed to https://github.com/hugobaudchon/mmdet_rsprompter (branch
+  `canopyrs`, set as default). The CanopyRS `[mmdet]` extra installs it from GitHub (verified:
+  builds as a pure-python wheel in an isolated env — the setup.py torch-guard patch at work);
+  `canopyrs setup mmdet` prefers a local editable checkout when one exists next to the
+  CanopyRS root (developer path), so the git dep never clobbers it.
 
 ### Fork-prep cleanup done 2026-07-16
 

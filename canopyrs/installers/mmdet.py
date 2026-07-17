@@ -1,28 +1,40 @@
-"""Setup target: mmdet stack for RSPrompter (mmcv compiled from source + the RSPrompter fork).
+"""Installer: mmdet stack for RSPrompter (mmcv compiled from source + the mmdet_rsprompter fork).
 
 Validated 2026-07-16 against torch 2.7.1 / CUDA 12.6 / transformers 5.14:
   - mmcv 2.2.0 compiles cleanly from source (no prebuilt wheels exist for this torch);
-  - the RSPrompter clone pip-installs as the `mmdet` package (its setup.py name is 'mmdet',
-    vendored mmdet 3.2.0 + mmpretrain + the rsprompter models), carrying the fork's
-    transformers>=5 compat fixes — see RSPROMPTER_NOTES.md;
-  - full model build + forward pass verified on GPU.
+  - the fork (github.com/hugobaudchon/mmdet_rsprompter) installs AS the `mmdet` package
+    (vendored mmdet 3.2.0 + mmpretrain + the rsprompter models, transformers>=5 fixes) —
+    see RSPROMPTER_NOTES.md;
+  - full model build + training + inference forward pass verified on GPU.
 
-The mmcv compile takes ~30 min. RSPrompter must be cloned next to the CanopyRS root
-(the hugobaudchon/mmdet_rsprompter fork once pushed, or KyanChen/RSPrompter + fork patches).
+The mmcv compile takes ~30 min. Two install paths:
+  - a local fork checkout exists next to the CanopyRS root -> editable install (developer
+    path; deliberately NOT via the [mmdet] extra, whose git URL would replace the editable
+    install with a static site-packages copy and silently detach local edits);
+  - no checkout -> the [mmdet] extra pulls the fork straight from GitHub.
 """
 
-from canopyrs.installers.common import (SetupError, cuda_build_env, cuda_build_preflight,
-                                           importable, install_extra, pip, require_repo_root)
+from canopyrs.installers.common import (cuda_build_env, cuda_build_preflight,
+                                        importable, install_extra, pip, repo_root)
 
 NAME = "mmdet"
 ALIASES = ("rsprompter", "mmcv", "mmengine")
 REQUIRES = ()
-EXTRA = "mmdet"   # pure-python halo; mmcv itself is compiled below (no wheels for our torch)
+EXTRA = "mmdet"   # includes the fork as a git dep; mmcv itself is compiled below
+
+# The extra minus the fork's git URL — used on the editable (developer) path.
+_HALO_DEPS = ("mmengine", "importlib_metadata", "modelindex", "rich", "terminaltables",
+              "peft>=0.10", "einops")
 
 
-def _rsprompter_dir():
-    root = require_repo_root(NAME)
-    return root / "RSPrompter"
+def _local_fork_checkout():
+    root = repo_root()
+    if root is None:
+        return None
+    for name in ("RSPrompter", "mmdet_rsprompter"):
+        if (root / name / "setup.py").exists():
+            return root / name
+    return None
 
 
 def check():
@@ -44,22 +56,20 @@ def check():
 
 
 def install():
-    rsp = _rsprompter_dir()
-    if not rsp.exists():
-        raise SetupError(
-            f"RSPrompter clone not found at {rsp}. It provides the mmdet package (vendored, "
-            "with the RSPrompter models and transformers>=5 fixes).\nClone it there first — "
-            "see RSPROMPTER_NOTES.md — then re-run `canopyrs setup mmdet`."
-        )
-    install_extra(EXTRA)
+    checkout = _local_fork_checkout()
+    if checkout is not None:
+        print(f"[mmdet] local fork checkout at {checkout} — installing editable (developer path)")
+        pip("install", *_HALO_DEPS)
+        # setup.py imports torch (hence --no-build-isolation); --no-deps because its
+        # requirements list is the full mmdet dev set (_HALO_DEPS covers the runtime).
+        pip("install", "-e", str(checkout), "--no-deps", "--no-build-isolation")
+    else:
+        install_extra(EXTRA)   # pulls the fork from GitHub via the extra's git dep
     # mmcv from source against the env's torch — ~30 min compile; MMCV_WITH_OPS builds the
     # CUDA ops, FORCE_CUDA turns a missing-nvcc fallback into a loud error.
     cuda_build_preflight()
     pip("install", "--no-binary", "mmcv", "--no-build-isolation", "mmcv==2.2.0",
         env={**cuda_build_env(), "MMCV_WITH_OPS": "1"})
-    # The fork's setup.py imports torch (hence --no-build-isolation) and its requirements
-    # list is the full mmdet dev set (hence --no-deps; _STACK_DEPS covers the runtime).
-    pip("install", "-e", str(rsp), "--no-deps", "--no-build-isolation")
 
 
 if __name__ == "__main__":
