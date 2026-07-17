@@ -9,6 +9,13 @@ from canopyrs.engine.models.registry import DETECTOR_REGISTRY
 
 @DETECTOR_REGISTRY.register("deepforest")
 class DeepForestWrapper(DetectorWrapperBase):
+    @classmethod
+    def preflight(cls, config):
+        """The deepforest import is deferred to __init__, so this wrapper registers without the
+        package — verify it here (pipeline construction) for a clean install hint instead."""
+        from canopyrs.engine.models.extras import require_extra
+        require_extra("deepforest", packages=("deepforest",))
+
     def __init__(self, config: DetectorConfig):
         super().__init__(config)
 

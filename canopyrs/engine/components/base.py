@@ -40,10 +40,19 @@ class Component:
         return f"{self.component_id}_{self.name}" if self.component_id is not None else self.name
 
     def _model(self, registry):
-        """The model class named by ``config.model``, or a clear error."""
-        if self.config.model not in registry:
-            raise ValueError(f"Invalid {self.name} model: {self.config.model}")
-        return registry[self.config.model]
+        """The model class named by ``config.model``, or a clear error.
+
+        Resolution happens at component construction (= pipeline build), not run time, so a
+        missing/broken optional framework fails BEFORE tilerizing. ``registry.get`` explains
+        which extra installs an unavailable model; a wrapper's optional ``preflight(config)``
+        classmethod then verifies its framework actually works (e.g. detrex compiled with GPU
+        support) — both raise MissingExtraError, which the pipeline aggregates.
+        """
+        model_class = registry.get(self.config.model)
+        preflight = getattr(model_class, "preflight", None)
+        if preflight is not None:
+            preflight(self.config)
+        return model_class
 
     def _loader(self, source, batch_size):
         """A tile image loader over ``source`` — an ``Imagery`` table (its reading frame) or an already

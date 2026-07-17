@@ -33,6 +33,7 @@ from canopyrs.engine.constants import Col, GeomKind, Modality
 from canopyrs.engine.contracts import Schema, as_requirements
 from canopyrs.engine.data import Crops, Imagery, Objects, Sources, Tiles, has_usable_values
 from canopyrs.engine.components import COMPONENT_REGISTRY
+from canopyrs.engine.models.extras import MissingExtraError
 from canopyrs.engine.visualizer import PipelineFlowVisualizer
 
 
@@ -136,7 +137,7 @@ class Pipeline:
         if resume_from and initialize_from:
             raise ValueError("Pass only one of resume_from / initialize_from, not both.")
         aois_config = cls._build_aois_config(aoi)
-        components = [cls._make_component(kind, config, aois_config) for kind, config in steps]
+        components = cls._make_components(steps, aois_config)
 
         if initialize_from:
             prior = cls.from_dir(initialize_from)
@@ -155,6 +156,27 @@ class Pipeline:
         if kind == "tilerizer":
             return COMPONENT_REGISTRY[kind](config, aois_config=aois_config)
         return COMPONENT_REGISTRY[kind](config)
+
+    @classmethod
+    def _make_components(cls, steps, aois_config):
+        """Instantiate every component, collecting MissingExtraError across ALL of them before
+        raising — a pipeline missing e.g. detrex AND mmdet reports both, with one combined
+        ``canopyrs setup`` command, instead of a fix-one-rerun-hit-the-next loop. Only
+        MissingExtraError is collected; any other construction failure raises immediately."""
+        components, missing = [], []
+        for kind, config in steps:
+            try:
+                components.append(cls._make_component(kind, config, aois_config))
+            except MissingExtraError as e:
+                missing.append((kind, getattr(config, 'model', '?'), e))
+        if missing:
+            targets = sorted({e.target for _, _, e in missing if e.target})
+            message = ("This pipeline needs optional frameworks that aren't installed or aren't working:\n"
+                       + "\n".join(f"  - {kind} ({model}): {e.reason}" for kind, model, e in missing))
+            if targets:
+                message += f"\n\nInstall everything at once:\n  canopyrs setup {' '.join(targets)}"
+            raise MissingExtraError(message, target=targets[0] if targets else None)
+        return components
 
     @staticmethod
     def _build_aois_config(aoi):
