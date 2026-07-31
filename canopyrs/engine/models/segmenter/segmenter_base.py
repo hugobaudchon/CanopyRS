@@ -19,11 +19,11 @@ warnings.filterwarnings(
 )
 from shapely import box
 from shapely.affinity import scale
-from tqdm import tqdm
 
 from geodataset.utils import mask_to_polygon
 
 from canopyrs.engine.config_parsers import SegmenterConfig
+from canopyrs.engine.loader import InferTimer
 
 
 def get_memory_usage():
@@ -161,7 +161,7 @@ class SegmenterWrapperBase(ABC):
         return n_masks_processed
 
     def infer(self, loader, boxes_by_tile=None):
-        """Consume a loader yielding ``(object_ids, images)`` batches and return per-tile
+        """Consume a ``tile_loader``, iterated as ``(object_ids, images)`` batches, and return per-tile
         ``(tile_object_ids, mask_object_ids, mask_polygons, mask_scores)`` — polygons in tile-pixel
         coords. Reuses ``forward`` and the multiprocessing mask->polygon postprocessing; builds no
         DataLoader of its own.
@@ -185,7 +185,8 @@ class SegmenterWrapperBase(ABC):
             workers.append(p)
 
         tile_object_ids = []                                   # tile_idx (running) -> tile object_id
-        for object_ids, images in tqdm(loader, desc="Inferring the segmenter...", leave=True):
+        timer = InferTimer("Inferring the segmenter...")
+        for object_ids, images in timer.batches(loader):
             images = [img.numpy() if hasattr(img, "numpy") else np.asarray(img) for img in images]
             base = len(tile_object_ids)
             tiles_idx = list(range(base, base + len(object_ids)))
@@ -196,8 +197,13 @@ class SegmenterWrapperBase(ABC):
             else:
                 boxes = [boxes_by_tile[oid][0] for oid in object_ids]
                 boxes_object_ids = [boxes_by_tile[oid][1] for oid in object_ids]
+            timer.mark("prep")
+            # forward moves the images to the device itself, so unlike the other models the transfer
+            # falls in ``gpu`` here rather than in ``prep``; and the masks it queues are polygonized
+            # concurrently, so ``post`` below is the drain, not the polygonization.
             self.forward(images=images, boxes=boxes, boxes_object_ids=boxes_object_ids,
                          tiles_idx=tiles_idx, queue=queue)
+            timer.mark("gpu")
 
         queue.join()
         for _ in range(self.config.pp_n_workers):
@@ -205,6 +211,8 @@ class SegmenterWrapperBase(ABC):
         for p in workers:
             p.join()
         queue.close()
+        timer.mark("post")                                     # draining the mask->polygon workers
+        timer.report()
 
         mask_object_ids, mask_polygons, mask_scores = [], [], []
         for tile_idx in range(len(tile_object_ids)):           # aligned to tile_object_ids order

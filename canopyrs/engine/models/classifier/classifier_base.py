@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Dict
 
 import torch
-from tqdm import tqdm
 
 from canopyrs.engine.config_parsers import ClassifierConfig
+from canopyrs.engine.loader import InferTimer
 from canopyrs.engine.models.utils import load_state_dict_with_key_repair
 
 
@@ -36,18 +36,24 @@ class ClassifierWrapperBase(ABC):
         pass
 
     def infer(self, loader):
-        """Consume a loader yielding ``(object_ids, images)`` batches and return aligned
+        """Consume a ``tile_loader``, iterated as ``(object_ids, images)`` batches, and return aligned
         ``(object_ids, class_predictions, class_scores)`` — one predicted class index and one full
         per-class score list per tile. Reuses ``forward``; builds no DataLoader of its own."""
         self.model.eval()
         object_ids, class_predictions, class_scores = [], [], []
+        timer = InferTimer("Inferring classifier...")
         with torch.no_grad():
-            for batch_ids, images in tqdm(loader, desc="Inferring classifier...", leave=True):
+            for batch_ids, images in timer.batches(loader):
                 images = torch.stack([img for img in images]).to(self.device)
-                for out in self.forward(images):
+                timer.mark("prep")
+                outputs = self.forward(images)
+                timer.mark("gpu")
+                for out in outputs:
                     class_scores.append(out['scores'].cpu().numpy().tolist())
                     class_predictions.append(out['labels'].cpu().item())
                 object_ids.extend(batch_ids)
+                timer.mark("post")
+        timer.report()
         return object_ids, class_predictions, class_scores
 
     def load_checkpoint(self, checkpoint_path):

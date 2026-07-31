@@ -10,6 +10,8 @@ and ``out_dir`` before calling ``run`` (a component reads ``self.out_dir`` when 
 per tile, and turning those into one row per object is the same loop everywhere.
 """
 
+import os
+
 from canopyrs.engine.models.registry import Registry
 from canopyrs.engine.data import Imagery
 from canopyrs.engine.loader import tile_loader
@@ -20,9 +22,16 @@ COMPONENT_REGISTRY = Registry("component")
 register_component = COMPONENT_REGISTRY.register
 
 
+def default_num_workers():
+    """Image loader workers: one per available CPU less one for the main process, capped at 10.
+    Counts the CPUs actually allocated to this process, which on a cluster is the job's share rather
+    than the whole machine's."""
+    n_cpu = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    return max(1, min(n_cpu - 1, 10))
+
+
 class Component:
     name = None          # defaults to the class name lowercased (set in __init_subclass__)
-    NUM_WORKERS = 4
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -33,6 +42,7 @@ class Component:
         self.config = config
         self.component_id = None     # assigned by the pipeline
         self.out_dir = None          # assigned by the pipeline before run()
+        self.num_workers = default_num_workers()   # the pipeline overrides it when its config sets one
 
     @property
     def label(self) -> str:
@@ -58,7 +68,7 @@ class Component:
         """A tile image loader over ``source`` — an ``Imagery`` table (its reading frame) or an already
         built reading frame."""
         frame = source.reading_frame() if isinstance(source, Imagery) else source
-        return tile_loader(frame, batch_size=batch_size, num_workers=self.NUM_WORKERS)
+        return tile_loader(frame, batch_size=batch_size, num_workers=self.num_workers)
 
 
 def flatten_by_tile(tile_ids, **per_tile):

@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 import torch
 import torchmetrics
 from shapely import box
-from tqdm import tqdm
 
+from canopyrs.engine.loader import InferTimer
 from canopyrs.engine.models.utils import load_state_dict_with_key_repair
 
 warnings.filterwarnings(
@@ -28,18 +28,23 @@ class DetectorWrapperBase(ABC):
         pass
 
     def infer(self, loader):
-        """Consume a loader yielding ``(object_ids, images)`` batches (e.g. ``tile_loader``) and
+        """Consume a ``tile_loader``, iterated as ``(object_ids, images)`` batches, and
         return ``(object_ids, boxes, scores, classes)`` as aligned per-tile lists. Reuses
         ``forward``; builds no DataLoader of its own."""
         self.model.eval()
         object_ids, results = [], []
+        timer = InferTimer("Inferring detector...")
         with torch.no_grad():
-            for batch_ids, images in tqdm(loader, desc="Inferring detector...", leave=True):
+            for batch_ids, images in timer.batches(loader):
                 images = [img.to(self.device) for img in images]
+                timer.mark("prep")
                 results.extend(self.forward(images))
                 object_ids.extend(batch_ids)
+                timer.mark("gpu")
 
-        boxes, boxes_scores, classes = detector_result_to_lists(results)
+        boxes, boxes_scores, classes = detector_result_to_lists(results)   # to cpu + shapely boxes
+        timer.mark("post")
+        timer.report()
         return object_ids, boxes, boxes_scores, classes
 
 

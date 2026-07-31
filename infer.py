@@ -78,6 +78,7 @@ def pipeline_main(args):
         aoi=aoi,
         resume_from=args.resume_from,
         initialize_from=args.initialize_from,
+        num_workers=config.num_workers,
     )
     pipeline.run()
 

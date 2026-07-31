@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List
 
 import yaml
+from pydantic import Field
 
 from canopyrs.engine.config_parsers.tilerizer import TilerizerConfig
 from canopyrs.engine.config_parsers.detector import DetectorConfig
@@ -22,6 +23,9 @@ CONFIG_CLASS_BY_KIND = {
 
 class PipelineConfig(BaseConfig):
     components_configs: List[tuple[str, BaseConfig]]
+    num_workers: int | None = Field(
+        None, description="Image loader workers for every model component; None auto-picks "
+                          "(available CPUs less one, capped at 10)")
 
     @classmethod
     def from_yaml(cls, path: str or Path) -> 'PipelineConfig':
@@ -44,4 +48,4 @@ class PipelineConfig(BaseConfig):
 
             components_configs.append((component_type, component_config))
 
-        return cls(components_configs=components_configs)
+        return cls(components_configs=components_configs, num_workers=data.get('num_workers'))

@@ -38,7 +38,8 @@ from canopyrs.engine.visualizer import PipelineFlowVisualizer
 
 
 class Pipeline:
-    def __init__(self, components, sources=None, tiles=None, objects=None, output_dir=None):
+    def __init__(self, components, sources=None, tiles=None, objects=None, output_dir=None,
+                 num_workers=None):
         """Seeds — at least one is needed to ``run``:
           - ``sources``: the input scenes — a raster path, a list of paths, or ``{path, modality,
             timestamp}`` descriptors (built into a ``Sources`` seed; an imagery instance passes through);
@@ -47,10 +48,15 @@ class Pipeline:
             see ``_seed_image_type``;
           - ``objects``: a gpkg path (``Objects.from_gpkg``) or an ``Objects`` instance (prior detections).
         Given the seeds and components, the wiring is validated here so a bad pipeline fails at
-        construction, before any compute."""
+        construction, before any compute.
+
+        ``num_workers`` overrides every component's image loader workers; None leaves each at its own
+        default (``default_num_workers``)."""
         self.components = list(components)
         for i, component in enumerate(self.components):
             component.component_id = i
+            if num_workers is not None:
+                component.num_workers = num_workers
         self.output_dir = Path(output_dir) if output_dir else None
         if self.output_dir is not None:
             self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -128,7 +134,7 @@ class Pipeline:
 
     @classmethod
     def from_config(cls, steps, sources=None, tiles=None, objects=None, output_dir=None, aoi=None,
-                    resume_from=None, initialize_from=None):
+                    resume_from=None, initialize_from=None, num_workers=None):
         """Build a pipeline from ordered ``(kind, config)`` steps (instantiated from the registry) over
         the given seeds. ``aoi`` (a gpkg path) restricts tilerizing to an area of interest. Pass one of:
         ``resume_from`` (continue a prior run — its unchanged prefix is skipped; same folder, or a new
@@ -146,7 +152,8 @@ class Pipeline:
         elif resume_from and output_dir and Path(output_dir).resolve() != Path(resume_from).resolve():
             shutil.copytree(resume_from, output_dir, dirs_exist_ok=True)   # cross-folder: bring the prior run over
 
-        pipe = cls(components, sources=sources, tiles=tiles, objects=objects, output_dir=output_dir)
+        pipe = cls(components, sources=sources, tiles=tiles, objects=objects, output_dir=output_dir,
+                   num_workers=num_workers)
         pipe._resume_requested = bool(resume_from)
         return pipe
 
