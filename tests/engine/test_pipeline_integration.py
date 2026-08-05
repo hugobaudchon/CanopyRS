@@ -74,7 +74,7 @@ def test_full_detector_pipeline_on_test_raster(test_raster, tmp_path):
     assert reloaded.latest(Objects) is not None
 
     if any(c.name == 'aggregator' for c in pipe.components):
-        assert (run_dir / "final.gpkg").exists()
+        assert list(run_dir.glob("*_finalpreds.gpkg"))   # geodataset GeoPackage naming convention
 
 
 @pytest.mark.slow

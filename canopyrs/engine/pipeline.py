@@ -25,6 +25,8 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+from geodataset.utils import (GeoPackageNameConvention, strip_all_extensions_and_path,
+                              validate_and_convert_product_name)
 
 from canopyrs.engine.utils import green_print, parse_tilerizer_aoi_config
 from canopyrs.engine.raster_validation import validate_raster_rgb_bands
@@ -250,9 +252,9 @@ class Pipeline:
                 validate_raster_rgb_bands(Path(path), strict_color_interp=strict_rgb_validation)
 
     def _write_final_gpkg(self):
-        """Auto-write the final result GPKG at the run root (``final.gpkg``) — the latest Objects, widened
-        with their ancestry columns. Best effort: skipped with a note if there are no Objects or they're
-        in tile-pixel coords (no CRS to write)."""
+        """Auto-write the final result GPKG at the run root — the latest Objects, widened with their
+        ancestry columns. Best effort: skipped with a note if there are no Objects or they're in
+        tile-pixel coords (no CRS to write)."""
         try:
             anchor = self._objects_at(self._last_objects_index())
         except ValueError:
@@ -260,7 +262,23 @@ class Pipeline:
         if not anchor.crs_set:
             print("Final GPKG skipped: final Objects are in tile-pixel coords (no CRS).")
             return
-        print(f"Final GPKG: {self.export('gpkg', path=self.output_dir / 'final.gpkg')}")
+        print(f"Final GPKG: {self.export('gpkg', path=self._final_gpkg_path())}")
+
+    def _final_gpkg_path(self):
+        """``{source raster}_{first tilerizer's specifier}_finalpreds.gpkg`` at the run root (geodataset's
+        GeoPackage convention), or ``final.gpkg`` without a single source raster to name it after."""
+        sources = self.latest(Sources)
+        if sources is None or len(sources.df) != 1:
+            return self.output_dir / "final.gpkg"
+        config = next((c.config for c in self.components if c.name == "tilerizer"), None)
+        name = GeoPackageNameConvention.create_name(
+            product_name=validate_and_convert_product_name(
+                strip_all_extensions_and_path(sources.df[Col.PATH].iloc[0])),
+            fold="finalpreds",
+            scale_factor=config.scale_factor if config else None,
+            ground_resolution=config.ground_resolution if config else None,
+        )
+        return self.output_dir / name
 
     def validate(self):
         """Pre-flight wiring check, no compute: thread each component's ``produces`` forward as Schemas

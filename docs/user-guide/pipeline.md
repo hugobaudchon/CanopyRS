@@ -60,7 +60,9 @@ pipe.run()
 Seed a run from a raster (`sources=`), a folder of pre-cut images (`tiles=` — typed automatically:
 tiles for a detector run, crops for a classifier-only run), or prior detections (`objects=`). With `output_dir` set, each component's tables are saved as parquet under `{id}_{name}/`,
 a `run.json` **run record** (written by the pipeline, never hand-edited) describes the run, and the
-final georeferenced result is written to `out/final.gpkg`. Inspect results in memory with
+final georeferenced result is written to `out/{raster}_{sf|gr}_finalpreds.gpkg` (geodataset's
+GeoPackage naming convention; `out/final.gpkg` when there is no single source raster to name it
+after). Inspect results in memory with
 `pipe.latest(Objects)`.
 
 ## Reload, resume, export

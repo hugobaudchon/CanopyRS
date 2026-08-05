@@ -105,7 +105,9 @@ out/
   0_tilerizer/tiles.parquet
   1_detector/objects.parquet
   ...
-  final.gpkg          # latest georeferenced Objects, widened with their ancestry columns
+  myraster_gr0p05_finalpreds.gpkg   # latest georeferenced Objects, widened with their ancestry
+                                    # columns (geodataset GeoPackage naming convention: the source
+                                    # raster's product name + the tilerizer's specifier)
 ```
 
 `Pipeline.from_dir(out)` reloads it; `run(resume=True)` skips the already-done prefix;
