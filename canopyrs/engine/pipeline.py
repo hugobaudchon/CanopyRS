@@ -210,6 +210,8 @@ class Pipeline:
             self.print_flow_chart()
         for seed in self.seeds:
             self._store(seed)
+        if self.output_dir is not None:
+            store.save_seeds(self.output_dir, self.seeds)   # before any compute, so a crashed run reloads
         self.outputs = []
         start = self._resume_prefix() if resume else 0
 
@@ -226,9 +228,10 @@ class Pipeline:
             self.outputs.append(produced)
             if self.output_dir is not None:
                 self._save(component, produced)
+                # Per component, so a crashed run leaves a record of its finished prefix (resumable).
+                self.run_record = store.write_run_record(self.output_dir, self.components, self.outputs)
 
         if self.output_dir is not None:
-            store.save_seeds(self.output_dir, self.seeds)
             self.run_record = store.write_run_record(self.output_dir, self.components, self.outputs)
             self._write_final_gpkg()
         green_print("Pipeline finished")
