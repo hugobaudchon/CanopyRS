@@ -54,6 +54,12 @@ class Tilerizer(Component):
     def run(self, *inputs):
         return self._mode_run(*inputs)
 
+    @property
+    def _temp_dir(self):
+        """Where geodataset writes the resampled raster it can't hold in memory: this component's own
+        output folder, not the cwd (geodataset's ``./tmp`` default, often a small $HOME)."""
+        return self.out_dir or './tmp'
+
     def _meta_and_paths(self, gdf):
         """Serialized tile metadata + per-tile paths (the on-disk tile when saved, else None)."""
         metadata = [serialize_meta(meta) for meta in gdf[GD_TILE_METADATA]]
@@ -72,6 +78,7 @@ class Tilerizer(Component):
                 aois_config=self.aois_config,
                 scale_factor=self.config.scale_factor,
                 ground_resolution=self.config.ground_resolution,
+                temp_dir=self._temp_dir,
             ).generate_tiles(save_tiles_to_disk=self.config.save_tiles_to_disk)
             source_metadata, source_paths = self._meta_and_paths(gdf)
             metadata += source_metadata
@@ -102,6 +109,7 @@ class Tilerizer(Component):
                 other_labels_attributes_column_names=[Col.OBJECT_ID],   # carry the source object id through geodataset
                 scale_factor=self.config.scale_factor,
                 ground_resolution=self.config.ground_resolution,
+                temp_dir=self._temp_dir,
             ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
             group_meta, group_paths = self._meta_and_paths(gdf)
             kept = gdf[Col.OBJECT_ID].values                      # crop order; geodataset may drop empty crops
@@ -147,6 +155,7 @@ class Tilerizer(Component):
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
             other_labels_attributes_column_names=carry,   # carries object_id (+ geom_kind) onto the labels
+            temp_dir=self._temp_dir,
         ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
 
         metadata, tile_paths = self._meta_and_paths(tiles_gdf)
