@@ -1,0 +1,13 @@
+# Input data is kept local, not published to this public repo.
+# See CLAUDE.md for provenance and how to obtain it.
+data/
+
+# Evaluation artefacts are regenerable by rerunning scripts/eval_crown_overlap.py.
+# (The repo-root .gitignore already covers *.csv and *.png at any depth.)
+output/*
+!output/.gitkeep
+
+# SQLite/GDAL sidecars and FUSE-mount leftovers — never commit these.
+*.gpkg-shm
+*.gpkg-wal
+.fuse_hidden*
