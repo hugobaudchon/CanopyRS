@@ -482,9 +482,23 @@ def evaluate_plot(
                 "union_area": float(union) if union else g_area + p_area,
                 "iou_k": _safe_div(inter, union),
                 "cov_k": _safe_div(inter, g_area),
+                # Cardinality agreement: 1.0 when the cluster has as many masks
+                # as crowns, 1/3 for a 1-to-3 split or a 3-to-1 merge. Unioning
+                # fragments would otherwise hide over-segmentation entirely --
+                # three masks reconstructing one crown score IoU_k = 1.0.
+                # Penalising these masks does NOT violate the rule that
+                # unmatched predictions go unpunished: they demonstrably overlap
+                # an annotated crown, so they are fragments, not discoveries.
+                "card_k": (
+                    min(len(c.gt_idx), len(c.pred_idx))
+                    / max(len(c.gt_idx), len(c.pred_idx))
+                    if c.gt_idx and c.pred_idx else 0.0
+                ),
             }
         )
     per_cluster = pd.DataFrame(cluster_rows)
+    if len(per_cluster):
+        per_cluster["iou_k_penalised"] = per_cluster["iou_k"] * per_cluster["card_k"]
 
     # --- per-GT --------------------------------------------------------------
     best_iou = defaultdict(float)
@@ -594,6 +608,8 @@ def compute_metrics(
         # --- headline --------------------------------------------------------
         "mIoU_cluster": _mean(anchored["iou_k"]),
         "mCov_cluster": _mean(anchored["cov_k"]),
+        # --- fragmentation-penalised (see card_k above) ----------------------
+        "mIoU_cluster_penalised": _mean(anchored["iou_k_penalised"]),
         # --- area-weighted ---------------------------------------------------
         "mIoU_cluster_area": _weighted_mean(anchored["iou_k"], anchored["gt_area"]),
         "mCov_cluster_area": _weighted_mean(anchored["cov_k"], anchored["gt_area"]),
@@ -664,6 +680,7 @@ def pool_metrics(results: list[PlotResult]) -> dict:
     m = {
         "mIoU_cluster": _mean(anchored["iou_k"]),
         "mCov_cluster": _mean(anchored["cov_k"]),
+        "mIoU_cluster_penalised": _mean(anchored["iou_k_penalised"]),
         "mIoU_cluster_area": _weighted_mean(anchored["iou_k"], anchored["gt_area"]),
         "mCov_cluster_area": _weighted_mean(anchored["cov_k"], anchored["gt_area"]),
         "mIoU_1to1": _mean(per_gt["iou_1to1"]),
@@ -873,6 +890,8 @@ def print_report(results: list[PlotResult], pooled: dict) -> None:
               f"      (area-weighted {m['mIoU_cluster_area']:.3f})")
         print(f"    COMPANION mCov_cluster        {m['mCov_cluster']:.3f}"
               f"      (area-weighted {m['mCov_cluster_area']:.3f})")
+        print(f"    PESSIMIST mIoU_cluster_penal. {m['mIoU_cluster_penalised']:.3f}"
+              f"      (splits/merges penalised)")
         print(f"              mIoU_1to1           {m['mIoU_1to1']:.3f}")
         print(f"              mIoU_best           {m['mIoU_best']:.3f}")
         print(f"              IoU_global          {m['IoU_global']:.3f}"

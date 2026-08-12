@@ -270,7 +270,8 @@ Five plots, produced by `scripts/eval_crown_overlap.py` at defaults (`tau_link=0
 
 | | 203 | 207 | 208 | 209 | 210 | **pooled** |
 |---|---|---|---|---|---|---|
-| **`mIoU_cluster`** (headline) | 0.315 | 0.474 | 0.496 | 0.342 | 0.470 | **0.414** |
+| **`mIoU_cluster`** (optimistic) | 0.315 | 0.474 | 0.496 | 0.342 | 0.470 | **0.414** |
+| **`mIoU_cluster_penalised`** (floor) | 0.315 | 0.373 | 0.407 | 0.342 | 0.346 | **0.353** |
 | τ-sensitivity (slope, §11) | −0.138 | −0.294 | −0.112 | −0.024 | −0.260 | — |
 | `mCov_cluster` (companion) | 0.347 | 0.544 | 0.531 | 0.376 | 0.537 | 0.464 |
 | `mIoU_cluster_area` | 0.555 | 0.576 | 0.648 | 0.486 | 0.593 | 0.589 |
