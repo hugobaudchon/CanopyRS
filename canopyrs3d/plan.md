@@ -41,6 +41,8 @@ Any metric added to this repo in future has to respect this.
 
 These are probe results against the real files, not assumptions. Several of them killed design complexity that would otherwise have been carried forward.
 
+*This table records the design-time probes, run on plots 209 and 210 only, before plots 203/207/208 existed. It is kept as the rationale for the design choices; §14 holds the current results across all five plots.*
+
 | Property | Finding |
 |---|---|
 | CRS | Both sides EPSG:32617 (UTM 17N, metres). No reprojection needed. |
@@ -203,19 +205,29 @@ Everything in `output/` is a regenerable artefact, not an input.
 
 ## 11. Sensitivity
 
-`mIoU_cluster` vs `tau_link`, measured at 0.3 / 0.4 / 0.5 / 0.6 / 0.7:
+`mIoU_cluster` vs `tau_link`, measured at 0.3 / 0.4 / 0.5 / 0.6 / 0.7 (full grid in `output/sweeps.csv`):
 
-| Plot | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 |
-|---|---|---|---|---|---|
-| 209 | 0.346 | 0.342 | 0.342 | 0.342 | 0.327 |
-| 210 | 0.497 | 0.491 | 0.470 | 0.428 | 0.398 |
+| Plot | 0.3 | 0.4 | **0.5** | 0.6 | 0.7 | slope d(mIoU)/dτ |
+|---|---|---|---|---|---|---|
+| 203 | 0.338 | 0.330 | **0.315** | 0.315 | 0.278 | −0.138 |
+| 207 | 0.524 | 0.510 | **0.474** | 0.451 | 0.407 | −0.294 |
+| 208 | 0.514 | 0.496 | **0.496** | 0.483 | 0.467 | −0.112 |
+| 209 | 0.345 | 0.342 | **0.342** | 0.342 | 0.327 | −0.024 |
+| 210 | 0.500 | 0.491 | **0.470** | 0.428 | 0.398 | −0.260 |
 
-Plot 209 is flat; plot 210 declines steadily. The headline is threshold-sensitive exactly where many-to-many structure exists, so **the sweep must always be published alongside the point estimate** rather than the single number quoted alone.
+**How to read the slope.** It is always negative, and that sign carries no information: raising τ can only delete edges, and a deleted edge turns a crown into `missed` with IoU = 0. (`corr(τ, n_edges) ≈ −0.95…−0.99`, `corr(τ, n_missed) ≈ +0.9`.) The downward trend is therefore mostly bookkeeping — crowns leaving the matched population — not geometric agreement degrading.
+
+**The magnitude is the signal: it says how much of a plot's score is a linking decision rather than a measurement.** Plot 209 at −0.024 is effectively threshold-independent, so its 0.342 is a hard number. Plot 207 at −0.294 moves 0.117 across the range, an eighth of its own value, so its 0.474 is soft and must never be quoted without the τ it came from. The ranking by |slope| tracks how much many-to-many structure each plot has: 209 has zero splits and nothing for τ to act on, while 207 and 210 have the most. Where splits exist, `corr(τ, n_split)` runs −0.38 to −0.72 — raising τ specifically dismantles split clusters.
+
+**`mIoU_cluster` and `mCov_cluster` co-move at `corr ≈ +0.98…+1.00`** across τ on every structured plot. τ shifts cluster *membership* without changing the balance between coverage and over-extension, which means the IoU-vs-coverage gap (the over-extension evidence in §14) is invariant to the threshold choice. Had they decoupled, τ would be trading one failure mode for another and that diagnosis would be threshold-dependent. Plot 209's lower +0.78 is an artifact of correlating a near-constant series, not a real difference.
+
+**Publish the sweep alongside the point estimate**, always.
 
 ## 12. Known limitations
 
 - **Ground-truth incompleteness** (§2) is the governing constraint. Every metric here is recall-flavoured; no number may be read as a precision estimate.
-- **The two plots fail differently.** Plot 209 has zero split/merge structure and 11 missed crowns — a detection problem. Plot 210 has real partitioning structure. Never pool without also reporting per plot.
+- **Plots fail differently.** Plot 209 has zero split/merge structure and 11 missed crowns — a detection problem; plot 203 likewise (17 missed of 40). Plots 207 and 210 have real partitioning structure. Never pool without also reporting per plot, and read every figure next to its `n_gt`.
+- **Uneven ground-truth attrition.** `below_canopy` removes 1 crown in plots 203/209 but 21–23 in plots 207/208, so plot 208's score rests on 21 crowns against plot 207's 51. Per-plot numbers are not equally precise.
 - **Plot-boundary truncation.** Predictions are clipped to the AOI; GT is not, since it defines the AOI. The `edge_gt` flag and the with/without-edge split make the residual effect visible.
 - **No score threshold applied**, by decision — CanopyRS already applied score thresholding and NMS upstream. `aggregator_score` (0.43–0.96) remains available should a sweep be wanted later.
 - **Two plots, ~72 usable crowns total.** Every number carries wide error bars; report counts next to every mean.
@@ -248,32 +260,37 @@ plus the cluster-type histograms in §7, and `tau_floor = 0.05` removing 0 edges
 
 **Visual QA.** Open `links.gpkg` in QGIS and eyeball a few `split`, `merge` and `tangled` clusters, plus a sample of `unmatched_pred` masks to judge what share are genuinely unannotated trees. The linking is the part most likely to be subtly wrong, and only looking at it catches that. **This is the one verification step still outstanding** — everything above is automated and passing.
 
-## 14. Results (first run)
+## 14. Results
 
-Produced by `scripts/eval_crown_overlap.py` at defaults. Full detail in `output/summary.json`; every regression target in §13 was reproduced exactly.
+Five plots, produced by `scripts/eval_crown_overlap.py` at defaults (`tau_link=0.5`). Full detail in `output/summary.json`; every regression target in §13 reproduced exactly, and adding plots 203/207/208 left the 209/210 figures bit-identical.
 
-| | plot 209 | plot 210 | pooled |
-|---|---|---|---|
-| **`mIoU_cluster`** (headline) | **0.342** | **0.470** | **0.405** |
-| `mCov_cluster` (companion) | 0.376 | 0.537 | 0.455 |
-| `mIoU_cluster_area` | 0.486 | 0.593 | 0.563 |
-| `mCov_cluster_area` | 0.510 | 0.652 | 0.612 |
-| `mIoU_1to1` | 0.342 | 0.354 | 0.349 |
-| `mIoU_best` | 0.352 | 0.396 | 0.375 |
-| `IoU_global` | 0.449 | 0.700 | 0.623 |
-| `Cov_global` | 0.557 | 0.774 | 0.712 |
-| Recall@IoU 0.5 | 0.38 | 0.32 | 0.35 |
-| Coverage ≥ 0.5 | 50 % | 71 % | 61 % |
-| Coverage ≥ 0.75 | 9 % | 37 % | 24 % |
-| GT crowns / predictions | 34 / 35 | 38 / 49 | 72 / 84 |
-| unmatched predictions | 12 (91 m²) | 12 (116 m²) | 24 (207 m²) |
+| | 203 | 207 | 208 | 209 | 210 | **pooled** |
+|---|---|---|---|---|---|---|
+| **`mIoU_cluster`** (headline) | 0.315 | 0.474 | 0.496 | 0.342 | 0.470 | **0.414** |
+| τ-sensitivity (slope, §11) | −0.138 | −0.294 | −0.112 | −0.024 | −0.260 | — |
+| `mCov_cluster` (companion) | 0.347 | 0.544 | 0.531 | 0.376 | 0.537 | 0.464 |
+| `mIoU_cluster_area` | 0.555 | 0.576 | 0.648 | 0.486 | 0.593 | 0.589 |
+| `mCov_cluster_area` | 0.599 | 0.631 | 0.671 | 0.510 | 0.652 | 0.631 |
+| `mIoU_1to1` | 0.307 | 0.385 | 0.459 | 0.342 | 0.354 | 0.362 |
+| `mIoU_best` | 0.322 | 0.405 | 0.461 | 0.352 | 0.396 | 0.382 |
+| `IoU_global` | 0.626 | 0.663 | 0.697 | 0.449 | 0.700 | 0.653 |
+| `Cov_global` | 0.658 | 0.753 | 0.726 | 0.557 | 0.774 | 0.717 |
+| Recall@IoU 0.25 | 0.53 | 0.71 | 0.76 | 0.68 | 0.68 | 0.66 |
+| Recall@IoU 0.5 | 0.33 | 0.39 | 0.67 | 0.38 | 0.32 | 0.39 |
+| Recall@IoU 0.75 | 0.03 | 0.02 | 0.05 | 0.03 | 0.03 | 0.03 |
+| Coverage ≥ 0.5 | 43 % | 71 % | 76 % | 50 % | 71 % | 61 % |
+| Coverage ≥ 0.75 | 10 % | 22 % | 5 % | 9 % | 37 % | 18 % |
+| GT crowns / predictions | 40 / 28 | 51 / 80 | 21 / 30 | 34 / 35 | 38 / 49 | 184 / 222 |
+| unmatched predictions | 5 (27 m²) | 23 (148 m²) | 6 (60 m²) | 12 (91 m²) | 12 (116 m²) | 58 (442 m²) |
 
-Cluster types — 209: 23 `one_to_one`, 11 `missed`, 12 `unmatched_pred`, **zero splits or merges**. 210: 15 `one_to_one`, 9 `split`, 4 `merge`, 5 `missed`, 12 `unmatched_pred`.
+Cluster types, pooled: 95 `one_to_one`, 43 `missed`, 25 `split`, 7 `merge`, 3 `tangled`, 58 `unmatched_pred`.
 
 **Reading these numbers.**
 
-1. **The two plots fail for different reasons, and pooling hides it.** Plot 209 has no split/merge structure at all: RGB either matches a crown one-to-one or misses it entirely (11 of 34). Its `mIoU_cluster` equals its `mIoU_1to1` exactly, which is the signature of a pure detection problem. Plot 210 has real partitioning structure, and its `mIoU_cluster` (0.470) sits well above its `mIoU_1to1` (0.354) — the many-to-many view recovers what a 1-1 metric would have thrown away.
-2. **Area weighting moves everything up ~0.12.** Failures concentrate in small crowns; by canopy area the agreement is materially better than the unweighted mean suggests.
-3. **`IoU_global` (0.449 / 0.700) far exceeds `mIoU_cluster`.** RGB recovers most of the canopy *area*; it is the per-instance partitioning that disagrees. That gap is the concrete argument for LiDAR supervision.
-4. **Boundaries agree far less than presence.** Recall@IoU 0.25 is 0.68 but Recall@IoU 0.75 is 0.03, and only 24 % of crowns reach 0.75 coverage. RGB finds roughly the right trees and draws roughly the wrong outlines.
-5. **24 unmatched RGB masks (207 m²) are excluded from every metric**, per §2. Reviewing what share are genuinely unannotated trees is the highest-value next step, since it bounds how pessimistic these numbers are.
+1. **Plots fail for different reasons; never quote the pooled number alone.** Plot 209 has *zero* splits or merges — RGB either matches a crown one-to-one or misses it outright (11 of 34). Its `mIoU_cluster` equals its `mIoU_1to1` to 14 decimal places, the signature of a pure detection problem, and its τ-slope of −0.024 confirms there is no linking structure to perturb. Plots 207 and 210 are the opposite: `mIoU_cluster` sits 0.09–0.12 above `mIoU_1to1` because the many-to-many view recovers splits a 1-1 metric would discard, and their steep τ-slopes say the same thing.
+2. **Plot 203 is the weakest (0.315) and it is a detection failure**: 17 of 40 crowns `missed`, and only 28 predictions for 40 crowns — the sole plot where RGB produces *fewer* instances than LiDAR annotated.
+3. **Area weighting lifts every plot by 0.10–0.24.** Failures concentrate in small crowns; by canopy area agreement is materially better than the unweighted mean suggests. Plot 203 moves most (0.315 → 0.555), so its problem is specifically small trees.
+4. **`IoU_global` (0.653 pooled) far exceeds `mIoU_cluster` (0.414).** RGB recovers most of the canopy *area*; it is the per-instance partitioning that disagrees. That gap is the concrete argument for LiDAR supervision.
+5. **Boundaries agree far less than presence.** Recall@IoU 0.25 is 0.66 but Recall@IoU 0.75 is 0.03 — uniformly, on every plot. RGB finds roughly the right trees and draws roughly the wrong outlines. This is the single most consistent finding across the site.
+6. **Ground-truth attrition is severe and uneven.** Plot 207 keeps 51 of 85 annotated trees and plot 208 keeps 21 of 50 — mostly `below_canopy` (23 and 21 respectively), i.e. trees the LiDAR annotated that never reach the canopy top and so are invisible from above by construction. Plot 208's headline 0.496 therefore rests on 21 crowns. Read every figure next to its `n_gt`.
+7. **58 unmatched RGB masks (442 m²) are excluded from every metric**, per §2. Plot 207 alone contributes 23. Reviewing what share are genuinely unannotated trees remains the highest-value next step, since it bounds how pessimistic these numbers are.
