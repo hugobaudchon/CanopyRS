@@ -177,7 +177,7 @@ Always report these two side by side. The gap between them localises the problem
 
 ## 10. Implementation
 
-One self-contained script, **`scripts/eval_crown_overlap.py`**, argparse CLI, no package scaffolding.
+One self-contained script, **`scripts/eval_crown_overlap.py`** (implemented), argparse CLI, no package scaffolding. Tests in `tests/test_eval_crown_overlap.py`.
 
 Run with the `canopyrs` conda env, which already has everything needed (from this directory):
 
@@ -222,13 +222,16 @@ Plot 209 is flat; plot 210 declines steadily. The headline is threshold-sensitiv
 
 ## 13. Verification
 
-**Unit tests** on synthetic polygons with analytically known IoU, covering: one-to-one; a 1→3 split; a 3→1 merge; a missed crown; an unmatched prediction (must be *excluded* from the mean, not scored 0); a boundary-graze pair that must **not** link; and a deliberately chained strip to exercise the §7 guard.
+**Unit tests** in `tests/test_eval_crown_overlap.py` (33 tests, run with `python -m pytest tests/`), on synthetic boxes with analytically known IoU: one-to-one; a 1→3 split; a 3→1 merge; a missed crown; an unmatched prediction (must be *excluded* from the mean, not scored 0); a boundary-graze pair that must **not** link; a deliberately chained strip to exercise the §7 guard; plus the preprocessing filters, coverage thresholds, and the invariants below.
 
 **Runtime invariants** — assert, don't hope:
 - GT areas sum to the GT-union area (disjointness);
 - every GT crown belongs to exactly one cluster;
 - Σ cluster GT areas equals total GT area;
-- `mIoU_1to1 ≤ mIoU_best ≤ mCov_cluster`.
+- `mIoU_1to1 ≤ mIoU_best` (the 1-1 assignment can never beat the per-crown best);
+- `iou_k ≤ cov_k` for every cluster (the union can never be smaller than the GT area).
+
+An earlier draft of this section also asserted `mIoU_best ≤ mCov_cluster`. That does **not** hold in general and is not asserted: the two average over different populations (`mIoU_best` over `N` GT crowns, `mCov_cluster` over `K` clusters), so a plot with many merge clusters can invert them. It happens to hold on both plots here, which is why it looked like an invariant.
 
 **End-to-end regression** against the measured baseline. For plots 209 / 210 at `tau_link = 0.5` the script must reproduce:
 
@@ -243,4 +246,34 @@ Plot 209 is flat; plot 210 declines steadily. The headline is threshold-sensitiv
 
 plus the cluster-type histograms in §7, and `tau_floor = 0.05` removing 0 edges on both plots. Disagreement means the preprocessing is wrong.
 
-**Visual QA.** Open `links.gpkg` in QGIS and eyeball a few `split`, `merge` and `tangled` clusters, plus a sample of `unmatched_pred` masks to judge what share are genuinely unannotated trees. The linking is the part most likely to be subtly wrong, and only looking at it catches that.
+**Visual QA.** Open `links.gpkg` in QGIS and eyeball a few `split`, `merge` and `tangled` clusters, plus a sample of `unmatched_pred` masks to judge what share are genuinely unannotated trees. The linking is the part most likely to be subtly wrong, and only looking at it catches that. **This is the one verification step still outstanding** — everything above is automated and passing.
+
+## 14. Results (first run)
+
+Produced by `scripts/eval_crown_overlap.py` at defaults. Full detail in `output/summary.json`; every regression target in §13 was reproduced exactly.
+
+| | plot 209 | plot 210 | pooled |
+|---|---|---|---|
+| **`mIoU_cluster`** (headline) | **0.342** | **0.470** | **0.405** |
+| `mCov_cluster` (companion) | 0.376 | 0.537 | 0.455 |
+| `mIoU_cluster_area` | 0.486 | 0.593 | 0.563 |
+| `mCov_cluster_area` | 0.510 | 0.652 | 0.612 |
+| `mIoU_1to1` | 0.342 | 0.354 | 0.349 |
+| `mIoU_best` | 0.352 | 0.396 | 0.375 |
+| `IoU_global` | 0.449 | 0.700 | 0.623 |
+| `Cov_global` | 0.557 | 0.774 | 0.712 |
+| Recall@IoU 0.5 | 0.38 | 0.32 | 0.35 |
+| Coverage ≥ 0.5 | 50 % | 71 % | 61 % |
+| Coverage ≥ 0.75 | 9 % | 37 % | 24 % |
+| GT crowns / predictions | 34 / 35 | 38 / 49 | 72 / 84 |
+| unmatched predictions | 12 (91 m²) | 12 (116 m²) | 24 (207 m²) |
+
+Cluster types — 209: 23 `one_to_one`, 11 `missed`, 12 `unmatched_pred`, **zero splits or merges**. 210: 15 `one_to_one`, 9 `split`, 4 `merge`, 5 `missed`, 12 `unmatched_pred`.
+
+**Reading these numbers.**
+
+1. **The two plots fail for different reasons, and pooling hides it.** Plot 209 has no split/merge structure at all: RGB either matches a crown one-to-one or misses it entirely (11 of 34). Its `mIoU_cluster` equals its `mIoU_1to1` exactly, which is the signature of a pure detection problem. Plot 210 has real partitioning structure, and its `mIoU_cluster` (0.470) sits well above its `mIoU_1to1` (0.354) — the many-to-many view recovers what a 1-1 metric would have thrown away.
+2. **Area weighting moves everything up ~0.12.** Failures concentrate in small crowns; by canopy area the agreement is materially better than the unweighted mean suggests.
+3. **`IoU_global` (0.449 / 0.700) far exceeds `mIoU_cluster`.** RGB recovers most of the canopy *area*; it is the per-instance partitioning that disagrees. That gap is the concrete argument for LiDAR supervision.
+4. **Boundaries agree far less than presence.** Recall@IoU 0.25 is 0.68 but Recall@IoU 0.75 is 0.03, and only 24 % of crowns reach 0.75 coverage. RGB finds roughly the right trees and draws roughly the wrong outlines.
+5. **24 unmatched RGB masks (207 m²) are excluded from every metric**, per §2. Reviewing what share are genuinely unannotated trees is the highest-value next step, since it bounds how pessimistic these numbers are.
