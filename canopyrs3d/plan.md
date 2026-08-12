@@ -175,6 +175,10 @@ Always report these two side by side. The gap between them localises the problem
 - **`mIoU_best`** — `mean_i max_j IoU_ij`. Lenient (several GT crowns may claim the same mask), but mirrors ForestMamba's `cov_per_gt` in `tools/eval_predictions.py`, which makes the 2D and 3D evaluations directly comparable.
 - **`Recall@IoU`** — fraction of GT crowns with `IoU ≥ t` under the one-to-one assignment, for `t ∈ {0.25, 0.5, 0.75}`. Recall only. If a precision-style number is ever wanted, it must be labelled a lower bound.
 - **`IoU_global`** = `a(⋃G ∩ ⋃P) / a(⋃G ∪ ⋃P)` and **`Cov_global`** = `a(⋃G ∩ ⋃P) / a(⋃G)` — instance-agnostic canopy overlap, separating "RGB missed canopy" from "RGB mis-partitioned canopy".
+
+  ⚠️ **`IoU_global` is the one metric in this script that an unmatched mask can cost something.** It unions *every* prediction, so a mask over a tree the LiDAR never annotated enters the denominator and depresses it. That contradicts §2, so **`IoU_global_linked`** is reported next to it — the same ratio over masks linked to at least one GT crown, which is the GT-anchored figure to quote. Measured effect: pooled 0.653 → 0.671, and 0.449 → 0.538 on plot 209. `Cov_global` divides by GT area only and is immune.
+
+  Note that `unmatched_pred` does **not** mean "disjoint from the ground truth" — it means no edge cleared `tau_link`. Such a mask may still clip a crown, which is why removing them can lower the ratio slightly (plot 203: 0.626 → 0.618).
 - **Fragmentation** — mean predictions per GT crown (split factor), mean GT crowns per prediction (merge factor), and the cluster-type histogram from §7.
 
 ## 10. Implementation
@@ -273,7 +277,8 @@ Five plots, produced by `scripts/eval_crown_overlap.py` at defaults (`tau_link=0
 | `mCov_cluster_area` | 0.599 | 0.631 | 0.671 | 0.510 | 0.652 | 0.631 |
 | `mIoU_1to1` | 0.307 | 0.385 | 0.459 | 0.342 | 0.354 | 0.362 |
 | `mIoU_best` | 0.322 | 0.405 | 0.461 | 0.352 | 0.396 | 0.382 |
-| `IoU_global` | 0.626 | 0.663 | 0.697 | 0.449 | 0.700 | 0.653 |
+| `IoU_global` (penalised, see §9) | 0.626 | 0.663 | 0.697 | 0.449 | 0.700 | 0.653 |
+| `IoU_global_linked` (GT-anchored) | 0.618 | 0.693 | 0.699 | 0.538 | 0.705 | 0.671 |
 | `Cov_global` | 0.658 | 0.753 | 0.726 | 0.557 | 0.774 | 0.717 |
 | Recall@IoU 0.25 | 0.53 | 0.71 | 0.76 | 0.68 | 0.68 | 0.66 |
 | Recall@IoU 0.5 | 0.33 | 0.39 | 0.67 | 0.38 | 0.32 | 0.39 |
@@ -290,7 +295,7 @@ Cluster types, pooled: 95 `one_to_one`, 43 `missed`, 25 `split`, 7 `merge`, 3 `t
 1. **Plots fail for different reasons; never quote the pooled number alone.** Plot 209 has *zero* splits or merges — RGB either matches a crown one-to-one or misses it outright (11 of 34). Its `mIoU_cluster` equals its `mIoU_1to1` to 14 decimal places, the signature of a pure detection problem, and its τ-slope of −0.024 confirms there is no linking structure to perturb. Plots 207 and 210 are the opposite: `mIoU_cluster` sits 0.09–0.12 above `mIoU_1to1` because the many-to-many view recovers splits a 1-1 metric would discard, and their steep τ-slopes say the same thing.
 2. **Plot 203 is the weakest (0.315) and it is a detection failure**: 17 of 40 crowns `missed`, and only 28 predictions for 40 crowns — the sole plot where RGB produces *fewer* instances than LiDAR annotated.
 3. **Area weighting lifts every plot by 0.10–0.24.** Failures concentrate in small crowns; by canopy area agreement is materially better than the unweighted mean suggests. Plot 203 moves most (0.315 → 0.555), so its problem is specifically small trees.
-4. **`IoU_global` (0.653 pooled) far exceeds `mIoU_cluster` (0.414).** RGB recovers most of the canopy *area*; it is the per-instance partitioning that disagrees. That gap is the concrete argument for LiDAR supervision.
+4. **`IoU_global_linked` (0.671 pooled) far exceeds `mIoU_cluster` (0.414).** RGB recovers most of the canopy *area*; it is the per-instance partitioning that disagrees. That gap is the concrete argument for LiDAR supervision. Quote the `_linked` row: the plain `IoU_global` is depressed by masks over unannotated trees (§9), most visibly on plot 209 (0.449 vs 0.538).
 5. **Boundaries agree far less than presence.** Recall@IoU 0.25 is 0.66 but Recall@IoU 0.75 is 0.03 — uniformly, on every plot. RGB finds roughly the right trees and draws roughly the wrong outlines. This is the single most consistent finding across the site.
 6. **Ground-truth attrition is severe and uneven.** Plot 207 keeps 51 of 85 annotated trees and plot 208 keeps 21 of 50 — mostly `below_canopy` (23 and 21 respectively), i.e. trees the LiDAR annotated that never reach the canopy top and so are invisible from above by construction. Plot 208's headline 0.496 therefore rests on 21 crowns. Read every figure next to its `n_gt`.
-7. **58 unmatched RGB masks (442 m²) are excluded from every metric**, per §2. Plot 207 alone contributes 23. Reviewing what share are genuinely unannotated trees remains the highest-value next step, since it bounds how pessimistic these numbers are.
+7. **58 unmatched RGB masks (442 m²) are excluded from every metric except `IoU_global`**, per §2 and the caveat in §9. Within GT-anchored clusters, linked masks put only 1.3–4.5 % of their area outside any annotated crown, so the documented lower-bound effect on `mIoU_cluster` is real but small. Plot 207 alone contributes 23. Reviewing what share are genuinely unannotated trees remains the highest-value next step, since it bounds how pessimistic these numbers are.

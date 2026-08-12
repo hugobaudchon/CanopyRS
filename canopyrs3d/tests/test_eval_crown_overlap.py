@@ -184,6 +184,25 @@ def test_over_extending_mask_lowers_iou_but_not_coverage():
     assert r.metrics["mIoU_cluster"] < r.metrics["mCov_cluster"]
 
 
+def test_iou_global_is_penalised_by_unmatched_masks_but_the_linked_variant_is_not():
+    """IoU_global unions *every* prediction, so a mask over an unannotated tree
+    inflates its denominator — the one metric where an unmatched mask costs
+    something. IoU_global_linked is the GT-anchored counterpart."""
+    gt = gdf(box(0, 0, 10, 10))                                  # 100 m2
+    alone = run(gt, gdf(box(0, 0, 10, 10)))
+    with_extra = run(gt, gdf(box(0, 0, 10, 10), box(50, 50, 60, 60)))  # +100 m2 elsewhere
+
+    assert alone.metrics["IoU_global"] == pytest.approx(1.0)
+    # union becomes 200 while the intersection stays 100
+    assert with_extra.metrics["IoU_global"] == pytest.approx(0.5)
+    # the linked variant ignores the unmatched mask entirely
+    assert with_extra.metrics["IoU_global_linked"] == pytest.approx(1.0)
+
+    # and the headline is untouched either way
+    assert with_extra.metrics["mIoU_cluster"] == pytest.approx(1.0)
+    assert with_extra.metrics["Cov_global"] == pytest.approx(1.0)
+
+
 def test_no_precision_style_metrics_are_reported():
     gt = gdf(box(0, 0, 10, 10))
     preds = gdf(box(0, 0, 10, 10))

@@ -539,7 +539,10 @@ def evaluate_plot(
         }
     )
 
-    metrics = compute_metrics(per_gt, per_cluster, gt, preds, unmatched)
+    linked_pred_idx = [j for j in range(len(preds)) if j not in set(unmatched_idx)]
+    metrics = compute_metrics(
+        per_gt, per_cluster, gt, preds, unmatched, linked_pred_idx
+    )
     return per_gt, per_cluster, unmatched, metrics, clusters, link_info
 
 
@@ -561,6 +564,7 @@ def compute_metrics(
     gt: gpd.GeoDataFrame,
     preds: gpd.GeoDataFrame,
     unmatched: pd.DataFrame,
+    linked_pred_idx: list | None = None,
 ) -> dict:
     anchored = per_cluster[per_cluster["n_gt"] >= 1]
 
@@ -570,9 +574,21 @@ def compute_metrics(
         global_inter = g_union.intersection(p_union).area
         global_union = g_union.union(p_union).area
         global_gt_area = g_union.area
+
+        # IoU_global unions *every* prediction, so masks over trees the LiDAR
+        # never annotated inflate its denominator — the one place in this script
+        # where an unmatched mask costs anything. IoU_global_linked repeats the
+        # calculation over linked masks only and is the GT-anchored figure.
+        if linked_pred_idx:
+            l_union = preds.geometry.iloc[linked_pred_idx].union_all()
+            linked_inter = g_union.intersection(l_union).area
+            linked_union = g_union.union(l_union).area
+        else:
+            linked_inter, linked_union = 0.0, global_gt_area
     else:
         global_inter = global_union = 0.0
         global_gt_area = float(gt.geometry.area.sum()) if len(gt) else 0.0
+        linked_inter, linked_union = 0.0, global_gt_area
 
     m = {
         # --- headline --------------------------------------------------------
@@ -586,6 +602,7 @@ def compute_metrics(
         "mIoU_best": _mean(per_gt["best_iou"]),
         # --- instance-agnostic ----------------------------------------------
         "IoU_global": _safe_div(global_inter, global_union),
+        "IoU_global_linked": _safe_div(linked_inter, linked_union),
         "Cov_global": _safe_div(global_inter, global_gt_area),
         # --- counts ----------------------------------------------------------
         "n_gt": int(len(per_gt)),
@@ -626,6 +643,8 @@ def compute_metrics(
     m["_global_inter"] = float(global_inter)
     m["_global_union"] = float(global_union)
     m["_global_gt_area"] = float(global_gt_area)
+    m["_linked_inter"] = float(linked_inter)
+    m["_linked_union"] = float(linked_union)
     return m
 
 
@@ -639,6 +658,8 @@ def pool_metrics(results: list[PlotResult]) -> dict:
     inter = sum(r.metrics["_global_inter"] for r in results)
     union = sum(r.metrics["_global_union"] for r in results)
     gt_area = sum(r.metrics["_global_gt_area"] for r in results)
+    l_inter = sum(r.metrics["_linked_inter"] for r in results)
+    l_union = sum(r.metrics["_linked_union"] for r in results)
 
     m = {
         "mIoU_cluster": _mean(anchored["iou_k"]),
@@ -648,6 +669,7 @@ def pool_metrics(results: list[PlotResult]) -> dict:
         "mIoU_1to1": _mean(per_gt["iou_1to1"]),
         "mIoU_best": _mean(per_gt["best_iou"]),
         "IoU_global": _safe_div(inter, union),
+        "IoU_global_linked": _safe_div(l_inter, l_union),
         "Cov_global": _safe_div(inter, gt_area),
         "n_gt": int(len(per_gt)),
         "n_pred": int(sum(r.metrics["n_pred"] for r in results)),
@@ -855,6 +877,8 @@ def print_report(results: list[PlotResult], pooled: dict) -> None:
         print(f"              mIoU_best           {m['mIoU_best']:.3f}")
         print(f"              IoU_global          {m['IoU_global']:.3f}"
               f"      Cov_global {m['Cov_global']:.3f}")
+        print(f"              IoU_global_linked   {m['IoU_global_linked']:.3f}"
+              f"      (excludes unmatched masks)")
         recalls = "  ".join(f"@{t}={m[f'Recall@IoU{t}']:.2f}" for t in RECALL_IOU)
         print(f"              Recall              {recalls}")
         suff = "  ".join(f"@{t}={m[f'frac_sufficient@{t}']:.2f}" for t in TAU_COV)
