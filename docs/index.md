@@ -18,7 +18,7 @@ A CanopyRS pipeline is a sequence of **components**, each responsible for one st
 4. **Aggregator** — merges overlapping detections across tiles using NMS to obtain raster-level predictions
 5. **Classifier** — classifies each detected tree
 
-The pipeline handles all I/O, state management, and background tasks. Components only implement their core logic.
+The pipeline threads typed data (imagery, objects) between components, checks each component's inputs and outputs against declared contracts, and saves every step so a run can be reloaded or resumed. Components only implement their core logic.
 
 ## Quick links
 
@@ -41,4 +41,4 @@ The pipeline handles all I/O, state management, and background tasks. Components
 
 - [Pipeline](api/pipeline.md) — pipeline orchestration
 - [Components](api/components/base.md) — component classes
-- [DataState](api/data-state.md) — state management
+- [Data model](api/data-model.md) — tables and persistence

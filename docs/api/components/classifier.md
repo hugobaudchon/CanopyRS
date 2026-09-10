@@ -1,5 +1,5 @@
 # Classifier
 
-::: canopyrs.engine.components.classifier.ClassifierComponent
+::: canopyrs.engine.components.classifier.Classifier
     options:
       inherited_members: false

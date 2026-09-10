@@ -18,7 +18,7 @@ dependencies = [
     "faster-coco-eval>=1.6.5",
     "GDAL>=3.0.0,<=3.8.0",
     "geopandas==1.0.1",
-    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@v0.6.5",
+    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@hugo-dev",
     "hf_xet>=1.0.0",
     "numpy>=1.24.0,<2.0.0",
     "pandas>=2.2.0",
@@ -26,10 +26,9 @@ dependencies = [
     "pycocotools>=2.0.7",
     "pytorch-metric-learning>=2.7.0",
     "PyYAML>=6.0.1",
-    "rasterio==1.3.7",
-    "segment-anything-py==1.0.1",
+    "rasterio>=1.3.7",
     "sam2==0.4.1",
-    "shapely==2.0.1",
+    "shapely>=2.0.1",
     "tensorboard==2.17.0",
     "tensorboardX==2.6.2.2",
     "torch==2.7.1",
@@ -41,11 +40,62 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Framework extras hold the pip-installable halo of each optional stack; compiled parts
+# (detectron2/detrex CUDA ops, mmcv) are built by `canopyrs setup <target>`, which also runs
+# these extras for you. See INSTALL_EXTRAS_PLAN.md.
+detectron2 = [
+    "fvcore",
+    "omegaconf>=2.1",
+    "hydra-core>=1.1",
+    "fairscale",
+    "timm",
+    "peft>=0.10",
+]
+# detrex shares detectron2's dependency family — the alias keeps `pip install ".[detrex]"`
+# and the detrex installer unit's EXTRA name symmetrical.
+detrex = [
+    "CanopyRS[detectron2]",
+]
+deepforest = [
+    "deepforest",
+]
+rfdetr = [
+    "rfdetr>=1.0",
+]
+mmdet = [
+    # The mmdet_rsprompter fork installs AS the `mmdet` package (vendored mmdet+mmpretrain with
+    # the rsprompter models and transformers>=5 fixes). Developers with a local editable
+    # checkout of the fork should use `canopyrs setup mmdet`, which preserves it.
+    "mmdet @ git+https://github.com/hugobaudchon/mmdet_rsprompter@canopyrs",
+    "mmengine",
+    "importlib_metadata",
+    "modelindex",
+    "rich",
+    "terminaltables",
+    "peft>=0.10",
+    "einops",
+    # mmcv is NOT listed: no wheels exist for our torch pin — `canopyrs setup mmdet` compiles
+    # it from source (~30 min, validated against torch 2.7.1/cu126).
+]
+sam = [
+    "segment-anything-py==1.0.1",
+]
+sam3 = [
+    # Sam3TrackerModel/Sam3TrackerProcessor ship from transformers 5.0. NOTE: facebook/sam3 is
+    # a gated HF model — request access on the model page and `hf auth login`.
+    "transformers>=5.0",
+]
+all = [
+    "CanopyRS[deepforest,detectron2,mmdet,rfdetr,sam,sam3]",
+]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.25.0",
 ]
+
+[project.scripts]
+canopyrs = "canopyrs.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/hugobaudchon/CanopyRS"
@@ -56,3 +106,12 @@ where = ["."]
 include = ["canopyrs*"]
 
 [tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+# Scope collection to the project's own tests (keeps the vendored detrex/detectron2 test tree,
+# which has unrelated missing deps like `av`, out of the run).
+testpaths = ["tests"]
+markers = [
+    "slow: end-to-end / GPU tests (deselect with '-m \"not slow\"')",
+    "integration: tests that touch real data or external services",
+]

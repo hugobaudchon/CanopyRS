@@ -438,3 +438,70 @@ class TestRasterLevelEvaluation:
         # With bbox, both are 10x10 boxes -> perfect match
         assert metrics['precision'] == 1.0
         assert metrics['recall'] == 1.0
+
+
+@pytest.mark.integration
+class TestRasterEvalContextSubsets:
+    """The grid-search fast path scores prediction subsets against a superset context;
+    that must be exactly equivalent to building a fresh context on the subset."""
+
+    @staticmethod
+    def _preds_and_truth():
+        preds_gdf = gpd.GeoDataFrame({
+            'geometry': [
+                box(0, 0, 10, 10),        # matches truth 0
+                box(1, 1, 11, 11),        # overlaps truth 0 (duplicate-ish, lower score)
+                box(20, 20, 30, 30),      # matches truth 1
+                box(60, 60, 70, 70),      # matches nothing
+                box(40, 40, 50, 50),      # matches truth 2
+            ],
+            'aggregator_score': [0.9, 0.6, 0.85, 0.4, 0.8],
+        }, crs="EPSG:32618")
+        truth_gdf = gpd.GeoDataFrame({
+            'geometry': [box(0, 0, 10, 10), box(20, 20, 30, 30), box(40, 40, 50, 50)],
+        }, crs="EPSG:32618")
+        return preds_gdf, truth_gdf
+
+    def test_masked_superset_equals_subset_context(self):
+        import numpy as np
+
+        preds_gdf, truth_gdf = self._preds_and_truth()
+        mask = np.array([True, False, True, False, True])
+        iou_thresholds = [0.5, 0.75]
+
+        superset_context = CocoEvaluator.build_raster_eval_context(
+            iou_type='segm', preds=preds_gdf, truths=truth_gdf,
+            aoi=None, ground_resolution=1.0)
+        masked_metrics = CocoEvaluator.evaluate_raster_from_context(
+            superset_context, iou_thresholds=iou_thresholds, pred_mask=mask)
+
+        subset_context = CocoEvaluator.build_raster_eval_context(
+            iou_type='segm', preds=preds_gdf[mask].reset_index(drop=True), truths=truth_gdf,
+            aoi=None, ground_resolution=1.0)
+        subset_metrics = CocoEvaluator.evaluate_raster_from_context(
+            subset_context, iou_thresholds=iou_thresholds)
+
+        for key in ['precision', 'recall', 'f1', 'tp', 'fp', 'fn', 'num_truths', 'num_preds',
+                    'precision_per_iou', 'recall_per_iou', 'f1_per_iou']:
+            assert masked_metrics[key] == subset_metrics[key], key
+        assert masked_metrics['num_preds'] == 3
+
+    def test_no_mask_equals_wrapper(self, tmp_path):
+        preds_gdf, truth_gdf = self._preds_and_truth()
+        preds_path = tmp_path / "preds.gpkg"
+        truth_path = tmp_path / "truth.gpkg"
+        preds_gdf.to_file(preds_path, driver="GPKG")
+        truth_gdf.to_file(truth_path, driver="GPKG")
+
+        wrapper_metrics = CocoEvaluator.raster_level_multi_iou_thresholds(
+            iou_type='segm', preds_gpkg_path=str(preds_path), truth_gpkg_path=str(truth_path),
+            aoi_gpkg_path=None, ground_resolution=1.0, iou_thresholds=[0.5])
+
+        context = CocoEvaluator.build_raster_eval_context(
+            iou_type='segm', preds=preds_gdf, truths=truth_gdf,
+            aoi=None, ground_resolution=1.0)
+        context_metrics = CocoEvaluator.evaluate_raster_from_context(
+            context, iou_thresholds=[0.5])
+
+        for key in ['precision', 'recall', 'f1', 'tp', 'fp', 'fn', 'num_truths', 'num_preds']:
+            assert wrapper_metrics[key] == context_metrics[key], key

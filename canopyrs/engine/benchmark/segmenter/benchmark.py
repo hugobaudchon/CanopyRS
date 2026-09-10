@@ -1,7 +1,6 @@
-from pathlib import Path
-
 from canopyrs.engine.benchmark.base.base_benchmarker import BaseBenchmarker
-from canopyrs.engine.config_parsers import SegmenterConfig, DetectorConfig, AggregatorConfig, PipelineConfig
+from canopyrs.engine.config_parsers import (AggregatorConfig, ClassifierConfig, DetectorConfig,
+                                            PipelineConfig, SegmenterConfig, TilerizerConfig)
 
 
 class SegmenterBenchmarker(BaseBenchmarker):
@@ -21,7 +20,9 @@ class SegmenterBenchmarker(BaseBenchmarker):
                                        nms_score_thresholds: list[float],
                                        eval_at_ground_resolution: float = 0.045,
                                        n_workers: int = 6,
-                                       prompter_detector_config: DetectorConfig = None):
+                                       prompter_detector_config: DetectorConfig = None,
+                                       classifier_config: ClassifierConfig = None,
+                                       classifier_crop_tilerizer_config: TilerizerConfig = None):
         """
         Find the optimal NMS IoU threshold for the segmenter by evaluating different thresholds on the validation set.
         
@@ -34,20 +35,18 @@ class SegmenterBenchmarker(BaseBenchmarker):
             eval_at_ground_resolution: Ground resolution for evaluation
             n_workers: Number of parallel workers
             prompter_detector_config: Optional detector config to chain before segmenter (default None)
-        
+            classifier_config: Optional — classify every mask before the searched aggregation, so the
+                search optimizes the same pipeline benchmark() will run (required together with
+                classifier_crop_tilerizer_config, a tile_type='polygon' tilerizer)
+            classifier_crop_tilerizer_config: Polygon tilerizer config for the classifier's crops
+
         Returns:
             AggregatorConfig: Optimal aggregator config with best nms_threshold and score_threshold set
         """
-        # Build pipeline config with optional detector chained before segmenter
-        if prompter_detector_config is not None:
-            pipeline_config = PipelineConfig(components_configs=[
-                ('detector', prompter_detector_config),
-                ('segmenter', segmenter_config)
-            ])
-        else:
-            pipeline_config = PipelineConfig(components_configs=[
-                ('segmenter', segmenter_config)
-            ])
+        steps = ([('detector', prompter_detector_config)] if prompter_detector_config is not None else [])
+        steps += [('segmenter', segmenter_config)]
+        steps = self._with_classifier_if_provided(steps, classifier_config, classifier_crop_tilerizer_config)
+        pipeline_config = PipelineConfig(components_configs=steps)
 
         return self._find_optimal_nms_iou_threshold(
             pipeline_config=pipeline_config,
@@ -65,32 +64,32 @@ class SegmenterBenchmarker(BaseBenchmarker):
                   segmenter_config: SegmenterConfig,
                   aggregator_config: AggregatorConfig,
                   dataset_names: str | list[str],
-                  prompter_detector_config: DetectorConfig = None):
+                  prompter_detector_config: DetectorConfig = None,
+                  classifier_config: ClassifierConfig = None,
+                  classifier_crop_tilerizer_config: TilerizerConfig = None):
         """
         Runs the segmenter on the entire test dataset, recording both tile-level and raster-level metrics for each
         individual product and also aggregated for each dataset (which are made of 1 or more products).
-        
+
         Args:
             segmenter_config: Configuration for the segmenter
             aggregator_config: Configuration for the aggregator
             dataset_names: Dataset name(s) to benchmark on
             prompter_detector_config: Optional detector config to chain before segmenter (default None)
+            classifier_config: Optional — classify every mask before aggregation (polygon tilerizer +
+                classifier inserted before the aggregator), adding class-aware tile-level metrics;
+                survivors carry their class into the raster-level GPKG.
+            classifier_crop_tilerizer_config: Polygon tilerizer config for the classifier's crops
+                (required with classifier_config).
         """
-        # Build pipeline config with optional detector chained before segmenter
-        if prompter_detector_config is not None:
-            pipeline_config = PipelineConfig(components_configs=[
-                ('detector', prompter_detector_config),
-                ('segmenter', segmenter_config),
-                ('aggregator', aggregator_config)
-            ])
-        else:
-            pipeline_config = PipelineConfig(components_configs=[
-                ('segmenter', segmenter_config),
-                ('aggregator', aggregator_config)
-            ])
-        
+        model_components = ([('detector', prompter_detector_config)] if prompter_detector_config is not None else [])
+        model_components += [('segmenter', segmenter_config)]
+        model_components = self._with_classifier_if_provided(model_components,
+                                                 classifier_config, classifier_crop_tilerizer_config)
+
         return self._benchmark(
-            pipeline_config_with_aggregator=pipeline_config,
+            model_components=model_components,
+            aggregator_config=aggregator_config,
             component_name='segmenter',
             iou_type='segm',
             dataset_names=dataset_names

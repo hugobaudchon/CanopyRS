@@ -4,12 +4,12 @@ import torchvision.models as models
 from typing import Dict, List, Union
 
 from canopyrs.engine.config_parsers import ClassifierConfig
-from canopyrs.engine.models.classifier.classifier_base import TorchTrainerClassifierWrapperBase
+from canopyrs.engine.models.classifier.classifier_base import ClassifierWrapperBase
 from canopyrs.engine.models.registry import CLASSIFIER_REGISTRY
 
 
 @CLASSIFIER_REGISTRY.register('resnet')
-class ResNetClassifier(TorchTrainerClassifierWrapperBase):
+class ResNetClassifier(ClassifierWrapperBase):
     """ResNet-based classifier implementation"""
 
     def __init__(self, config: ClassifierConfig):

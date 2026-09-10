@@ -1,165 +1,59 @@
+"""Classifier: a predicted class + score per object. One mode: each input Object points at its own
+crop (``object.imagery`` -> Crops), the classifier reads the crops and carries the objects forward
+with their class (``prev_object_id`` -> the input object), preserving geometry and lineage.
+
+The '1 image = 1 class' case (a seeded crops folder, no detections) is not a second mode: the
+pipeline derives one Object per crop at construction (``Objects.from_imagery``), so the classifier
+always sees Objects-on-Crops.
 """
-ClassifierComponent with simplified architecture.
 
-Single __call__() method returns flattened DataFrame (no geometry).
-Pipeline handles merging into existing GDF and I/O.
-"""
-
-import warnings
-from pathlib import Path
-from typing import Set
-
-import pandas as pd
-
-from geodataset.dataset import InstanceSegmentationLabeledRasterCocoDataset
-
-from canopyrs.engine.constants import Col, StateKey, INFER_AOI_NAME
-from canopyrs.engine.components.base import BaseComponent, ComponentResult, validate_requirements
-from canopyrs.engine.config_parsers import ClassifierConfig
-from canopyrs.engine.data_state import DataState
 from canopyrs.engine.models.registry import CLASSIFIER_REGISTRY
-from canopyrs.engine.models.utils import collate_fn_infer_image_masks
+from canopyrs.engine.constants import Col
+from canopyrs.engine.data import Crops, Objects
+from canopyrs.engine.contracts import Need
+from canopyrs.engine.components.base import Component, register_component
 
 
-class ClassifierComponent(BaseComponent):
-    """
-    Classifies objects in polygon-tiled imagery.
+@register_component("classifier")
+class Classifier(Component):
+    def __init__(self, config):
+        super().__init__(config)
+        self._model_class = self._model(CLASSIFIER_REGISTRY)
+        # Objects each pointing at their own crop — never whole tiles (several objects would silently
+        # share one class); a polygon tilerizer (or the pipeline's crop-seed derivation) makes these.
+        self.requires = (Need(Objects, links=("imagery",), on=Crops),)
+        columns = [Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORE, Col.CLASSIFIER_SCORES]
+        if config.class_names:
+            columns.append(Col.CLASSIFIER_CLASS_NAME)
+        # Adds the class columns; geometry and links are inherited through the lineage.
+        self.produces = Need(Objects, columns=tuple(columns), links=("prev_objects",), on=Crops)
 
-    Requirements:
-        - tiles_path: Directory containing polygon tiles
-        - infer_coco_path: COCO annotations with instance masks
-
-    Produces:
-        - Updated infer_gdf with classification results
-        - Columns: classifier_score, classifier_class, classifier_scores
-    """
-
-    name = 'classifier'
-
-    BASE_REQUIRES_STATE = {StateKey.TILES_PATH, StateKey.INFER_COCO_PATH}
-    BASE_REQUIRES_COLUMNS: Set[str] = set()
-
-    BASE_PRODUCES_STATE = {StateKey.INFER_GDF, StateKey.INFER_COCO_PATH}
-    BASE_PRODUCES_COLUMNS = {Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES}
-
-    BASE_STATE_HINTS = {
-        StateKey.TILES_PATH: "Classifier needs polygon tiles. Add a tilerizer with tile_type='polygon'.",
-        StateKey.INFER_COCO_PATH: "Classifier needs COCO annotations from a polygon tilerizer.",
-    }
-
-    BASE_COLUMN_HINTS = {
-        Col.OBJECT_ID: "Classifier needs object IDs to merge results back to infer_gdf.",
-    }
-
-    def __init__(
-        self,
-        config: ClassifierConfig,
-        parent_output_path: str = None,
-        component_id: int = None
-    ):
-        super().__init__(config, parent_output_path, component_id)
-
-        # Store model class (instantiate in __call__ to avoid loading during validation)
-        if config.model not in CLASSIFIER_REGISTRY:
-            raise ValueError(f'Invalid classifier model: {config.model}')
-        self._model_class = CLASSIFIER_REGISTRY.get(config.model)
-
-        # Set requirements
-        self.requires_state = set(self.BASE_REQUIRES_STATE)
-        self.requires_columns = set(self.BASE_REQUIRES_COLUMNS)
-        self.produces_state = set(self.BASE_PRODUCES_STATE)
-        self.produces_columns = set(self.BASE_PRODUCES_COLUMNS)
-
-        # Set hints
-        self.state_hints = dict(self.BASE_STATE_HINTS)
-        self.column_hints = dict(self.BASE_COLUMN_HINTS)
-
-    @classmethod
-    def run_standalone(
-        cls,
-        config: ClassifierConfig,
-        tiles_path: str,
-        infer_coco_path: str,
-        output_path: str,
-    ) -> 'DataState':
-        """
-        Run classifier standalone on polygon-tiled imagery.
-
-        Args:
-            config: Classifier configuration
-            tiles_path: Path to directory containing polygon tiles
-            infer_coco_path: Path to COCO annotations with instance masks
-            output_path: Where to save outputs
-
-        Returns:
-            DataState with classification results (access .infer_gdf for the GeoDataFrame)
-
-        Example:
-            result = ClassifierComponent.run_standalone(
-                config=ClassifierConfig(model='resnet50', ...),
-                tiles_path='./polygon_tiles',
-                infer_coco_path='./coco.json',
-                output_path='./output',
-            )
-            print(result.infer_gdf)
-        """
-        from canopyrs.engine.pipeline import run_component
-        return run_component(
-            component=cls(config),
-            output_path=output_path,
-            tiles_path=tiles_path,
-            infer_coco_path=infer_coco_path,
-        )
-
-    @validate_requirements
-    def __call__(self, data_state: DataState) -> ComponentResult:
-        """
-        Run classification on polygon tiles.
-
-        Returns flattened DataFrame (no geometry) with classification results.
-        Pipeline handles merging into existing GDF.
-        """
-        
+    def run(self, objects: Objects) -> Objects:
         classifier = self._model_class(self.config)
+        crops = objects.linked("imagery")   # the per-object crops (one crop per object)
+        loader = self._loader(crops, batch_size=self.config.batch_size)
+        image_ids, predictions, class_scores = classifier.infer(loader)
 
-        # Create dataset
-        infer_ds = InstanceSegmentationLabeledRasterCocoDataset(
-            root_path=[data_state.tiles_path, Path(data_state.infer_coco_path).parent],
-            transform=None,
-            fold=INFER_AOI_NAME,
-            other_attributes_names_to_pass=[Col.OBJECT_ID]
-        )
+        rows = objects.df.set_index(Col.IMAGE_ID).loc[image_ids]   # one crop per object, in loader order
+        out = Objects.build(geometry=rows[Col.GEOMETRY].values,
+                            geom_kind=rows[Col.GEOM_KIND].values,
+                            prev_object_id=rows[Col.OBJECT_ID].values,
+                            crs=objects.df.crs, prev_objects=objects,
+                            **self._class_columns(predictions, class_scores))
+        print(f"Classifier: classified {len(out)} objects.")
+        return out
 
-        # Run inference
-        tiles_paths, class_scores, class_predictions, object_ids = classifier.infer(
-            infer_ds, collate_fn_infer_image_masks
-        )
-
-        # Flatten outputs into DataFrame (no geometry - will merge into existing)
-        df = pd.DataFrame({
-            Col.OBJECT_ID: object_ids,
-            Col.TILE_PATH: tiles_paths,  # Include for fallback merge key
-            Col.CLASSIFIER_CLASS: class_predictions,
-            Col.CLASSIFIER_SCORE: [
-                scores[pred_idx] for scores, pred_idx in zip(class_scores, class_predictions)
-            ],
-            Col.CLASSIFIER_SCORES: class_scores,
-        })
-
-        # Component-specific validation: warn about unclassified items
-        unclassified = df[Col.CLASSIFIER_CLASS].isnull().sum()
-        if unclassified > 0:
-            warnings.warn(f"{unclassified} items could not be classified.")
-
-        print(f"ClassifierComponent: Classified {len(df) - unclassified}/{len(df)} items.")
-
-        return ComponentResult(
-            gdf=df,  # DataFrame, not GeoDataFrame - no geometry
-            produced_columns={Col.CLASSIFIER_SCORE, Col.CLASSIFIER_CLASS, Col.CLASSIFIER_SCORES},
-            objects_are_new=False,
-            save_gpkg=True,
-            gpkg_name_suffix="notaggregated",  # classifier saves final results
-            save_coco=True,
-            coco_scores_column=Col.CLASSIFIER_SCORE,
-            coco_categories_column=Col.CLASSIFIER_CLASS,
-        )
+    def _class_columns(self, predictions, class_scores) -> dict:
+        """The classifier output columns from aligned per-item predictions + score vectors."""
+        names = self.config.class_names
+        classes, top_scores, all_scores, class_names = [], [], [], []
+        for prediction, scores in zip(predictions, class_scores):
+            classes.append(prediction)
+            top_scores.append(scores[prediction] if prediction is not None else None)
+            all_scores.append(scores)
+            if names:
+                class_names.append(names[prediction] if (prediction is not None and 0 <= prediction < len(names)) else None)
+        columns = {Col.CLASSIFIER_CLASS: classes, Col.CLASSIFIER_SCORE: top_scores, Col.CLASSIFIER_SCORES: all_scores}
+        if names:
+            columns[Col.CLASSIFIER_CLASS_NAME] = class_names
+        return columns

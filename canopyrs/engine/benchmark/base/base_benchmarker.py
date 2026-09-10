@@ -3,10 +3,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from faster_coco_eval.core.coco import COCO
 
-from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator
+from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator, align_coco_datasets_by_name
 from canopyrs.engine.benchmark.base.find_optimal_detector_aggregator import find_optimal_detector_aggregator
-from canopyrs.engine.config_parsers import DetectorConfig, AggregatorConfig, PipelineConfig, InferIOConfig, SegmenterConfig
+from canopyrs.engine.config_parsers import AggregatorConfig, PipelineConfig
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.utils import merge_coco_jsons
 
@@ -48,6 +49,21 @@ class BaseBenchmarker(ABC):
 
         assert fold_name in ['test', 'valid'], f'Fold {fold_name} not supported. Supported folds are "test" and "valid".'
 
+    @staticmethod
+    def _with_classifier_if_provided(model_components: list, classifier_config, classifier_crop_tilerizer_config) -> list:
+        """The model steps plus the class-aware stage (polygon tilerizer + classifier) when
+        configured — both configs are required together, so a benchmark never invents a tilerizer."""
+        if classifier_config is None:
+            return model_components
+        assert classifier_crop_tilerizer_config is not None, \
+            "classifier_config needs classifier_crop_tilerizer_config (a tile_type='polygon' tilerizer)"
+        assert classifier_crop_tilerizer_config.tile_type == 'polygon', \
+            "classifier_crop_tilerizer_config must have tile_type='polygon' (one crop per object)"
+        return model_components + [
+            ('tilerizer', classifier_crop_tilerizer_config),
+            ('classifier', classifier_config),
+        ]
+
     def _get_preprocessed_datasets(self, dataset_names: str | list[str]):
         """
         Load and validate requested datasets for the current fold.
@@ -64,42 +80,48 @@ class BaseBenchmarker(ABC):
                               product_tiles_path: str | Path,
                               pipeline_config: PipelineConfig,
                               component_name: str,
+                              input_gpkg: str | Path | None = None,
+                              input_coco: str | Path | None = None,
                               output_folder: str | Path = None):
         """
-        Run inference for one product and return paths to outputs.
-        
-        pipeline_config: Pre-configured PipelineConfig from child class
-        component_name: 'detector' or 'segmenter' - used to retrieve output files
-        """
+        Run inference for one product (over a pre-cut tiles folder) and return output paths.
 
+        pipeline_config: Pre-configured PipelineConfig from child class
+        component_name: 'detector', 'segmenter' or 'classifier' - identifies the model component
+
+        Returns (model_coco, run_dir, aggregator_gpkg, classified_coco):
+          - model_coco: tile-level COCO exported at the model component (for tile-level eval);
+          - run_dir: the run's output folder (reloadable via Pipeline.from_dir for the aggregator search);
+          - aggregator_gpkg: raster-level GPKG exported at the last aggregator, or None if the pipeline
+            has no aggregator;
+          - classified_coco: class-aware tile-level COCO exported at the classifier (every detection
+            with its predicted class), or None if the pipeline has no classifier.
+        """
+        if input_coco is not None:
+            raise NotImplementedError("input_coco seeding is not yet supported by the pipeline.")
         if output_folder is None:
             output_folder = self.output_folder / self.fold_name / product_name
 
-        io_config = InferIOConfig(
-            input_imagery=None,
-            tiles_path=str(product_tiles_path),
-            output_folder=str(output_folder),
+        pipeline = Pipeline.from_config(
+            pipeline_config.components_configs,
+            tiles=str(product_tiles_path),
+            objects=str(input_gpkg) if input_gpkg is not None else None,
+            output_dir=str(output_folder),
         )
+        pipeline.run(verbose=False)
 
-        pipeline = Pipeline.from_config(io_config, pipeline_config, verbose=False)
-        pipeline()
+        model_idx = max((c.component_id for c in pipeline.components if c.name == component_name),
+                        default=None)
+        agg_idx = max((c.component_id for c in pipeline.components if c.name == 'aggregator'),
+                      default=None)
+        cls_idx = max((c.component_id for c in pipeline.components if c.name == 'classifier'),
+                      default=None)
 
-        last_model_component_id = None
-        last_aggregator_component_id = None
-        for component in pipeline.components:
-            if component.name == component_name:
-                last_model_component_id = component.component_id
-            if component.name == 'aggregator':
-                last_aggregator_component_id = component.component_id
+        model_coco_output = pipeline.export("coco", end_at=model_idx) if model_idx is not None else None
+        aggregator_output = pipeline.export("gpkg", end_at=agg_idx) if agg_idx is not None else None
+        classified_coco = pipeline.export("coco", end_at=cls_idx) if cls_idx is not None else None
 
-        model_coco_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'coco')
-        model_gpkg_output = pipeline.data_state.get_output_file(component_name, last_model_component_id, 'pre_aggregated_gpkg')
-        if last_aggregator_component_id is not None:
-            aggregator_output = pipeline.data_state.get_output_file('aggregator', last_aggregator_component_id, 'gpkg')
-        else:
-            aggregator_output = None
-
-        return model_coco_output, model_gpkg_output, aggregator_output
+        return model_coco_output, str(output_folder), aggregator_output, classified_coco
 
     def _find_optimal_nms_iou_threshold(self,
                                         pipeline_config: PipelineConfig,
@@ -125,13 +147,12 @@ class BaseBenchmarker(ABC):
         print(f"Finding optimal NMS IoU threshold for datasets: {dataset_names}. Inferring rasters...")
 
         raster_names: list[str] = []
-        model_gpkg_outputs: list[str] = []
+        model_run_dirs: list[str] = []
         truths_gdfs: list[str] = []
         aois_gdfs: list[str] = []
-        tiles_roots: list[str] = []
         for dataset_name, dataset in datasets.items():
             for location, product_name, tiles_path, aoi_gpkg, truths_gpkg, truths_coco in dataset.iter_fold(self.raw_data_root, fold="valid"):
-                _, model_gpkg_output, _ = self._infer_single_product(
+                _, model_run_dir, _, _ = self._infer_single_product(
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     pipeline_config=pipeline_config,
@@ -140,21 +161,19 @@ class BaseBenchmarker(ABC):
                 )
 
                 raster_names.append(f"{location}/{product_name}")
-                model_gpkg_outputs.append(str(model_gpkg_output))
+                model_run_dirs.append(str(model_run_dir))
                 truths_gdfs.append(truths_gpkg)
                 aois_gdfs.append(aoi_gpkg)
-                tiles_roots.append(str(tiles_path))
 
         print(f"Datasets inferred. Starting NMS IoU threshold search...")
         nms_search_output_folder = self.output_folder / self.fold_name / 'NMS_search'
-        
+
         aggregators_results_df = find_optimal_detector_aggregator(
             output_folder=str(nms_search_output_folder),
             raster_names=raster_names,
-            model_gpkg_outputs=model_gpkg_outputs,
+            model_run_dirs=model_run_dirs,
             truths_gdfs=truths_gdfs,
             aois_gdfs=aois_gdfs,
-            tiles_roots=tiles_roots,
             ground_resolution=eval_at_ground_resolution,
             nms_iou_thresholds=nms_iou_thresholds,
             nms_score_thresholds=nms_score_thresholds,
@@ -193,7 +212,8 @@ class BaseBenchmarker(ABC):
         return optimal_aggregator_config
 
     def _benchmark(self,
-                   pipeline_config_with_aggregator: PipelineConfig,
+                   model_components: list,
+                   aggregator_config: AggregatorConfig,
                    component_name: str,
                    iou_type: str,
                    dataset_names: str | list[str]):
@@ -201,16 +221,13 @@ class BaseBenchmarker(ABC):
         """
         Runs the model on the entire test dataset, recording both tile-level and raster-level metrics for each
          individual product and also aggregated for each dataset (which are made of 1 or more products).
-         
-        pipeline_config_with_aggregator: Pre-configured PipelineConfig from child class (with aggregator)
+
+        model_components: ordered (kind, config) steps, without the aggregator (appended per product,
+            only when raster-level eval is possible). May include a polygon tilerizer + classifier for
+            class-aware benchmarking.
         component_name: 'detector' or 'segmenter'
         iou_type: 'bbox' or 'segm'
         """
-        
-        # Verify that the last component is an aggregator
-        assert len(pipeline_config_with_aggregator.components_configs) > 1, "Pipeline config must have at least 2 components (model + aggregator)"
-        assert pipeline_config_with_aggregator.components_configs[-1][0] == 'aggregator', "Last component must be 'aggregator'"
-
         datasets = self._get_preprocessed_datasets(dataset_names)
 
         evaluator = CocoEvaluator()
@@ -220,21 +237,16 @@ class BaseBenchmarker(ABC):
         for dataset_name, dataset in datasets.items():
             dataset_preds_cocos = []
             dataset_truths_cocos = []
+            dataset_classified_cocos = []
             dataset_raster_level_metrics = []
             for location, product_name, tiles_path, aoi_gpkg, truths_gpkg, truths_coco in dataset.iter_fold(self.raw_data_root, fold="test"):
-                if aoi_gpkg is not None and truths_gpkg is not None:
-                    do_raster_level_eval = True
-                else:
-                    do_raster_level_eval = False
+                do_raster_level_eval = aoi_gpkg is not None and truths_gpkg is not None
 
-                # Only use aggregator if raster-level eval is needed
-                if do_raster_level_eval:
-                    pipeline_config = pipeline_config_with_aggregator
-                else:
-                    # Create pipeline without aggregator (pop the last component since it's the aggregator)
-                    pipeline_config = PipelineConfig(components_configs=pipeline_config_with_aggregator.components_configs[:-1])
+                # The aggregator only runs when raster-level eval is possible.
+                steps = model_components + ([('aggregator', aggregator_config)] if do_raster_level_eval else [])
+                pipeline_config = PipelineConfig(components_configs=steps)
 
-                preds_coco_json, _, preds_aggregated_gpkg = self._infer_single_product(
+                preds_coco_json, _, preds_aggregated_gpkg, preds_classified_coco = self._infer_single_product(
                     product_name=product_name,
                     product_tiles_path=tiles_path,
                     pipeline_config=pipeline_config,
@@ -248,6 +260,10 @@ class BaseBenchmarker(ABC):
                     max_dets=[1, 10, 100, dataset.tile_level_eval_maxDets],
                     images_common_ground_resolution=dataset.ground_resolution
                 )
+                if preds_classified_coco is not None:
+                    tile_metrics.update(self._classification_tile_metrics(
+                        evaluator, iou_type, preds_classified_coco, truths_coco, dataset))
+                    dataset_classified_cocos.append(str(preds_classified_coco))
                 tile_metrics['location'] = location
                 tile_metrics['product_name'] = product_name
                 all_tile_level_metrics.append(tile_metrics)
@@ -291,6 +307,11 @@ class BaseBenchmarker(ABC):
                 max_dets=[1, 10, 100, dataset.tile_level_eval_maxDets],
                 images_common_ground_resolution=dataset.ground_resolution
             )
+            if dataset_classified_cocos:
+                merged_classified_coco_path = self.output_folder / self.fold_name / f"{dataset_name}_merged_classified_coco.json"
+                merge_coco_jsons(dataset_classified_cocos, merged_classified_coco_path)
+                dataset_tile_level_metrics.update(self._classification_tile_metrics(
+                    evaluator, iou_type, merged_classified_coco_path, merged_truths_coco_path, dataset))
             dataset_tile_level_metrics['location'] = dataset_name
             dataset_tile_level_metrics['product_name'] = "average_over_rasters"
             all_tile_level_metrics.append(dataset_tile_level_metrics)
@@ -361,6 +382,25 @@ class BaseBenchmarker(ABC):
         print(f"Raster-level metrics saved to {raster_level_metrics_file}")
 
         return tile_level_metrics_df, raster_level_metrics_df
+
+    def _classification_tile_metrics(self, evaluator, iou_type, classified_coco, truths_coco, dataset) -> dict:
+        """Class-aware tile-level metrics from the classifier-step COCO: the standard COCO metrics
+        over per-class categories (prefixed ``classified_`` — true class-aware mAP when the truth
+        carries classes) plus IoU-matched classification accuracy."""
+        class_aware = evaluator.tile_level(
+            iou_type=iou_type,
+            preds_coco_path=str(classified_coco),
+            truth_coco_path=str(truths_coco),
+            max_dets=[1, 10, 100, dataset.tile_level_eval_maxDets],
+            images_common_ground_resolution=dataset.ground_resolution,
+        )
+        metrics = {f"classified_{key}": value for key, value in class_aware.items()}
+        truth, preds = COCO(str(truths_coco)), COCO(str(classified_coco))
+        align_coco_datasets_by_name(truth, preds)
+        matched = evaluator.compute_classification_metrics(truth, preds)
+        metrics['classification_accuracy'] = matched['overall_accuracy']
+        metrics['classification_matched_instances'] = matched['total_matched_instances']
+        return metrics
 
     @classmethod
     def compute_mean_std_metric_tables(cls,

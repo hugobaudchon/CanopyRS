@@ -15,14 +15,14 @@ from canopyrs.engine.config_parsers import SegmenterConfig
 from transformers import Sam3TrackerProcessor, Sam3TrackerModel
 from detectron2.config import get_cfg
 from detectron2.data import build_detection_train_loader, build_detection_test_loader, DatasetMapper, DatasetCatalog
-from canopyrs.engine.models.segmenter.train_sam.augmentation import AugmentationAdder
-from canopyrs.engine.models.segmenter.train_sam.loss_fns import sam_loss
+from canopyrs.engine.frameworks.sam.augmentation import AugmentationAdder
+from canopyrs.engine.frameworks.sam.loss_fns import sam_loss
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 import cv2
-from canopyrs.engine.models.segmenter.train_sam.dataset import register_sam2_dataset_with_masks, register_sam2_dataset_with_predicted_boxes
-from canopyrs.engine.config_parsers import InferIOConfig, PipelineConfig
+from canopyrs.engine.frameworks.sam.dataset import register_sam2_dataset_with_masks, register_sam2_dataset_with_predicted_boxes
+from canopyrs.engine.config_parsers import PipelineConfig
 from canopyrs.engine.config_parsers.base import get_config_path
 from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.benchmark.base.evaluator import CocoEvaluator
@@ -97,34 +97,20 @@ def run_coco_evaluations(
             print(f"[coco_eval] Skipping {dataset_name}: GT COCO not found at {gt_coco_path}")
             continue
         
-        # Create IO config
+        # Run the pipeline over the pre-cut tiles and export the segmenter's tile-level COCO.
         dataset_output_dir = output_root / dataset_name
-        io_config = InferIOConfig(
-            input_imagery=str(tiles_path),  # Required field
-            tiles_path=str(tiles_path),
-            output_folder=str(dataset_output_dir),
-        )
-        
-        # Run pipeline
         print(f"[coco_eval] Running pipeline on {dataset_name}...")
-        pipeline = Pipeline.from_config(io_config, deepcopy(pipeline_config))
-        data_state = pipeline()
-        
-        # Get predictions COCO path (use raw detector output, not aggregated)
-        pred_coco_path = None
-        if hasattr(data_state, 'component_output_files'):
-            # Try to get segmenter output first
-            for comp_id, files in data_state.component_output_files.items():
-                if 'segmenter' in comp_id.lower() or comp_id.startswith('1_'):
-                    pred_coco_path = files.get('coco')
-                    break
-            # Fallback to any coco file
-            if not pred_coco_path:
-                for comp_id, files in data_state.component_output_files.items():
-                    if 'coco' in files:
-                        pred_coco_path = files['coco']
-                        break
-        
+        pipeline = Pipeline.from_config(
+            deepcopy(pipeline_config).components_configs,
+            tiles=str(tiles_path),
+            output_dir=str(dataset_output_dir),
+        )
+        pipeline.run(verbose=False)
+
+        model_idx = max((c.component_id for c in pipeline.components if c.name == 'segmenter'),
+                        default=None)
+        pred_coco_path = pipeline.export("coco", end_at=model_idx) if model_idx is not None else None
+
         if not pred_coco_path or not Path(pred_coco_path).exists():
             print(f"[coco_eval] No predictions COCO found for {dataset_name}")
             continue
@@ -364,7 +350,7 @@ def setup_sam3_datasets(config: SegmenterConfig):
     """Register SAM3 datasets."""
     print("Setting up datasets...")
     
-    from canopyrs.engine.models.segmenter.train_sam.dataset import register_sam2_dataset_with_masks    
+    from canopyrs.engine.frameworks.sam.dataset import register_sam2_dataset_with_masks    
     use_detector_boxes = getattr(config, 'use_detector_boxes', True)
     if use_detector_boxes:
         print("Using predicted boxes from detector for prompts.")

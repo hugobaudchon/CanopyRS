@@ -37,12 +37,9 @@ python infer.py -c <CONFIG_NAME> -t <PATH_TO_TILES_FOLDER> -o <PATH_TO_OUTPUT_FO
 
 ## Understanding the output
 
-The output folder will contain one subfolder per component that ran, containing output files such as:
+The output folder contains one `{id}_{name}/` subfolder per component that ran, each holding that step's tables as GeoParquet, plus a `run.json` run record describing the run (so it can be reloaded or resumed).
 
-- **GeoPackage (`.gpkg`)** — for example predicted tree polygons with scores
-- **COCO JSON** — predictions in COCO format (used internally between components, can also be used to visualize per-tile predictions, see TODO)
-
-If the chosen pipeline configuration produced a GeoDataFrame containing polygon results, it will be present at the root of your output folder.
+If the pipeline produced georeferenced polygons, the final result is written to **`final.gpkg`** at the root of the output folder. You can also export any step's Objects as a **GeoPackage** or **COCO** file on demand via `pipeline.export(...)`.
 
 ## Choosing the right preset
 

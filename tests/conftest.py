@@ -1,22 +1,28 @@
 """
 Shared fixtures for CanopyRS tests.
 
-These fixtures provide reusable test data across all test modules.
+Pipeline-agnostic assets (rasters, labels) plus small relational-table builders
+(Imagery / Objects) used by the engine unit tests.
 """
 
 import pytest
 import geopandas as gpd
-import pandas as pd
 from shapely.geometry import Polygon, box
 from pathlib import Path
-from unittest.mock import MagicMock
 
-from canopyrs.engine.constants import Col, StateKey
-from canopyrs.engine.data_state import DataState
+from canopyrs.engine.constants import Col, GeomKind
+from canopyrs.engine.data import Objects, Sources, Tiles
+from canopyrs.engine.utils import init_spawn_method
+
+# The segmenter's mask post-processing (and the benchmark grid-search) use multiprocessing; with a
+# live CUDA context the default 'fork' start method deadlocks. Force 'spawn' once, at collection start
+# — before any model/CUDA init — mirroring infer.py and the standalone smoke scripts. Harmless for the
+# fast (no-multiprocessing) tests.
+init_spawn_method()
 
 
 # =============================================================================
-# GeoDataFrame Fixtures
+# Geometry / path fixtures
 # =============================================================================
 
 @pytest.fixture
@@ -26,104 +32,6 @@ def sample_polygon():
 
 
 @pytest.fixture
-def sample_gdf_minimal(sample_polygon):
-    """Minimal GeoDataFrame with just geometry and object_id."""
-    return gpd.GeoDataFrame({
-        Col.GEOMETRY: [sample_polygon],
-        Col.OBJECT_ID: [1],
-    }, crs="EPSG:4326")
-
-
-@pytest.fixture
-def sample_gdf_with_tile_path(sample_polygon):
-    """GeoDataFrame with geometry, object_id, and tile_path."""
-    return gpd.GeoDataFrame({
-        Col.GEOMETRY: [sample_polygon, sample_polygon],
-        Col.OBJECT_ID: [1, 2],
-        Col.TILE_PATH: ["/path/to/tile1.tif", "/path/to/tile2.tif"],
-    }, crs="EPSG:4326")
-
-
-@pytest.fixture
-def sample_gdf_with_detector_score(sample_gdf_with_tile_path):
-    """GeoDataFrame with detector score column."""
-    gdf = sample_gdf_with_tile_path.copy()
-    gdf[Col.DETECTOR_SCORE] = [0.95, 0.87]
-    gdf[Col.DETECTOR_CLASS] = [0, 1]
-    return gdf
-
-
-@pytest.fixture
-def sample_gdf_with_segmenter_score(sample_gdf_with_tile_path):
-    """GeoDataFrame with segmenter score column."""
-    gdf = sample_gdf_with_tile_path.copy()
-    gdf[Col.SEGMENTER_SCORE] = [0.92, 0.88]
-    gdf[Col.SEGMENTER_CLASS] = [0, 1]
-    return gdf
-
-
-@pytest.fixture
-def sample_gdf_full(sample_polygon):
-    """Complete GeoDataFrame with all common columns."""
-    return gpd.GeoDataFrame({
-        Col.GEOMETRY: [sample_polygon, sample_polygon, sample_polygon],
-        Col.OBJECT_ID: [1, 2, 3],
-        Col.TILE_PATH: ["/path/tile1.tif", "/path/tile2.tif", "/path/tile3.tif"],
-        Col.DETECTOR_SCORE: [0.95, 0.87, 0.91],
-        Col.DETECTOR_CLASS: [0, 1, 0],
-        Col.SEGMENTER_SCORE: [0.92, 0.88, 0.90],
-        Col.SEGMENTER_CLASS: [0, 1, 0],
-    }, crs="EPSG:4326")
-
-
-# =============================================================================
-# DataState Fixtures
-# =============================================================================
-
-@pytest.fixture
-def empty_data_state():
-    """Empty DataState for testing initial conditions."""
-    return DataState()
-
-
-@pytest.fixture
-def data_state_with_imagery(tmp_path):
-    """DataState with imagery path set."""
-    return DataState(
-        imagery_path=str(tmp_path / "test_image.tif"),
-        parent_output_path=str(tmp_path / "output"),
-        product_name="test_image",
-    )
-
-
-@pytest.fixture
-def data_state_with_tiles(tmp_path):
-    """DataState with tiles path set."""
-    return DataState(
-        tiles_path=str(tmp_path / "tiles"),
-        parent_output_path=str(tmp_path / "output"),
-        product_name="tiled_input",
-    )
-
-
-@pytest.fixture
-def data_state_with_gdf(sample_gdf_with_tile_path, tmp_path):
-    """DataState with infer_gdf populated."""
-    state = DataState(
-        imagery_path=str(tmp_path / "test_image.tif"),
-        parent_output_path=str(tmp_path / "output"),
-        product_name="test_image",
-    )
-    state.infer_gdf = sample_gdf_with_tile_path
-    state.infer_gdf_columns_to_pass = {Col.DETECTOR_SCORE}
-    return state
-
-
-# =============================================================================
-# Path Fixtures
-# =============================================================================
-
-@pytest.fixture
 def temp_output_path(tmp_path):
     """Temporary output directory for test artifacts."""
     output_dir = tmp_path / "output"
@@ -131,105 +39,69 @@ def temp_output_path(tmp_path):
     return output_dir
 
 
-@pytest.fixture
-def temp_tiles_path(tmp_path):
-    """Temporary tiles directory."""
-    tiles_dir = tmp_path / "tiles"
-    tiles_dir.mkdir(exist_ok=True)
-    return tiles_dir
-
-
 # =============================================================================
-# Mock Fixtures
+# tile metadata helper + relational-table builders
 # =============================================================================
 
+def make_tile_metadata(*, width=64, height=64, gsd=1.0, x0=0.0, y0=0.0, crs="EPSG:32618"):
+    """A serializable METADATA dict for an image whose top-left is (x0, y0) in CRS units,
+    ``gsd`` units per pixel (north-up). Matches the shape produced by ``tilemeta.window_meta``."""
+    return {
+        "transform": [gsd, 0.0, x0, 0.0, -gsd, y0],
+        "crs": crs,
+        "width": width,
+        "height": height,
+        "dtype": "uint8",
+        "count": 3,
+        "nodata": None,
+    }
+
+
 @pytest.fixture
-def mock_model():
-    """Mock model for testing components without loading actual models."""
-    model = MagicMock()
-    model.infer.return_value = (
-        ["/path/tile1.tif", "/path/tile2.tif"],  # tiles_paths
-        [[0.9, 0.1], [0.2, 0.8]],  # scores
-        [0, 1],  # predictions
+def sources_seed(tmp_path):
+    """A single-raster Sources seed (path need not exist for wiring/persistence tests)."""
+    return Sources.from_paths(str(tmp_path / "product.tif"))
+
+
+@pytest.fixture
+def tiles_seed(sources_seed):
+    """Two grid Tiles over the seed source — children of the source (windows, no files on disk)."""
+    metadata = [make_tile_metadata(x0=0.0, y0=64.0), make_tile_metadata(x0=64.0, y0=64.0)]
+    return Tiles.build(parent_id=sources_seed.df[Col.IMAGE_ID].iloc[0],
+                       metadata=metadata, parent=sources_seed)
+
+
+@pytest.fixture
+def objects_seed(tiles_seed):
+    """Two detector-style box Objects in tile-pixel coords (crs=None), one per tile, with scores."""
+    image_ids = list(tiles_seed.df[Col.IMAGE_ID])
+    return Objects.build(
+        geometry=[box(1, 1, 10, 10), box(5, 5, 20, 20)],
+        geom_kind=GeomKind.BOX,
+        image_id=image_ids,
+        imagery=tiles_seed,
+        **{Col.DETECTOR_SCORE: [0.9, 0.8], Col.DETECTOR_CLASS: [0, 1]},
     )
-    return model
 
 
 # =============================================================================
-# Test Raster Fixtures (local asset, no download)
+# Test raster fixtures (local asset, no download)
 # =============================================================================
 
-# Path to the test raster included in the repo
 TEST_RASTER_PATH = Path(__file__).parent.parent / "assets" / "20240130_zf2tower_m3m_rgb_test_crop.tif"
-
-# Cache directory for generated test artifacts (tiles, etc.)
-TEST_DATA_CACHE = Path.home() / ".cache" / "canopyrs_test_data"
 
 
 @pytest.fixture(scope="session")
 def test_raster():
-    """
-    Path to the test raster (included in repo under assets/).
-
-    This is a small (~24MB) real orthomosaic crop with actual trees,
-    suitable for end-to-end pipeline testing without any downloads.
-    """
+    """Path to the small real orthomosaic crop bundled under assets/ (for e2e pipeline tests)."""
     if not TEST_RASTER_PATH.exists():
         pytest.skip(f"Test raster not found: {TEST_RASTER_PATH}")
     return TEST_RASTER_PATH
 
 
-@pytest.fixture(scope="session")
-def test_raster_tiles(test_raster):
-    """
-    Tiled version of the test raster for pipeline tests.
-
-    Tiles are cached between sessions to avoid re-tilerizing.
-    """
-    from canopyrs.engine.components.tilerizer import TilerizerComponent
-    from canopyrs.engine.config_parsers.tilerizer import TilerizerConfig
-
-    cache_path = TEST_DATA_CACHE / "test_raster_tiles"
-    tiles_marker = cache_path / "_tiles_done"
-
-    # Check if already tilerized
-    if tiles_marker.exists():
-        # Find the tiles directory created by the tilerizer
-        tile_files = list(cache_path.glob("**/*.tif"))
-        if tile_files:
-            return cache_path
-
-    cache_path.mkdir(parents=True, exist_ok=True)
-
-    config = TilerizerConfig(
-        tile_size=512,
-        tile_overlap=0.25,
-        tile_type="tile",
-    )
-
-    result = TilerizerComponent.run_standalone(
-        config=config,
-        imagery_path=str(test_raster),
-        output_path=str(cache_path),
-    )
-
-    # Mark as done for cache check
-    tiles_marker.touch()
-
-    return Path(result.tiles_path)
-
-
-# =============================================================================
-# Synthetic Raster Fixture (fast, no download)
-# =============================================================================
-
 @pytest.fixture
 def synthetic_raster(tmp_path):
-    """
-    Create a small synthetic raster for fast unit tests.
-
-    256x256 RGB image with random data.
-    """
+    """A small (256x256 RGB uint8) synthetic raster for fast unit tests."""
     import numpy as np
 
     try:
@@ -239,46 +111,46 @@ def synthetic_raster(tmp_path):
         pytest.skip("rasterio not installed")
 
     raster_path = tmp_path / "synthetic_raster.tif"
-
-    # Create random RGB data
     data = np.random.randint(0, 255, (3, 256, 256), dtype=np.uint8)
-
-    # Simple transform: 1 unit per pixel, origin at (0, 0)
     transform = from_bounds(0, 0, 256, 256, 256, 256)
-
     with rasterio.open(
-        raster_path, 'w',
-        driver='GTiff',
-        height=256,
-        width=256,
-        count=3,
-        dtype='uint8',
-        crs='EPSG:32618',
-        transform=transform
+        raster_path, 'w', driver='GTiff', height=256, width=256, count=3,
+        dtype='uint8', crs='EPSG:32618', transform=transform,
     ) as dst:
         dst.write(data)
-
+        dst.colorinterp = [rasterio.enums.ColorInterp.red,
+                           rasterio.enums.ColorInterp.green,
+                           rasterio.enums.ColorInterp.blue]
     return raster_path
 
 
 @pytest.fixture
-def synthetic_labels(tmp_path):
-    """
-    Create synthetic polygon labels matching synthetic_raster.
+def tiles_dir(synthetic_raster, tmp_path):
+    """A folder of two pre-cut georeferenced GeoTIFF tiles (for Tiles.from_image_dir)."""
+    import rasterio
+    from rasterio.windows import Window
+    from rasterio.windows import transform as window_transform
 
-    Returns path to a GeoPackage with sample tree crown polygons.
-    """
+    out = tmp_path / "tiles"
+    out.mkdir()
+    with rasterio.open(synthetic_raster) as src:
+        for i, window in enumerate([Window(0, 0, 128, 128), Window(128, 0, 128, 128)]):
+            data = src.read(window=window)
+            meta = src.meta.copy()
+            meta.update(height=128, width=128, transform=window_transform(window, src.transform))
+            with rasterio.open(out / f"tile_{i}.tif", 'w', **meta) as dst:
+                dst.write(data)
+    return out
+
+
+@pytest.fixture
+def synthetic_labels(tmp_path):
+    """Synthetic polygon labels (CRS) matching synthetic_raster."""
     labels = gpd.GeoDataFrame({
-        'geometry': [
-            box(10, 10, 30, 30),
-            box(50, 50, 80, 80),
-            box(100, 100, 140, 140),
-            box(180, 180, 220, 220),
-        ],
+        'geometry': [box(10, 10, 30, 30), box(50, 50, 80, 80),
+                     box(100, 100, 140, 140), box(180, 180, 220, 220)],
         'class': [0, 0, 0, 0],
     }, crs="EPSG:32618")
-
     labels_path = tmp_path / "synthetic_labels.gpkg"
     labels.to_file(labels_path, driver="GPKG")
-
     return labels_path

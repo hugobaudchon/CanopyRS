@@ -1,285 +1,165 @@
+"""Tilerizer: produces Tiles or Crops. Modes: a window grid over each source, one crop per Object
+(cut from each object's own image file), or grid + re-tiled labels.
+
+Reuses geodataset for the actual tiling. Tiles are flat: one row per (footprint, modality, timestamp),
+each a child of the source it was cut from (``parent_id``) — read from its own ``path`` if materialized,
+else as a window into the source. Single modality = one row per footprint; multimodal/temporal = several
+rows sharing an ``instance_id`` (TODO).
 """
-TilerizerComponent with simplified architecture.
 
-Single __call__() method returns ComponentResult.
-Pipeline handles state updates. Tilerizer handles its own file I/O internally.
-"""
+from geodataset.tilerize import RasterTilerizer, RasterPolygonTilerizer, LabeledRasterTilerizer
 
-from pathlib import Path
-from typing import Set, Optional, List
+from canopyrs.engine.tilemeta import serialize_meta
+from canopyrs.engine.constants import Col
+from canopyrs.engine.data import Crops, Objects, Sources, Tiles
+from canopyrs.engine.contracts import Need
+from canopyrs.engine.components.base import Component, register_component
 
-import geopandas as gpd
-import rasterio
-
-from geodataset.aoi import AOIConfig
-from geodataset.tilerize import RasterTilerizer, LabeledRasterTilerizer, RasterPolygonTilerizer
-
-from canopyrs.engine.constants import Col, StateKey, INFER_AOI_NAME
-from canopyrs.engine.components.base import BaseComponent, ComponentResult, validate_requirements
-from canopyrs.engine.config_parsers.tilerizer import TilerizerConfig
-from canopyrs.engine.data_state import DataState
+# geodataset's own column names in the frames it returns (external vocabulary, not ours).
+GD_TILE_ID = "tile_id"
+GD_TILE_METADATA = "tile_metadata"
+GD_TILE_PATH = "tile_path"
 
 
-class TilerizerComponent(BaseComponent):
-    """
-    Creates image tiles from raster imagery.
+@register_component("tilerizer")
+class Tilerizer(Component):
+    """``config.tile_type``:
+      - ``'tile'``    : grid over each source            -> Tiles
+      - ``'polygon'`` : one crop per Object              -> (Crops, Objects)
+      - ``'labeled'`` : grid + input Objects re-tiled    -> (Tiles, Objects)
+    ``requires`` / ``produces`` reflect the mode."""
 
-    Tile types:
-        - 'tile': Unlabeled regular grid tiles (for inference)
-        - 'tile_labeled': Labeled regular grid tiles (for training data)
-        - 'polygon': Per-polygon tiles (for classifier input)
+    def __init__(self, config, aois_config=None):
+        super().__init__(config)
+        self.aois_config = aois_config   # geodataset AOIConfig (run-level, from Pipeline.from_config); None = whole raster
+        modes = {
+            "tile": (self._grid, (Need(Sources),), Need(Tiles, links=("parent",))),
+            # polygon: the objects' imagery link supplies the files to crop from (CRS objects over a
+            # raster, or tile-pixel detections over tiles) — no separate imagery input. Produces the
+            # crops (children of each object's image) + the input objects carried forward (each -> its crop).
+            "polygon": (self._per_object,
+                        (Need(Objects, links=("imagery",)),),
+                        (Need(Crops, links=("parent",)),
+                         Need(Objects, links=("imagery", "prev_objects"), crs=True, on=Crops))),
+            # labeled: grid tiles + re-tiled label objects in tile-pixel coords (crs=False).
+            "labeled": (self._labeled,
+                        (Need(Sources), Need(Objects, crs=True)),
+                        (Need(Tiles, links=("parent",)),
+                         Need(Objects, links=("imagery", "prev_objects"), crs=False, on=Tiles))),
+        }
+        if config.tile_type not in modes:
+            raise ValueError(f"unknown tile_type '{config.tile_type}'")
+        self._mode_run, self.requires, self.produces = modes[config.tile_type]
 
-    Requirements vary by tile_type:
-        - 'tile': imagery_path only
-        - 'tile_labeled': imagery_path + infer_gdf
-        - 'polygon': imagery_path + infer_gdf
+    def run(self, *inputs):
+        return self._mode_run(*inputs)
 
-    Produces:
-        - tiles_path  (always)
-        - infer_coco_path (only for 'tile_labeled' and 'polygon')
-    """
+    def _meta_and_paths(self, gdf):
+        """Serialized tile metadata + per-tile paths (the on-disk tile when saved, else None)."""
+        metadata = [serialize_meta(meta) for meta in gdf[GD_TILE_METADATA]]
+        paths = (list(gdf[GD_TILE_PATH].values) if self.config.save_tiles_to_disk
+                 else [None] * len(metadata))
+        return metadata, paths
 
-    name = 'tilerizer'
+    def _grid(self, sources: Sources) -> Tiles:
+        metadata, tile_paths, parent_ids = [], [], []
+        for _, source in sources.df.iterrows():
+            gdf = RasterTilerizer(
+                raster_path=source[Col.PATH],
+                output_path=self.out_dir,
+                tile_size=self.config.tile_size,
+                tile_overlap=self.config.tile_overlap,
+                aois_config=self.aois_config,
+                scale_factor=self.config.scale_factor,
+                ground_resolution=self.config.ground_resolution,
+            ).generate_tiles(save_tiles_to_disk=self.config.save_tiles_to_disk)
+            source_metadata, source_paths = self._meta_and_paths(gdf)
+            metadata += source_metadata
+            tile_paths += source_paths
+            parent_ids += [source[Col.IMAGE_ID]] * len(source_metadata)
+        return Tiles.build(parent_id=parent_ids, metadata=metadata,
+                           path=tile_paths, parent=sources)
 
-    BASE_REQUIRES_STATE = {StateKey.IMAGERY_PATH}
-    BASE_REQUIRES_COLUMNS: Set[str] = set()
+    def _per_object(self, objects: Objects):
+        """One crop per input Object, cut from each object's own image file — its nearest materialized
+        ancestor — with one cropper run per distinct file: a single raster degenerates to one run, a
+        folder of on-disk tiles runs once per tile file. Returns (Crops, Objects): the crops
+        (children of each object's image) and the input objects carried forward — each re-parented to
+        its crop (``image_id`` -> the crop) with a ``prev_object_id`` -> the original (so the ancestry
+        walk still reaches its scores), geometry in CRS coords. The classifier consumes these objects,
+        each finding its crop via ``object.imagery``."""
+        metadata, tile_paths, parent_ids, source_object_ids, geometry, crs = [], [], [], [], [], None
+        for path, group in objects.group_by_materialized_source():
+            gdf = RasterPolygonTilerizer(
+                raster_path=path,
+                labels_path=None,
+                labels_gdf=group[[Col.OBJECT_ID, Col.GEOMETRY]],
+                output_path=self.out_dir,
+                tile_size=self.config.tile_size,
+                use_variable_tile_size=self.config.use_variable_tile_size,
+                variable_tile_size_pixel_buffer=self.config.variable_tile_size_pixel_buffer,
+                aois_config=self.aois_config,
+                other_labels_attributes_column_names=[Col.OBJECT_ID],   # carry the source object id through geodataset
+                scale_factor=self.config.scale_factor,
+                ground_resolution=self.config.ground_resolution,
+            ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
+            group_meta, group_paths = self._meta_and_paths(gdf)
+            kept = gdf[Col.OBJECT_ID].values                      # crop order; geodataset may drop empty crops
+            by_object = group.set_index(Col.OBJECT_ID)
+            metadata += group_meta
+            tile_paths += group_paths
+            parent_ids += list(by_object.loc[kept, Col.IMAGE_ID].values)   # crop's parent = the object's image
+            geometry += list(by_object.loc[kept, Col.GEOMETRY].values)     # the CRS geometry from the grouping
+            source_object_ids += list(kept)
+            assert crs is None or group.crs == crs, "crop sources span multiple CRS; not supported"
+            crs = group.crs
+        crops = Crops.build(parent_id=parent_ids, metadata=metadata,
+                            path=tile_paths, parent=objects.linked("imagery"))
 
-    BASE_PRODUCES_STATE = {StateKey.TILES_PATH}
-    BASE_PRODUCES_COLUMNS: Set[str] = set()
-
-    BASE_STATE_HINTS = {
-        StateKey.IMAGERY_PATH: "Tilerizer needs an imagery_path to the raster file.",
-        StateKey.INFER_GDF: "This tile_type requires a GeoDataFrame with labels/polygons.",
-    }
-
-    BASE_COLUMN_HINTS = {
-        Col.GEOMETRY: "GeoDataFrame must have a 'geometry' column.",
-    }
-
-    def __init__(
-        self,
-        config: TilerizerConfig,
-        parent_output_path: str = None,
-        component_id: int = None,
-        infer_aois_config: Optional[AOIConfig] = None
-    ):
-        super().__init__(config, parent_output_path, component_id)
-        self.infer_aois_config = infer_aois_config
-
-        # Validate tile_type
-        if config.tile_type not in ['tile', 'tile_labeled', 'polygon']:
-            raise ValueError(
-                f"Invalid tile_type: '{config.tile_type}'. "
-                f"Must be 'tile', 'tile_labeled', or 'polygon'."
-            )
-
-        # Set base requirements
-        self.requires_state = set(self.BASE_REQUIRES_STATE)
-        self.requires_columns = set(self.BASE_REQUIRES_COLUMNS)
-        self.produces_state = set(self.BASE_PRODUCES_STATE)
-        self.produces_columns = set(self.BASE_PRODUCES_COLUMNS)
-
-        # Set hints
-        self.state_hints = dict(self.BASE_STATE_HINTS)
-        self.column_hints = dict(self.BASE_COLUMN_HINTS)
-
-        # Tile-type-specific requirements
-        if config.tile_type == 'tile':
-            # Unlabeled tiles - no additional requirements or produces
-            pass
-
-        elif config.tile_type == 'tile_labeled':
-            # Labeled tiles - requires infer_gdf, produces COCO
-            self.requires_state.add(StateKey.INFER_GDF)
-            self.requires_columns.add(Col.GEOMETRY)
-            self.produces_state.add(StateKey.INFER_COCO_PATH)
-            self.state_hints[StateKey.INFER_GDF] = (
-                f"tile_type='tile_labeled' requires infer_gdf with labels. "
-                f"Use tile_type='tile' for unlabeled tiles."
-            )
-
-        elif config.tile_type == 'polygon':
-            # Polygon tiles - requires infer_gdf, produces COCO
-            self.requires_state.add(StateKey.INFER_GDF)
-            self.requires_columns.add(Col.GEOMETRY)
-            self.produces_state.add(StateKey.INFER_COCO_PATH)
-            self.state_hints[StateKey.INFER_GDF] = (
-                f"tile_type='polygon' requires infer_gdf with polygons."
-            )
-
-    @classmethod
-    def run_standalone(
-        cls,
-        config: TilerizerConfig,
-        imagery_path: str,
-        output_path: str,
-        infer_gdf: gpd.GeoDataFrame = None,
-        infer_aois_config: Optional[AOIConfig] = None,
-    ) -> 'DataState':
-        """
-        Run tilerizer standalone on raster imagery.
-
-        Args:
-            config: Tilerizer configuration (tile_type determines requirements)
-            imagery_path: Path to the raster file
-            output_path: Where to save outputs
-            infer_gdf: GeoDataFrame with labels/polygons
-                        (required for tile_type='tile_labeled' or 'polygon')
-            infer_aois_config: Area of Interest configuration (optional)
-
-        Returns:
-            DataState with tiling results (access .tiles_path for tile directory)
-
-        Example:
-            result = TilerizerComponent.run_standalone(
-                config=TilerizerConfig(tile_type='tile', tile_size=512, ...),
-                imagery_path='./raster.tif',
-                output_path='./output',
-            )
-            print(result.tiles_path)
-        """
-        from canopyrs.engine.pipeline import run_component
-        return run_component(
-            component=cls(config, infer_aois_config=infer_aois_config),
-            output_path=output_path,
-            imagery_path=imagery_path,
-            infer_gdf=infer_gdf,
+        # Carry each crop's source object forward (same kind, CRS geometry), now pointing at its crop.
+        by_id = objects.df.set_index(Col.OBJECT_ID)
+        carried = Objects.build(
+            geometry=geometry,
+            geom_kind=by_id.loc[source_object_ids, Col.GEOM_KIND].values,
+            image_id=crops.df[Col.IMAGE_ID].values,               # crop per object (1:1, same order)
+            prev_object_id=source_object_ids,
+            crs=crs,
+            imagery=crops,
+            prev_objects=objects,
         )
+        return crops, carried
 
-    @validate_requirements
-    def __call__(self, data_state: DataState) -> ComponentResult:
-        """
-        Create tiles from raster imagery.
-
-        Returns ComponentResult - Pipeline handles state updates.
-        Tilerizer handles its own file I/O internally via geodataset.
-        """
-        self._check_crs_match(data_state)
-
-        # Handle config columns
-        columns_to_pass = data_state.infer_gdf_columns_to_pass.copy()
-        if self.config.other_labels_attributes_column_names:
-            columns_to_pass.update(self.config.other_labels_attributes_column_names)
-
-        columns_to_pass = [col for col in columns_to_pass if col not in {Col.GEOMETRY, Col.TILE_PATH}]  # already taken care of by COCO format
-
-        # Process based on tile_type
-        if self.config.tile_type == 'tile':
-            if data_state.infer_gdf is not None:
-                raise ValueError(
-                    "infer_gdf provided but tile_type='tile' creates unlabeled tiles. "
-                    "Use tile_type='tile_labeled' or 'polygon' if labels are needed for subsequent components, like a prompted Segmenter."
-                )
-            # Unlabeled tiles only
-            tiles_path, infer_coco_path = self._process_unlabeled_tiles(data_state)
-
-        elif self.config.tile_type == 'tile_labeled':
-            # Labeled regular grid tiles
-            tiles_path, infer_coco_path = self._process_labeled_tiles(
-                data_state, columns_to_pass
-            )
-
-        elif self.config.tile_type == 'polygon':
-            # Polygon tiles
-            tiles_path, infer_coco_path = self._process_polygon_tiles(
-                data_state, columns_to_pass
-            )
-
-        else:
-            raise ValueError(f"Invalid tile_type: {self.config.tile_type}")
-
-        # Save config
-        if self.output_path:
-            self.config.to_yaml(self.output_path / "tilerizer_config.yaml")
-
-        # Register the COCO file that geodataset already wrote (if any)
-        output_files = {}
-        if infer_coco_path is not None:
-            output_files['coco'] = infer_coco_path
-
-        return ComponentResult(
-            gdf=None,  # Tilerizer doesn't modify the GDF
-            produced_columns=columns_to_pass,
-            objects_are_new=False,
-            state_updates={
-                StateKey.TILES_PATH: tiles_path,
-                StateKey.INFER_COCO_PATH: infer_coco_path,
-            },
-            save_gpkg=False,
-            save_coco=False,  # COCO handled internally by tilerizer
-            output_files=output_files,
-        )
-
-    def _process_labeled_tiles(self, data_state: DataState, columns_to_pass: Set[str]):
-        """Process labeled regular grid tiles (tile_type='tile_labeled')."""
-        tilerizer = LabeledRasterTilerizer(
-            raster_path=data_state.imagery_path,
+    def _labeled(self, sources: Sources, labels: Objects):
+        """Grid tiles + the input label Objects re-tiled into each tile (tile-pixel coords), via
+        geodataset's LabeledRasterTilerizer. Returns (Tiles, Objects): each output object -> its tile
+        (image_id) and its source label (prev_object_id)."""
+        assert len(sources.df) == 1, "labeled tilerizer currently supports a single source"
+        source = sources.df.iloc[0]
+        carry = [Col.OBJECT_ID] + ([Col.GEOM_KIND] if Col.GEOM_KIND in labels.df.columns else [])
+        tiles_gdf, labels_gdf = LabeledRasterTilerizer(
+            raster_path=source[Col.PATH],
             labels_path=None,
-            labels_gdf=data_state.infer_gdf,
-            output_path=self.output_path,
+            labels_gdf=labels.df,
+            output_path=self.out_dir,
             tile_size=self.config.tile_size,
             tile_overlap=self.config.tile_overlap,
-            aois_config=self.infer_aois_config,
+            aois_config=self.aois_config,
             scale_factor=self.config.scale_factor,
             ground_resolution=self.config.ground_resolution,
-            ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
-            min_intersection_ratio=self.config.min_intersection_ratio,
-            ignore_tiles_without_labels=self.config.ignore_tiles_without_labels,
-            main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=list(columns_to_pass),
+            other_labels_attributes_column_names=carry,   # carries object_id (+ geom_kind) onto the labels
+        ).generate_tiles_gdf(save_tiles=self.config.save_tiles_to_disk)
+
+        metadata, tile_paths = self._meta_and_paths(tiles_gdf)
+        tiles = Tiles.build(parent_id=source[Col.IMAGE_ID],
+                            image_id=tiles_gdf[GD_TILE_ID].values,
+                            metadata=metadata, path=tile_paths, parent=sources)
+
+        objects = Objects.build(
+            geometry=labels_gdf.geometry.values,
+            geom_kind=labels_gdf[Col.GEOM_KIND].values if Col.GEOM_KIND in labels_gdf else None,
+            image_id=labels_gdf[GD_TILE_ID].values,
+            prev_object_id=labels_gdf[Col.OBJECT_ID].values,
+            imagery=tiles,
+            prev_objects=labels,
         )
-        coco_paths = tilerizer.generate_coco_dataset()
-        return tilerizer.tiles_path, coco_paths.get(INFER_AOI_NAME)
-
-    def _process_unlabeled_tiles(self, data_state: DataState):
-        """Process unlabeled tiles (tile_type='tile' without infer_gdf)."""
-        tilerizer = RasterTilerizer(
-            raster_path=data_state.imagery_path,
-            output_path=self.output_path,
-            tile_size=self.config.tile_size,
-            tile_overlap=self.config.tile_overlap,
-            aois_config=self.infer_aois_config,
-            scale_factor=self.config.scale_factor,
-            ground_resolution=self.config.ground_resolution,
-            ignore_black_white_alpha_tiles_threshold=self.config.ignore_black_white_alpha_tiles_threshold,
-        )
-        tilerizer.generate_tiles()
-        return tilerizer.tiles_path, None
-
-    def _process_polygon_tiles(self, data_state: DataState, columns_to_pass: Set[str]):
-        """Process polygon tiles (tile_type='polygon')."""
-        tilerizer = RasterPolygonTilerizer(
-            raster_path=data_state.imagery_path,
-            output_path=self.output_path,
-            labels_path=None,
-            labels_gdf=data_state.infer_gdf,
-            tile_size=self.config.tile_size,
-            use_variable_tile_size=self.config.use_variable_tile_size,
-            variable_tile_size_pixel_buffer=self.config.variable_tile_size_pixel_buffer,
-            aois_config=self.infer_aois_config,
-            scale_factor=self.config.scale_factor,
-            ground_resolution=self.config.ground_resolution,
-            main_label_category_column_name=self.config.main_label_category_column_name,
-            other_labels_attributes_column_names=list(columns_to_pass),
-            coco_n_workers=self.config.coco_n_workers,
-        )
-        coco_paths = tilerizer.generate_coco_dataset()
-        return tilerizer.tiles_folder_path, coco_paths.get(INFER_AOI_NAME)
-
-    def _check_crs_match(self, data_state: DataState):
-        """Check if the CRS of the raster and GeoDataFrame match."""
-        if data_state.infer_gdf is None:
-            return
-
-        try:
-            with rasterio.open(data_state.imagery_path) as src:
-                raster_crs = src.crs
-        except Exception as e:
-            raise RuntimeError(f"Failed to open raster: {e}")
-
-        gdf_crs = data_state.infer_gdf.crs
-
-        if raster_crs is not None and gdf_crs is None:
-            raise ValueError("Raster has CRS but infer_gdf does not.")
-        elif raster_crs is None and gdf_crs is not None:
-            raise ValueError("Raster has no CRS but infer_gdf does.")
+        return tiles, objects
