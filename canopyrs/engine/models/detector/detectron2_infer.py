@@ -24,9 +24,9 @@ from torch import Tensor
 
 from canopyrs.engine.config_parsers import DetectorConfig
 from canopyrs.engine.models.detector.detector_base import DetectorWrapperBase
-from canopyrs.engine.models.detector.train_detectron2.augmentation import AugmentationAdder
-from canopyrs.engine.models.detector.train_detectron2.train_detectron2 import get_base_detectron2_model_cfg
-from canopyrs.engine.models.detector.train_detectron2.train_detrex import get_base_detrex_model_cfg
+from canopyrs.engine.frameworks.detectron2.augmentation import AugmentationAdder
+from canopyrs.engine.frameworks.detectron2.cfg import get_base_detectron2_model_cfg
+from canopyrs.engine.frameworks.detectron2.cfg import get_base_detrex_model_cfg
 from canopyrs.engine.models.segmenter.detectree2 import setup_detectree2_cfg
 from canopyrs.engine.models.registry import DETECTOR_REGISTRY
 
@@ -40,6 +40,14 @@ detrex_logger.disabled = True
 
 @DETECTOR_REGISTRY.register('dino_detrex', 'faster_rcnn_detectron2', 'retinanet_detectron2', 'detectree2')
 class Detectron2DetectorWrapper(DetectorWrapperBase):
+    @classmethod
+    def preflight(cls, config):
+        """detrex-based models need the compiled deformable-attn op; verify it works (on GPU
+        too) at pipeline construction instead of crashing at the first forward pass."""
+        if config.model.endswith('detrex'):
+            from canopyrs.engine.models.preflight import detrex_ops_preflight
+            detrex_ops_preflight()
+
     def __init__(self, config: DetectorConfig):
         super().__init__(config)
 

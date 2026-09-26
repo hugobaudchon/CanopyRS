@@ -48,6 +48,7 @@ nav:
   - User Guide:
     - Presets: user-guide/presets.md
     - Model Zoo: user-guide/model-zoo.md
+    - Inference Speed: user-guide/inference-speed.md
     - Configuration: user-guide/configuration.md
     - Pipeline: user-guide/pipeline.md
     - Components: user-guide/components.md
@@ -64,5 +65,5 @@ nav:
       - Segmenter: api/components/segmenter.md
       - Aggregator: api/components/aggregator.md
       - Classifier: api/components/classifier.md
-    - DataState: api/data-state.md
+    - Data model: api/data-model.md
   - Contributing: contributing.md

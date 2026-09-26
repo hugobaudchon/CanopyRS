@@ -1,129 +1,11 @@
 import json
-from concurrent.futures import ProcessPoolExecutor
+import sys
 from pathlib import Path
 from typing import List, Set
 
 import geopandas as gpd
 from geodataset.aoi import AOIGeneratorConfig, AOIFromPackageConfig
-from geodataset.utils import COCOGenerator, TileNameConvention, CocoNameConvention
-
-infer_aoi_name = 'infer'
-object_id_column_name = 'canopyrs_object_id'
-tile_path_column_name = 'tile_path'
-
-
-def get_component_folder_name(component_id: int, component_name: str) -> str:
-    component_folder = f"{component_id}_{component_name}"
-    return component_folder
-
-
-def parse_product_name(tile_path: str):
-    try:
-        product_name, scale_factor, ground_resolution, _, _, aoi = TileNameConvention().parse_name(
-            Path(tile_path).name
-        )
-    except ValueError:
-        # input is probably images not tiled with geodataset
-        product_name = 'images'
-        scale_factor = 1.0
-        ground_resolution = None
-        aoi = infer_aoi_name
-
-    return product_name, scale_factor, ground_resolution, aoi
-
-
-def generate_future_coco(
-    future_key: str,
-    executor: ProcessPoolExecutor,
-    component_name: str,
-    component_id: int,
-    description: str,
-    gdf: gpd.GeoDataFrame,
-    tiles_paths_column: str,
-    polygons_column: str,
-    scores_column: str or None,
-    categories_column: str or None,
-    other_attributes_columns: Set[str] or None,
-    output_path: Path,
-    use_rle_for_labels: bool,
-    n_workers: int,
-    coco_categories_list: List[dict] or None
-) -> tuple:
-    """
-    Starts a side process for generating the COCO file, this way the main process isn't blocked in the meantime.
-
-    Parameters
-    ----------
-    future_key : str
-        The key to be used to store the future result in the data state.
-    description : str
-        Description of the COCO file.
-    gdf : gpd.GeoDataFrame
-        GeoDataFrame containing the data to be used for generating the COCO file.
-    tiles_paths_column : str
-        Name of the column containing the paths to the tiles.
-    polygons_column : str
-        Name of the column containing the polygons.
-    scores_column : str or None
-        Name of the column containing the scores.
-    categories_column : str or None
-        Name of the column containing the categories.
-    other_attributes_columns : Set[str] or None
-        List of names of the columns containing other attributes.
-    output_path : Path
-        Path to the output directory.
-    use_rle_for_labels : bool
-        Whether to use RLE encoding for the labels.
-    n_workers : int
-        Number of workers to use for the process.
-    coco_categories_list : List[dict] or None
-        List of categories to be used in the COCO file.
-
-    Returns
-    -------
-    tuple
-        Tuple containing the future key and the future COCO file path: (future_key, future_coco_path).
-    """
-
-    print('Starting side process for generating COCO file...')
-
-    product_name, scale_factor, ground_resolution, _ = parse_product_name(gdf[tiles_paths_column].iloc[0])
-
-    coco_output_name = CocoNameConvention().create_name(
-        product_name=product_name,
-        fold=infer_aoi_name,
-        scale_factor=scale_factor,
-        ground_resolution=ground_resolution
-    )
-
-    coco_output_path = output_path / coco_output_name
-
-    future_coco_process = executor.submit(
-        generate_coco,
-        description=description,
-        gdf=gdf,
-        tiles_paths_column=tiles_paths_column,
-        polygons_column=polygons_column,
-        scores_column=scores_column,
-        categories_column=categories_column,
-        other_attributes_columns=other_attributes_columns,
-        coco_output_path=coco_output_path,
-        use_rle_for_labels=use_rle_for_labels,
-        n_workers=n_workers,
-        coco_categories_list=coco_categories_list
-    )
-
-    future_coco = (
-        future_key, future_coco_process,
-        {
-            'component_name': component_name,
-            'component_id': component_id,
-            'file_type': 'coco',
-            'expected_path': str(coco_output_path)  # Include the expected path directly
-        }
-     )
-
-    return future_coco
+from geodataset.utils import COCOGenerator
 
 
 def generate_coco(
@@ -240,6 +122,22 @@ def init_spawn_method():
         # The start method was already set
         print(f"Error while setting multiprocessing start method: {e}")
         pass
+
+
+def worker_context(num_workers):
+    """``"fork"`` for worker pools that can use it, else None for the platform default.
+
+    The counterpart to ``init_spawn_method``: that forces ``spawn`` process-wide because the
+    segmenter's mask workers need it, which then makes every DataLoader worker re-import torch and
+    friends in a fresh interpreter and unpickle its whole plan — tens of seconds before the first read
+    when several start at once. Forking inherits all of it instead.
+
+    Only sound for a pool whose workers touch no CUDA and inherit no open GDAL handles; forking with
+    either is how you get a hang or corrupt reads. Windows has no fork and macOS's is unsafe with
+    Apple's frameworks, so both keep the default.
+    """
+    return "fork" if num_workers and sys.platform == "linux" else None
+
 
 def merge_coco_jsons(json_files: list[str or Path], output_file: str or Path):
     merged = {

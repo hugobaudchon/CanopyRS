@@ -7,7 +7,7 @@ from detectron2.data.transforms import Augmentation, Transform, RandomRotation, 
     ResizeShortestEdge, RandomContrast, RandomBrightness, RandomFlip, RandomSaturation, RandomApply
 from canopyrs.engine.config_parsers import DetectorConfig
 from detectron2.config import CfgNode
-from canopyrs.engine.models.detector.train_detectron2.augmentation import AugmentationAdder
+from canopyrs.engine.frameworks.detectron2.augmentation import AugmentationAdder
 
 
 def build_aug_cfg(config, d2_cfg):

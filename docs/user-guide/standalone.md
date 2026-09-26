@@ -1,119 +1,103 @@
 # Standalone Usage
 
-Every component can be run individually outside a pipeline via its `run_standalone()` classmethod. Each method has a component-specific signature with explicit parameters, so you get clear parameter names and IDE autocomplete.
+There's no separate standalone API — running one component is just a one-step pipeline. Seed it with the data that component needs (`sources=` a raster, `tiles=` a folder of pre-cut images, or `objects=` a GeoPackage of prior detections). A seeded folder is typed by what the pipeline asks for: tiles for a detector or segmenter, crops for a classifier-only run — you never choose and read the result from `pipe.latest(...)` or an export.
 
-For details on available config parameters (tile size, NMS thresholds, score weights, etc.), see [Configuration](configuration.md).
+For config parameters (tile size, NMS thresholds, score weights, etc.), see [Configuration](configuration.md).
 
 ## Tilerizer
 
 ```python
-from canopyrs.engine.components.tilerizer import TilerizerComponent
+from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import TilerizerConfig
+from canopyrs.engine.data import Tiles
 
-result = TilerizerComponent.run_standalone(
-    config=TilerizerConfig(tile_type='tile', tile_size=512, ...),
-    imagery_path='./raster.tif',
-    output_path='./output',
-)
-print(result.tiles_path)
+pipe = Pipeline.from_config(
+    [('tilerizer', TilerizerConfig(tile_type='tile', tile_size=512, save_tiles_to_disk=True))],
+    sources='raster.tif',
+    output_dir='./out',
+).run()
+print(pipe.latest(Tiles))
 ```
 
 ## Detector
 
 ```python
-from canopyrs.engine.components.detector import DetectorComponent
+from canopyrs.engine.pipeline import Pipeline
 from canopyrs.engine.config_parsers import DetectorConfig
+from canopyrs.engine.data import Objects
 
-result = DetectorComponent.run_standalone(
-    config=DetectorConfig(model='dino_detrex', ...),
-    tiles_path='./tiles',
-    output_path='./output',
-)
-print(result.infer_gdf)
-```
-
-Using a config from a preset (see [Model Zoo](model-zoo.md) for available models):
-
-```python
 config = DetectorConfig.from_yaml('canopyrs/config/detectors/dino_swinL_multi_NQOS.yaml')
 
-result = DetectorComponent.run_standalone(
-    config=config,
-    tiles_path='./tiles',
-    output_path='./output',
-)
+pipe = Pipeline.from_config(
+    [('detector', config)],
+    tiles='./tiles',
+    output_dir='./out',
+).run()
+print(pipe.latest(Objects))
 ```
 
 ## Segmenter
 
 ```python
-from canopyrs.engine.components.segmenter import SegmenterComponent
 from canopyrs.engine.config_parsers import SegmenterConfig
 
-result = SegmenterComponent.run_standalone(
-    config=SegmenterConfig(model='sam3', ...),
-    tiles_path='./tiles',
-    output_path='./output',
-    infer_coco_path='./coco.json',  # only if model requires box prompts
-)
-print(result.infer_gdf)
-```
-
-Using a config from a preset (see [Model Zoo](model-zoo.md) for available models):
-
-```python
 config = SegmenterConfig.from_yaml('canopyrs/config/segmenters/sam3_multi_selvamask_FT.yaml')
 
-result = SegmenterComponent.run_standalone(
-    config=config,
-    tiles_path='./tiles',
-    output_path='./output',
-    infer_coco_path='./coco.json',
-)
+# automatic segmenters seed from tiles; prompted ones (e.g. SAM) seed from prior detections (objects=)
+pipe = Pipeline.from_config(
+    [('segmenter', config)],
+    tiles='./tiles',
+    output_dir='./out',
+).run()
 ```
 
 ## Aggregator
 
-```python
-from canopyrs.engine.components.aggregator import AggregatorComponent
-from canopyrs.engine.config_parsers import AggregatorConfig
+The aggregator georeferences and de-duplicates existing detections, so seed it from a prior run's tiles and objects:
 
-result = AggregatorComponent.run_standalone(
-    config=AggregatorConfig(nms_threshold=0.5, ...),
-    infer_gdf=my_detections_gdf,
-    output_path='./output',
-)
-print(result.infer_gdf)
+```python
+from canopyrs.engine.pipeline import Pipeline
+from canopyrs.engine.config_parsers import AggregatorConfig
+from canopyrs.engine.data import Objects, Tiles
+
+prior = Pipeline.from_dir('./detector_run')
+pipe = Pipeline.from_config(
+    [('aggregator', AggregatorConfig(nms_algorithm='iou', nms_threshold=0.5, score_threshold=0.3))],
+    tiles=prior.latest(Tiles),
+    objects=prior.latest(Objects),
+    output_dir='./out',
+).run()
+print(pipe.export('gpkg'))
 ```
 
 ## Classifier
 
-```python
-from canopyrs.engine.components.classifier import ClassifierComponent
-from canopyrs.engine.config_parsers import ClassifierConfig
+The classifier reads one crop per object, so pair a `polygon` tilerizer with it and seed the objects to classify:
 
-result = ClassifierComponent.run_standalone(
-    config=ClassifierConfig(model='resnet50', ...),
-    tiles_path='./polygon_tiles',
-    infer_coco_path='./coco.json',
-    output_path='./output',
+```python
+from canopyrs.engine.config_parsers import ClassifierConfig, TilerizerConfig
+
+config = ClassifierConfig.from_yaml(
+    'canopyrs/config/classifiers/canopyrs_classifier_dinov3_vit_small_512px_quebec.yaml'
 )
-print(result.infer_gdf)
+
+pipe = Pipeline.from_config(
+    [('tilerizer', TilerizerConfig(tile_type='polygon', tile_size=512)),
+     ('classifier', config)],
+    sources='raster.tif',
+    objects='detections.gpkg',
+    output_dir='./out',
+).run()
+```
+
+To classify a folder of pre-cut crops directly (one class per image, no detections), seed a
+classifier-only pipeline — the folder is used as crops and one object per crop is derived
+automatically:
+
+```python
+pipe = Pipeline.from_config([('classifier', config)], tiles='./crops', output_dir='./out').run()
 ```
 
 ## How it works
 
-Under the hood, `run_standalone()` delegates to the generic `run_component()` helper, which wraps the component in a single-component pipeline. Inputs are validated before execution — if something is missing, you get a clear error message listing what's needed.
-
-If you need more control, you can use `run_component()` directly:
-
-```python
-from canopyrs.engine.pipeline import run_component
-from canopyrs.engine.components.detector import DetectorComponent
-
-result = run_component(
-    component=DetectorComponent(config),
-    output_path='./output',
-    tiles_path='./tiles',
-)
-```
+`from_config` builds the components from the registry and validates the wiring in `__init__`, so a bad standalone setup fails immediately with a clear message listing what's missing. `run()` then executes the single component over the seed you provided.

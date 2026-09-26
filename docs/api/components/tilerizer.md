@@ -1,5 +1,5 @@
 # Tilerizer
 
-::: canopyrs.engine.components.tilerizer.TilerizerComponent
+::: canopyrs.engine.components.tilerizer.Tilerizer
     options:
       inherited_members: false

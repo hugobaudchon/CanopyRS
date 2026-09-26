@@ -1,5 +1,7 @@
 from typing import Dict, Type
 
+from canopyrs.engine.models.extras import MissingExtraError, failure_hints
+
 
 class Registry:
     """Registry for automatic model registration."""
@@ -19,10 +21,21 @@ class Registry:
         return decorator
 
     def get(self, name: str) -> Type:
-        """Get a registered class by name."""
+        """Get a registered class by name.
+
+        On a miss, the error lists what IS available and — when model modules failed to import
+        because an optional framework is missing — the exact ``canopyrs setup`` fix per module
+        (raised as MissingExtraError, a ValueError subclass).
+        """
         if name not in self._registry:
             available = list(self._registry.keys())
-            raise ValueError(f"'{name}' not found in {self.name} registry. Available: {available}")
+            message = f"'{name}' not found in {self.name} registry. Available: {available}"
+            hints = list(failure_hints())
+            if hints:
+                message += ("\nSome models are unavailable because their extra isn't installed:\n"
+                            + "\n".join(hints))
+                raise MissingExtraError(message, reason=f"'{name}' unavailable ({self.name})")
+            raise ValueError(message)
         return self._registry[name]
 
     def list_available(self) -> list:

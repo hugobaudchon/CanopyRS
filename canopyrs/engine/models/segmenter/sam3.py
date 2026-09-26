@@ -2,15 +2,13 @@ from typing import List
 import numpy as np
 import torch
 from PIL import Image
-from geodataset.dataset import DetectionLabeledRasterCocoDataset
 import multiprocessing
 from transformers import Sam3TrackerProcessor, Sam3TrackerModel
-from pathlib import Path
 
 from canopyrs.engine.config_parsers import SegmenterConfig
 from canopyrs.engine.models.segmenter.segmenter_base import SegmenterWrapperBase
 from canopyrs.engine.models.registry import SEGMENTER_REGISTRY
-from canopyrs.engine.models.utils import collate_fn_infer_image_box
+from canopyrs.engine.models.utils import load_finetuned_checkpoint
 
 
 @SEGMENTER_REGISTRY.register('sam3')
@@ -59,75 +57,8 @@ class Sam3PredictorWrapper(SegmenterWrapperBase):
             self._load_checkpoint(checkpoint_path)
 
     def _load_checkpoint(self, checkpoint_path):
-        checkpoint_path_str = str(checkpoint_path)
-
-        # Check if it's a HuggingFace URL
-        if checkpoint_path_str.startswith("https://huggingface.co/") or checkpoint_path_str.startswith("http://huggingface.co/"):
-            local_path = self._download_from_huggingface(checkpoint_path_str)
-            if local_path is None:
-                print(f"\n⚠️  WARNING: Failed to download checkpoint from: {checkpoint_path_str}")
-                print("   Using base pretrained model instead.\n")
-                return
-        else:
-            local_path = Path(checkpoint_path_str)
-            if not local_path.exists():
-                print(f"\n⚠️  WARNING: Checkpoint not found: {checkpoint_path_str}")
-                print("   Using base pretrained model instead.\n")
-                return
-
-        print(f"\n{'='*60}")
-        print(f"Loading fine-tuned checkpoint:")
-        print(f"  Path: {local_path}")
-
-        state_dict = torch.load(local_path, map_location='cpu')
-
-        if 'model_state_dict' in state_dict:
-            model_state_dict = state_dict['model_state_dict']
-            print("  Checkpoint type: Full training checkpoint")
-            if 'epoch' in state_dict:
-                print(f"  Epoch: {state_dict['epoch']}")
-        else:
-            model_state_dict = state_dict
-            print("  Checkpoint type: Model weights only")
-
-        self.model.load_state_dict(model_state_dict, strict=False)
-        print("✓ Fine-tuned weights loaded successfully!")
-        print(f"{'='*60}\n")
-
-    def _download_from_huggingface(self, url: str) -> Path | None:
-        """Download a checkpoint file from a HuggingFace URL."""
-        from huggingface_hub import hf_hub_download
-        import re
-
-        # Parse HuggingFace URL: https://huggingface.co/{repo_id}/resolve/{revision}/{filename}
-        pattern = r"https?://huggingface\.co/([^/]+/[^/]+)/resolve/([^/]+)/(.+)"
-        match = re.match(pattern, url)
-
-        if not match:
-            print(f"  Could not parse HuggingFace URL: {url}")
-            return None
-
-        repo_id = match.group(1)
-        revision = match.group(2)
-        filename = match.group(3)
-
-        print(f"\n{'='*60}")
-        print(f"Downloading checkpoint from HuggingFace:")
-        print(f"  Repo: {repo_id}")
-        print(f"  Revision: {revision}")
-        print(f"  File: {filename}")
-
-        try:
-            local_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                revision=revision,
-            )
-            print(f"  Downloaded to: {local_path}")
-            return Path(local_path)
-        except Exception as e:
-            print(f"  Download failed: {e}")
-            return None
+        # SAM3 loads partial fine-tuned weights onto the base tracker → strict=False.
+        load_finetuned_checkpoint(self.model, checkpoint_path, strict=False)
 
     # ------------------------ main API ------------------------ #
 
@@ -294,6 +225,3 @@ class Sam3PredictorWrapper(SegmenterWrapperBase):
             scores = np.ones(masks.shape[0], dtype=np.float32)
 
         return masks, scores
-
-    def infer_on_dataset(self, dataset: DetectionLabeledRasterCocoDataset):
-        return self._infer_on_dataset(dataset, collate_fn_infer_image_box)

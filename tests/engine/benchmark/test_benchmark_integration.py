@@ -137,9 +137,9 @@ class TestNMSGridSearch:
         """
         from canopyrs.engine.benchmark.segmenter.benchmark import SegmenterBenchmarker
 
-        # Small 5x5 grid
-        nms_iou_thresholds = [0.01, 0.05, 0.1, 0.2, 0.3]
-        nms_score_thresholds = [0.2, 0.35, 0.5, 0.65, 0.8]
+        # 5x5 grid, fixed 0.20 increments (0.20, 0.40, 0.60, 0.80, 1.00)
+        nms_iou_thresholds = [round(0.20 * i, 2) for i in range(1, 6)]
+        nms_score_thresholds = [round(0.20 * i, 2) for i in range(1, 6)]
 
         base_aggregator_config = AggregatorConfig(
             nms_algorithm='ioa-disambiguate',

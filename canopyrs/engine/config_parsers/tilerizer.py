@@ -16,6 +16,8 @@ class TilerizerConfig(BaseConfig):
     coco_n_workers: int = 5
     output_dtype: str = 'uint8'  # expected by most models
 
+    save_tiles_to_disk: bool = False  # v2: False -> metadata-only (loader reads windows); True -> write tile images + tile_path
+
     ignore_tiles_without_labels: bool = True    # impacts inference and evaluation!
     min_intersection_ratio: float = 0.4     # impacts evaluation
 

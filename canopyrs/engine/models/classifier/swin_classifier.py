@@ -4,12 +4,12 @@ from typing import Dict, List, Union
 import torchvision.models as models
 
 from canopyrs.engine.config_parsers import ClassifierConfig
-from canopyrs.engine.models.classifier.classifier_base import TorchTrainerClassifierWrapperBase
+from canopyrs.engine.models.classifier.classifier_base import ClassifierWrapperBase
 from canopyrs.engine.models.registry import CLASSIFIER_REGISTRY
 
 
 @CLASSIFIER_REGISTRY.register('swin')
-class SwinClassifier(TorchTrainerClassifierWrapperBase):
+class SwinClassifier(ClassifierWrapperBase):
     """Swin Transformer-based classifier implementation using PyTorch's native models"""
 
     # Mapping of architecture names to model functions

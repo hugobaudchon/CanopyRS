@@ -48,11 +48,11 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 import detrex
 from detrex.modeling import ema
-from canopyrs.engine.models.detector.train_detectron2.augmentation import AugmentationAdder
-from canopyrs.engine.models.detector.train_detectron2.dataset import register_detection_dataset
-from canopyrs.engine.models.detector.train_detectron2.hook import WandbWriterHook
-from canopyrs.engine.models.detector.train_detectron2.lr_scheduler import build_lr_scheduler
-from canopyrs.engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
+from canopyrs.engine.frameworks.detectron2.augmentation import AugmentationAdder
+from canopyrs.engine.frameworks.detectron2.dataset import register_detection_dataset
+from canopyrs.engine.frameworks.detectron2.hook import WandbWriterHook
+from canopyrs.engine.frameworks.detectron2.lr_scheduler import build_lr_scheduler
+from canopyrs.engine.frameworks.detectron2.utils import lazyconfig_to_dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
@@ -405,53 +405,7 @@ def train_detrex(config, task):
     )
 
 
-def get_base_detrex_model_cfg(config):
-    detrex_root = Path(next(iter(detrex.__path__))).resolve()
-    # Depending on environment it might pick up the wrong detrex path
-    if not (detrex_root / 'projects').exists() and (detrex_root.parent / 'projects').exists():
-        detrex_root = detrex_root.parent
-    if str(detrex_root) not in sys.path:
-        sys.path.insert(0, str(detrex_root))
-
-    # fixing architecture path from old CanopyRS versions
-    if config.architecture == "dino-swin/dino_swin_large_384_5scale_36ep.py":
-        config.architecture = "dino/configs/dino-swin/dino_swin_large_384_5scale_36ep.py"
-
-    # loading base config
-    cfg = LazyConfig.load(str(detrex_root / 'projects' / config.architecture))
-    cfg.train.init_checkpoint = config.checkpoint_path
-
-    # dino
-    if hasattr(cfg.model, 'num_classes'):
-        cfg.model.num_classes = config.num_classes
-    elif hasattr(cfg.model, 'params') and hasattr(cfg.model.params, 'num_classes'):
-        cfg.model.params.num_classes = config.num_classes
-
-    # mask2former
-    if hasattr(cfg.model, "sem_seg_head") and hasattr(cfg.model.sem_seg_head, "num_classes"):
-        cfg.model.sem_seg_head.num_classes = config.num_classes
-
-    if (
-        hasattr(cfg.model, "sem_seg_head")
-        and hasattr(cfg.model.sem_seg_head, "transformer_predictor")
-        and hasattr(cfg.model.sem_seg_head.transformer_predictor, "num_classes")
-    ):
-        cfg.model.sem_seg_head.transformer_predictor.num_classes = config.num_classes
-
-    # optimizer
-    if hasattr(cfg.model, "criterion") and hasattr(cfg.model.criterion, "num_classes"):
-        cfg.model.criterion.num_classes = config.num_classes
-
-    # Custom Augmentations
-    augmentation_adder = AugmentationAdder()
-    cfg.dataloader.train.mapper.augmentation = augmentation_adder.get_augmentation_detrex_train(config)
-    cfg.dataloader.train.mapper.augmentation_with_crop = None   # we have our own set of augmentations, including cropping, in augmentation_adder
-    cfg.dataloader.test.mapper.augmentation = augmentation_adder.get_augmentation_detrex_test(config)
-
-    # Enable AMP (mixed-precision).
-    cfg.train.amp.enabled = config.use_amp
-
-    return cfg
+from canopyrs.engine.frameworks.detectron2.cfg import get_base_detrex_model_cfg  # noqa: E501  (shared with inference)
 
 
 def _train_detrex_process(config, model_name, task):

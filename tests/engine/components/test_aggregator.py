@@ -1,93 +1,40 @@
-"""
-Tests for AggregatorComponent.
-"""
+"""Contract tests for the Aggregator component: its requires/produces reflect the score weights."""
 
-import pytest
-
-from canopyrs.engine.components.aggregator import AggregatorComponent
-from canopyrs.engine.constants import Col, StateKey
+from canopyrs.engine.components.aggregator import Aggregator
+from canopyrs.engine.config_parsers import AggregatorConfig
+from canopyrs.engine.data import Crops, Objects, Tiles
+from canopyrs.engine.constants import Col
 
 
-class TestAggregatorRequirements:
-    """Tests for AggregatorComponent requirements based on config."""
-
-    def test_requires_detector_score_when_weight_positive(self, mock_aggregator_config):
-        """Aggregator requires detector_score column when weight > 0."""
-        mock_aggregator_config.detector_score_weight = 1.0
-        mock_aggregator_config.segmenter_score_weight = 0.0
-
-        component = AggregatorComponent(
-            config=mock_aggregator_config,
-            parent_output_path=None,
-            component_id=0
-        )
-
-        assert Col.DETECTOR_SCORE in component.requires_columns
-        assert Col.SEGMENTER_SCORE not in component.requires_columns
-
-    def test_requires_segmenter_score_when_weight_positive(self, mock_aggregator_config):
-        """Aggregator requires segmenter_score column when weight > 0."""
-        mock_aggregator_config.detector_score_weight = 0.0
-        mock_aggregator_config.segmenter_score_weight = 1.0
-
-        component = AggregatorComponent(
-            config=mock_aggregator_config,
-            parent_output_path=None,
-            component_id=0
-        )
-
-        assert Col.SEGMENTER_SCORE in component.requires_columns
-        assert Col.DETECTOR_SCORE not in component.requires_columns
-
-    def test_requires_both_scores_when_both_weights_positive(self, mock_aggregator_config):
-        """Aggregator requires both score columns when both weights > 0."""
-        mock_aggregator_config.detector_score_weight = 0.5
-        mock_aggregator_config.segmenter_score_weight = 0.5
-
-        component = AggregatorComponent(
-            config=mock_aggregator_config,
-            parent_output_path=None,
-            component_id=0
-        )
-
-        assert Col.DETECTOR_SCORE in component.requires_columns
-        assert Col.SEGMENTER_SCORE in component.requires_columns
-
-    def test_base_requirements_always_present(self, mock_aggregator_config):
-        """Base requirements are always present regardless of config."""
-        component = AggregatorComponent(
-            config=mock_aggregator_config,
-            parent_output_path=None,
-            component_id=0
-        )
-
-        assert StateKey.INFER_GDF in component.requires_state
-        assert StateKey.PRODUCT_NAME in component.requires_state
-        assert Col.GEOMETRY in component.requires_columns
-        assert Col.OBJECT_ID in component.requires_columns
-        assert Col.TILE_PATH in component.requires_columns
+def _need(component_requires):
+    """The Objects Need in the aggregator's (objects, tiles) requires pair."""
+    need, tiles_need = component_requires
+    assert tiles_need.data_type is Tiles   # the NMS tile frames, asked for explicitly
+    return need
 
 
-class TestAggregatorProduces:
-    """Tests for what AggregatorComponent produces."""
+def test_requires_carries_weighted_score_columns():
+    # only detector weighted -> only detector_score is required as an input column
+    agg = Aggregator(AggregatorConfig(detector_score_weight=1.0, segmenter_score_weight=0.0,
+                                      classifier_score_weight=0.0))
+    need = _need(agg.requires)
+    assert need.data_type is Objects
+    assert set(need.columns) == {Col.DETECTOR_SCORE}
+    assert need.links == ("imagery",)
+    assert need.crs is None                  # pixel detections and CRS classified objects both work
+    assert need.on == (Tiles, Crops)         # raw detections, or classified objects on crops
 
-    def test_produces_aggregator_score_column(self, mock_aggregator_config):
-        """Aggregator declares it produces aggregator_score column."""
-        component = AggregatorComponent(
-            config=mock_aggregator_config,
-            parent_output_path=None,
-            component_id=0
-        )
 
-        assert Col.AGGREGATOR_SCORE in component.produces_columns
+def test_requires_reflects_multiple_weights():
+    agg = Aggregator(AggregatorConfig(detector_score_weight=0.5, segmenter_score_weight=0.5,
+                                      classifier_score_weight=1.0))
+    need = _need(agg.requires)
+    assert set(need.columns) == {Col.DETECTOR_SCORE, Col.SEGMENTER_SCORE, Col.CLASSIFIER_SCORE}
 
-    def test_produces_infer_gdf_state(self, mock_aggregator_config):
-        """Aggregator declares it produces updated infer_gdf."""
-        component = AggregatorComponent(
-            config=mock_aggregator_config,
-            parent_output_path=None,
-            component_id=0
-        )
 
-        assert StateKey.INFER_GDF in component.produces_state
-        assert StateKey.INFER_COCO_PATH in component.produces_state
+def test_produces_georeferenced_aggregator_score():
+    agg = Aggregator(AggregatorConfig())
+    assert agg.produces.data_type is Objects
+    assert Col.AGGREGATOR_SCORE in agg.produces.columns
+    assert agg.produces.links == ("prev_objects",)   # survivors point back to the input they kept
+    assert agg.produces.crs is True                  # georeferenced output

@@ -5,7 +5,7 @@ import os
 
 from detectron2.engine import HookBase
 from detectron2.utils import comm
-from canopyrs.engine.models.detector.train_detectron2.utils import lazyconfig_to_dict
+from canopyrs.engine.frameworks.detectron2.utils import lazyconfig_to_dict
 
 
 def clean_config(cfg):

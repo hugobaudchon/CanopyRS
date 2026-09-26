@@ -50,7 +50,7 @@ num_classes: 1
 
 | Parameter | Description |
 |---|---|
-| `tile_type` | `tile`, `tile_labeled`, or `polygon` |
+| `tile_type` | `tile`, `labeled`, or `polygon` |
 | `tile_size` | Tile size in pixels |
 | `tile_overlap` | Overlap ratio between tiles (0–1) |
 | `ground_resolution` | Target ground resolution in meters/pixel (cannot be set together with `scale_factor`) |

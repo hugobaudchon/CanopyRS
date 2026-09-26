@@ -44,12 +44,39 @@ pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorc
 git submodule update --init --recursive
 ```
 
-**6. Install CanopyRS and dependencies**
+This brings in `geodataset` (raster tiling, naming conventions, aggregation) and `detrex` (with
+`detectron2` nested inside it).
+
+**6. Install CanopyRS (core)**
 
 ```bash
+python -m pip install -e ./geodataset
 python -m pip install -e .
-python -m pip install --no-build-isolation -e ./detrex/detectron2 -e ./detrex
 ```
+
+Core alone runs the SAM 2 based pipelines, tilerizing, aggregation and benchmarks.
+
+**7. Install the optional frameworks you need**
+
+Other models need their framework installed once, via the `canopyrs setup` command:
+
+```bash
+canopyrs setup detrex        # e.g. everything the DINO detector presets need
+```
+
+| Extra / setup target | Unlocks | Notes |
+|---|---|---|
+| `detectron2` | Faster R-CNN, Mask R-CNN, RetinaNet, Detectree2 | compiled from the `detrex` submodule |
+| `detrex` | DINO, Mask2Former, MaskDINO | includes `detectron2` |
+| `mmdet` | RSPrompter | compiles mmcv from source (~30 min) |
+| `deepforest` | DeepForest detector | |
+| `sam` | legacy SAM 1 | |
+| `sam3` | SAM 3 | gated model — see access request below |
+| `all` | everything above | very slow -- not recommended|
+
+Use `canopyrs setup` rather than a plain `pip install`: it verifies the compiled GPU ops, which can
+otherwise silently end up CPU-only and fail hours into a run. A pipeline missing a framework tells
+you which command to run at startup.
 
 ## SAM 3 — Hugging Face access request
 
@@ -77,5 +104,9 @@ This is a conflict between Detectron2 and SAM2 libraries, but it can be ignored 
 ## Verify the installation
 
 ```bash
-python -c "import canopyrs; print('CanopyRS installed successfully')"
+canopyrs doctor
 ```
+
+Reports torch/CUDA, every optional framework's state (installed, missing, or broken — with the
+command that fixes it), and which models are available. In batch scripts, fail fast before any
+processing with `canopyrs doctor --expect detrex,sam3`.

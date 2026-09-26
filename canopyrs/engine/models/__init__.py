@@ -1,6 +1,8 @@
 import importlib
 from pathlib import Path
 
+from canopyrs.engine.models.extras import record_import_failure
+
 
 def auto_import_models():
     """Automatically import all Python files in model subdirectories."""
@@ -19,7 +21,10 @@ def auto_import_models():
                     try:
                         importlib.import_module(f'canopyrs.engine.models.{model_dir}.{module_name}')
                     except ImportError as e:
-                        print(f"Failed to import engine.models.{model_dir}.{module_name}: {e}")
+                        # Missing optional framework: the wrapper simply doesn't register.
+                        # Recorded (not printed) so registry misses and `canopyrs doctor` can
+                        # tell the user exactly which extra installs it.
+                        record_import_failure(f'{model_dir}.{module_name}', e)
 
 
 # Trigger auto-import when this module is imported

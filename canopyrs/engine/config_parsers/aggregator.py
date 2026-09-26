@@ -11,6 +11,7 @@ class AggregatorConfig(BaseConfig):
     nms_algorithm: str = 'iou'
     detector_score_weight: float = 0.5
     segmenter_score_weight: float = 0.5
+    classifier_score_weight: float = 0.0
     scores_weighting_method: str = 'weighted_geometric_mean'
     min_centroid_distance_weight: float = None
     edge_band_buffer_percentage: float = 0.05
@@ -34,4 +35,5 @@ class AggregatorConfig(BaseConfig):
             # Set others to 0 (not the default 0.5)
             data['detector_score_weight'] = scores_weights.get('detector_score', 0.0)
             data['segmenter_score_weight'] = scores_weights.get('segmenter_score', 0.0)
+            data['classifier_score_weight'] = scores_weights.get('classifier_score', 0.0)
         return data
