@@ -26,6 +26,9 @@ class PipelineConfig(BaseConfig):
     num_workers: int | None = Field(
         None, description="Image loader workers for every model component; None auto-picks "
                           "(available CPUs less one, capped at 10)")
+    read_mb: int | None = Field(
+        None, description="Native megabytes one image loader read may decode; None uses the loader's "
+                          "default (256). Peak loader memory is roughly 2 x this x num_workers")
 
     @classmethod
     def from_yaml(cls, path: str or Path) -> 'PipelineConfig':
@@ -48,4 +51,5 @@ class PipelineConfig(BaseConfig):
 
             components_configs.append((component_type, component_config))
 
-        return cls(components_configs=components_configs, num_workers=data.get('num_workers'))
+        return cls(components_configs=components_configs, num_workers=data.get('num_workers'),
+                   read_mb=data.get('read_mb'))

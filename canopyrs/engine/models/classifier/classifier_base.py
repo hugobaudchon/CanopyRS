@@ -4,7 +4,7 @@ from typing import Dict
 import torch
 
 from canopyrs.engine.config_parsers import ClassifierConfig
-from canopyrs.engine.loader import InferTimer
+from canopyrs.engine.timing import InferTimer
 from canopyrs.engine.models.utils import load_state_dict_with_key_repair
 
 
@@ -36,7 +36,7 @@ class ClassifierWrapperBase(ABC):
         pass
 
     def infer(self, loader):
-        """Consume a ``tile_loader``, iterated as ``(object_ids, images)`` batches, and return aligned
+        """Consume an ``image_loader``, iterated as ``(object_ids, images)`` batches, and return aligned
         ``(object_ids, class_predictions, class_scores)`` — one predicted class index and one full
         per-class score list per tile. Reuses ``forward``; builds no DataLoader of its own."""
         self.model.eval()

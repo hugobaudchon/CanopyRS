@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 from typing import List, Set
 
@@ -121,6 +122,22 @@ def init_spawn_method():
         # The start method was already set
         print(f"Error while setting multiprocessing start method: {e}")
         pass
+
+
+def worker_context(num_workers):
+    """``"fork"`` for worker pools that can use it, else None for the platform default.
+
+    The counterpart to ``init_spawn_method``: that forces ``spawn`` process-wide because the
+    segmenter's mask workers need it, which then makes every DataLoader worker re-import torch and
+    friends in a fresh interpreter and unpickle its whole plan — tens of seconds before the first read
+    when several start at once. Forking inherits all of it instead.
+
+    Only sound for a pool whose workers touch no CUDA and inherit no open GDAL handles; forking with
+    either is how you get a hang or corrupt reads. Windows has no fork and macOS's is unsafe with
+    Apple's frameworks, so both keep the default.
+    """
+    return "fork" if num_workers and sys.platform == "linux" else None
+
 
 def merge_coco_jsons(json_files: list[str or Path], output_file: str or Path):
     merged = {

@@ -5,7 +5,7 @@ import torch
 import torchmetrics
 from shapely import box
 
-from canopyrs.engine.loader import InferTimer
+from canopyrs.engine.timing import InferTimer
 from canopyrs.engine.models.utils import load_state_dict_with_key_repair
 
 warnings.filterwarnings(
@@ -28,7 +28,7 @@ class DetectorWrapperBase(ABC):
         pass
 
     def infer(self, loader):
-        """Consume a ``tile_loader``, iterated as ``(object_ids, images)`` batches, and
+        """Consume an ``image_loader``, iterated as ``(object_ids, images)`` batches, and
         return ``(object_ids, boxes, scores, classes)`` as aligned per-tile lists. Reuses
         ``forward``; builds no DataLoader of its own."""
         self.model.eval()

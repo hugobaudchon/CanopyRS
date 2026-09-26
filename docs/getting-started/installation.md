@@ -44,9 +44,13 @@ pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorc
 git submodule update --init --recursive
 ```
 
+This brings in `geodataset` (raster tiling, naming conventions, aggregation) and `detrex` (with
+`detectron2` nested inside it).
+
 **6. Install CanopyRS (core)**
 
 ```bash
+python -m pip install -e ./geodataset
 python -m pip install -e .
 ```
 
@@ -70,11 +74,9 @@ canopyrs setup detrex        # e.g. everything the DINO detector presets need
 | `sam3` | SAM 3 | gated model — see access request below |
 | `all` | everything above | very slow -- not recommended|
 
-`canopyrs setup` installs the matching pip extra (`pip install -e ".[detrex]"` etc.), checks
-that `nvcc` matches your torch CUDA version before compiling, and verifies the compiled GPU ops
-afterwards — a plain `pip install` can silently produce CPU-only builds that only fail hours
-into a run. The [Model Zoo](../user-guide/model-zoo.md) lists the setup command needed by each
-model, and any pipeline that is missing one will tell you the exact command at startup.
+Use `canopyrs setup` rather than a plain `pip install`: it verifies the compiled GPU ops, which can
+otherwise silently end up CPU-only and fail hours into a run. A pipeline missing a framework tells
+you which command to run at startup.
 
 ## SAM 3 — Hugging Face access request
 

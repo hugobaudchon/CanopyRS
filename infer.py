@@ -79,6 +79,7 @@ def pipeline_main(args):
         resume_from=args.resume_from,
         initialize_from=args.initialize_from,
         num_workers=config.num_workers,
+        read_mb=config.read_mb,
     )
     pipeline.run()
 

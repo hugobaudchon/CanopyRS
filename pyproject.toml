@@ -18,7 +18,10 @@ dependencies = [
     "faster-coco-eval>=1.6.5",
     "GDAL>=3.0.0,<=3.8.0",
     "geopandas==1.0.1",
-    "geodataset @ git+https://github.com/hugobaudchon/geodataset.git@hugo-dev",
+    # geodataset is NOT listed here: it is the `geodataset` submodule, installed from source with
+    # `pip install -e ./geodataset` (see installation.md). Declaring it would make every
+    # `pip install -e .` and every `canopyrs setup <target>` re-resolve it and overwrite that
+    # editable install. The submodule commit is the version this CanopyRS needs.
     "hf_xet>=1.0.0",
     "numpy>=1.24.0,<2.0.0",
     "pandas>=2.2.0",

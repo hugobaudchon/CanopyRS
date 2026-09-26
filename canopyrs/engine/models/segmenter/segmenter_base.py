@@ -23,7 +23,7 @@ from shapely.affinity import scale
 from geodataset.utils import mask_to_polygon
 
 from canopyrs.engine.config_parsers import SegmenterConfig
-from canopyrs.engine.loader import InferTimer
+from canopyrs.engine.timing import InferTimer
 
 
 def get_memory_usage():
@@ -161,7 +161,7 @@ class SegmenterWrapperBase(ABC):
         return n_masks_processed
 
     def infer(self, loader, boxes_by_tile=None):
-        """Consume a ``tile_loader``, iterated as ``(object_ids, images)`` batches, and return per-tile
+        """Consume an ``image_loader``, iterated as ``(object_ids, images)`` batches, and return per-tile
         ``(tile_object_ids, mask_object_ids, mask_polygons, mask_scores)`` — polygons in tile-pixel
         coords. Reuses ``forward`` and the multiprocessing mask->polygon postprocessing; builds no
         DataLoader of its own.

@@ -14,7 +14,7 @@ import os
 
 from canopyrs.engine.models.registry import Registry
 from canopyrs.engine.data import Imagery
-from canopyrs.engine.loader import tile_loader
+from canopyrs.engine.loader import DEFAULT_READ_MB, image_loader
 
 # kind -> component class, populated by the @register_component decorators on each component. Lets the
 # pipeline instantiate components from config (Pipeline.from_config) without importing each class.
@@ -43,6 +43,7 @@ class Component:
         self.component_id = None     # assigned by the pipeline
         self.out_dir = None          # assigned by the pipeline before run()
         self.num_workers = default_num_workers()   # the pipeline overrides it when its config sets one
+        self.read_mb = DEFAULT_READ_MB              # idem: megabytes one loader read may decode
 
     @property
     def label(self) -> str:
@@ -65,10 +66,11 @@ class Component:
         return model_class
 
     def _loader(self, source, batch_size):
-        """A tile image loader over ``source`` — an ``Imagery`` table (its reading frame) or an already
+        """An image loader over ``source`` — an ``Imagery`` table (its reading frame) or an already
         built reading frame."""
         frame = source.reading_frame() if isinstance(source, Imagery) else source
-        return tile_loader(frame, batch_size=batch_size, num_workers=self.num_workers)
+        return image_loader(frame, batch_size=batch_size, num_workers=self.num_workers,
+                            read_mb=self.read_mb)
 
 
 def flatten_by_tile(tile_ids, **per_tile):

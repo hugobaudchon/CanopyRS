@@ -6,6 +6,10 @@ each unit verify-first: an already-working target is skipped, so re-runs are che
 whole command is idempotent.
 """
 
+import json
+import subprocess
+import sys
+
 from canopyrs.installers import deepforest, detectron2, detrex, mmdet, rfdetr, sam, sam3
 from canopyrs.installers.common import SetupError
 
@@ -46,6 +50,29 @@ def resolve(names):
     return modules, notes
 
 
+_CHECK_MARKER = "__canopyrs_check__ "
+
+
+def check_installed(name):
+    """A target's ``check()`` in a fresh interpreter — how the post-install verification must run.
+
+    Source/editable installs register through a .pth file, and .pth files are only read by site.py at
+    startup: a package pip installed a moment ago can never be imported by *this* process, so checking
+    in-process reports a perfectly good install as broken. A subprocess also contains a check that
+    crashes the interpreter (a mis-built CUDA op can) instead of taking the whole command down."""
+    code = ("import json;"
+            "from canopyrs.installers import TARGETS;"
+            f"ok, detail = TARGETS[{name!r}].check();"
+            f"print({_CHECK_MARKER!r} + json.dumps([ok, detail]))")
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    for line in reversed(proc.stdout.splitlines()):
+        if line.startswith(_CHECK_MARKER):
+            ok, detail = json.loads(line[len(_CHECK_MARKER):])
+            return ok, detail
+    tail = (proc.stderr.strip().splitlines() or ["no output"])[-1]
+    return False, f"could not verify (check crashed): {tail}"
+
+
 def run_targets(names, force=False) -> int:
     """Set up the named targets (and their dependency chains). Returns a process exit code."""
     try:
@@ -69,7 +96,7 @@ def run_targets(names, force=False) -> int:
             print(f"[{mod.NAME}] FAILED:\n{e}")
             failed.append(mod.NAME)
             continue
-        ok, detail = mod.check()
+        ok, detail = check_installed(mod.NAME)
         print(f"[{mod.NAME}] {'OK' if ok else 'STILL BROKEN'} — {detail}")
         if not ok:
             failed.append(mod.NAME)
