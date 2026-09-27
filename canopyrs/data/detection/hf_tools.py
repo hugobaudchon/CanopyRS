@@ -230,7 +230,7 @@ class HFDatasetTools:
                     with rasterio.open(dest_image_path, "w", **meta) as dst:
                         dst.write(data)
                 except Exception as e:
-                    print(f"Error writing TIFF {dest_image_path}: {e}")
+                    raise RuntimeError(f"Error writing TIFF {dest_image_path}") from e
 
                 coco_tile_metadata.append({
                     'id': tile_id,
