@@ -41,5 +41,6 @@ From the lowest layer to the highest. Two rules:
 | **instance** | What rows with the same `instance_id` share: they show the same thing, such as one tree at several dates, or one area in several modalities |
 | **georef** | The dict every image row holds (`Col.GEOREF`): where its pixels are on the ground (transform, CRS, width, height) and what they hold (band count, dtype, nodata). See `core/geometry/georef.py` |
 | **object** | One row of `Objects`: a box, a mask or a point |
-| **link** | A pointer from one table to another (`imagery`, `parent`, `prev_objects`) |
-| **history** | The chain of objects an object was derived from (`prev_object_id`) |
+| **parent** | The row a row came from: a tile's source, a crop's tile, an object's image, a mask's box. An object has two: the image it was found in (`parent_imagery`) and the object it was made from (`parent_objects`) |
+| **link** | A pointer from one table to its parent table (`parent_imagery`, `parent_objects`), through a `parent_<row>_id` column |
+| **history** | The chain of objects an object was made from, following `parent_object_id` |

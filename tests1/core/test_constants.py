@@ -12,8 +12,8 @@ def test_column_names():
     assert _names(Col) == {
         "IMAGE_ID": "image_id",
         "OBJECT_ID": "object_id",
-        "PARENT_ID": "parent_id",
-        "PREV_OBJECT_ID": "prev_object_id",
+        "PARENT_IMAGE_ID": "parent_image_id",
+        "PARENT_OBJECT_ID": "parent_object_id",
         "MODALITY": "modality",
         "TIMESTAMP": "timestamp",
         "INSTANCE_ID": "instance_id",

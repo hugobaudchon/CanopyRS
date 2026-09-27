@@ -10,12 +10,12 @@ class Col:
     """The names of the table columns."""
 
     # Ids: each table has one column that identifies its rows.
-    IMAGE_ID = "image_id"  # in Objects: the image the object was found in
+    IMAGE_ID = "image_id"
     OBJECT_ID = "object_id"
 
-    # Links between rows.
-    PARENT_ID = "parent_id"  # the image this image is part of: a tile's raster, a crop's tile
-    PREV_OBJECT_ID = "prev_object_id"  # the object this object was made from: a mask's box
+    # Links to the row each row came from: a tile's source, an object's image, a mask's box.
+    PARENT_IMAGE_ID = "parent_image_id"  # in images and objects
+    PARENT_OBJECT_ID = "parent_object_id"  # in objects
 
     # Dates and modalities.
     MODALITY = "modality"  # see Modality
