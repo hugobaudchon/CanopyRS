@@ -1,8 +1,5 @@
 # canopyrs1
 
-The rewrite of CanopyRS, with geodataset merged in. When it's finished it replaces `canopyrs/` and
-takes its name back (see `MIGRATION_PLAN.md` at the repository root).
-
 The geometry, raster, AOI, tiling, aggregation and COCO code comes from
 [geodataset](https://github.com/hugobaudchon/geodataset), published together with CanopyRS.
 
@@ -10,7 +7,7 @@ The geometry, raster, AOI, tiling, aggregation and COCO code comes from
 
 From the lowest layer to the highest. Two rules:
 - `core/` never imports torch, a model, or anything outside `core/`.
-- Otherwise, a module only imports modules listed above it.
+- Otherwise, a module only imports modules listed above it (checked by a test).
 
 | Module | What it holds |
 |---|---|
@@ -29,10 +26,10 @@ From the lowest layer to the highest. Two rules:
 | `config_presets/` | Ready-made YAML settings |
 | `models/` | Models for inference, and the loader that feeds them images |
 | `pipeline/` | Running the steps, saving, resuming and exporting a run |
-| `training/` | Training, one trainer per framework |
-| `benchmark/` | Evaluating predictions |
 | `public_datasets/` | The public datasets CanopyRS uses |
-| `tools/`, `installers/`, `cli.py`, `doctor.py` | Command-line entry points |
+| `benchmark/` | Evaluating predictions |
+| `training/` | Training, one trainer per framework |
+| `installers/`, `tools/`, `doctor.py`, `cli.py` | Command-line entry points |
 
 ## Words used in the code
 
