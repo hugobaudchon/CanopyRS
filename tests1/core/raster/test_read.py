@@ -218,7 +218,8 @@ def _read_all_at_once(src, georef):
 
 
 def _cut(image, col, row, width, height):
-    """Return the ``width`` x ``height`` window of ``image`` at (``col``, ``row``), zero outside it."""
+    """Return the ``width`` x ``height`` window of ``image`` at (``col``, ``row``), zero outside
+    it."""
     window = np.zeros((image.shape[0], height, width), image.dtype)
     top, left = max(row, 0), max(col, 0)
     part = image[:, top : row + height, left : col + width]

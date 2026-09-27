@@ -1,10 +1,12 @@
-"""Reading the pixels of any image, described by its georef, from a raster file."""
+"""Reading the pixels of any image, described by its georef, from a raster file, and telling
+whether they are worth keeping."""
 
 import math
 
+import numpy as np
 from affine import Affine
 from pyproj import CRS
-from rasterio.enums import Resampling
+from rasterio.enums import ColorInterp, Resampling
 from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 
@@ -96,3 +98,42 @@ def read_window(src, georef, bands=None):
         out_shape=(len(bands), georef["height"], georef["width"]),
         resampling=Resampling.bilinear,
     )
+
+
+def get_alpha_band(src):
+    """Return the number (starting at 1) of the alpha band of the raster ``src``, an open rasterio
+    dataset, or None if it has none."""
+    for number, colour in enumerate(src.colorinterp, start=1):
+        if colour == ColorInterp.alpha:
+            return number
+    return None
+
+
+def should_skip(pixels, conditions, alpha=None):
+    """Return whether an image should be skipped, given its ``pixels`` (bands, height, width) and
+    the ``conditions`` it must meet.
+
+    A pixel is empty when it is black (0 in every band), white (255 in every band) or transparent
+    (0 in ``alpha``, the image's alpha band as a (height, width) array, if it has one). Pixels
+    outside the raster are read as 0, so they count as empty too.
+
+    ``conditions`` is a dict: {"ignore_black_white_alpha_tiles_threshold": 0.75} skips the image
+    when at least 75% of its pixels are empty; a threshold of 1 or more never skips. None or an
+    empty dict never skips either. Raises a ValueError for any other key.
+    """
+    known_conditions = {"ignore_black_white_alpha_tiles_threshold"}
+    if not conditions:
+        return False
+    unknown_conditions = set(conditions) - known_conditions
+    if unknown_conditions:
+        raise ValueError(
+            f"Unknown skip conditions {sorted(unknown_conditions)}, "
+            f"expected {sorted(known_conditions)}"
+        )
+    threshold = conditions["ignore_black_white_alpha_tiles_threshold"]
+    if threshold >= 1:
+        return False
+    empty = np.all(pixels == 0, axis=0) | np.all(pixels == 255, axis=0)
+    if alpha is not None:
+        empty |= alpha == 0
+    return bool(empty.mean() >= threshold)

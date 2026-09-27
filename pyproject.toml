@@ -129,5 +129,5 @@ target-version = "py310"
 include = ["canopyrs1/**/*.py", "tests1/**/*.py"]
 
 [tool.ruff.lint]
-# Unused imports and undefined names only (the pyflakes rules).
-select = ["F"]
+# Unused imports and undefined names (the pyflakes rules), and lines over 100 characters.
+select = ["F", "E501"]
