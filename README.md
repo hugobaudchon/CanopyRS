@@ -20,7 +20,7 @@
   </a>
 </p>
 
-Canopy RS (Remote Sensing) is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes. It supports state-of-the-art model architectures spanning both CNNs (Faster R-CNN, Mask R-CNN, RetinaNet) and transformers (DINO, Mask2Former, SAM 2, SAM 3).
+CanopyRS (Canopy Remote Sensing) is a pipeline designed for processing high-resolution geospatial orthomosaics to detect, segment, and (in the future) classify trees of various forest biomes. It supports state-of-the-art model architectures spanning both CNNs (Faster R-CNN, Mask R-CNN, RetinaNet) and transformers (DINO, Mask2Former, SAM 2, SAM 3).
 The pipeline includes components for tiling, detecting, aggregating, and segmenting trees in orthomosaics. These components can be chained together based on the desired application.
 
 **📖 Full documentation: [hugobaudchon.github.io/CanopyRS](https://hugobaudchon.github.io/CanopyRS/)**
