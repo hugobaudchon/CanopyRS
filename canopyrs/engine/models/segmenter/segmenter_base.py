@@ -128,7 +128,7 @@ class SegmenterWrapperBase(ABC):
                     queue: multiprocessing.JoinableQueue):
         
         # Scale down the masks to a fixed size to reduce memory footprint during postprocessing
-        if self.config.pp_down_scale_masks_px and masks.shape[-1] > self.config.pp_down_scale_masks_px:
+        if self.config.pp_down_scale_masks_px and masks.shape[0] > 0 and masks.shape[-1] > self.config.pp_down_scale_masks_px:
             resized_list = []
             for i in range(masks.shape[0]):
                 mask = masks[i]
