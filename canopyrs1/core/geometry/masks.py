@@ -1,8 +1,8 @@
 """Converting between polygons and masks: 2D arrays with one value per pixel, nonzero inside.
 
 Polygons are in pixel coordinates, where pixel (col, row) is the square from (col, row) to
-(col + 1, row + 1), as in the georeferencing dict. With this convention, a mask turned into a
-polygon without simplification, and back into a mask, gives exactly the same pixels.
+(col + 1, row + 1), as in the georef. With this convention, a mask turned into a polygon without
+simplification, and back into a mask, gives exactly the same pixels.
 """
 
 import math

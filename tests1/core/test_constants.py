@@ -18,7 +18,7 @@ def test_column_names():
         "TIMESTAMP": "timestamp",
         "INSTANCE_ID": "instance_id",
         "PATH": "path",
-        "METADATA": "metadata",
+        "GEOREF": "georef",
         "BANDS": "bands",
         "LAZY_CONDITIONS": "lazy_conditions",
         "GEOMETRY": "geometry",

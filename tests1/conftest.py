@@ -3,7 +3,7 @@ Shared fixtures for the canopyrs1 tests.
 
 Synthetic rasters and labels, written with rasterio and geopandas directly (never with canopyrs1
 code, so a bug in the code under test can't hide in its own fixtures), and a helper that builds an
-image's georeferencing dict.
+image's georef.
 """
 
 from pathlib import Path
@@ -29,7 +29,7 @@ TILE_SIZE = 128
 # =============================================================================
 
 def make_georef(*, width=64, height=64, gsd=1.0, x0=0.0, y0=0.0, crs="EPSG:32618", count=3):
-    """Return the georeferencing dict of a north-up uint8 image whose top-left corner is at
+    """Return the georef of a north-up uint8 image whose top-left corner is at
     (x0, y0) in CRS units, with pixels of ``gsd`` CRS units. It has the same keys as the dict the
     tilerizer stores for each tile."""
     return {

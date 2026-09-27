@@ -25,7 +25,7 @@ class Col:
 
     # Images.
     PATH = "path"                       # the image's own file; empty for a window into its parent
-    METADATA = "metadata"               # the image's georeferencing dict (see core/geometry/georef.py)
+    GEOREF = "georef"                   # the image's georef (see core/geometry/georef.py)
     BANDS = "bands"                     # the band numbers to read, starting at 1 (see RGB_BANDS)
     LAZY_CONDITIONS = "lazy_conditions" # for a window: when to skip it, tested once its pixels are
                                         # read (see should_skip); empty to never skip
