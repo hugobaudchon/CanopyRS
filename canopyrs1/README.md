@@ -38,6 +38,7 @@ From the lowest layer to the highest. Two rules:
 | **image** | One row of `Sources`, `Tiles` or `Crops` |
 | **on disk** | The image has its own file (`path`) |
 | **window** | An image with no file of its own; its pixels are read from a parent's file |
+| **instance** | What rows with the same `instance_id` share: they show the same thing, such as one tree at several dates, or one area in several modalities |
 | **georef** | The dict every image row holds (`Col.GEOREF`): where its pixels are on the ground (transform, CRS, width, height) and what they hold (band count, dtype, nodata). See `core/geometry/georef.py` |
 | **object** | One row of `Objects`: a box, a mask or a point |
 | **link** | A pointer from one table to another (`imagery`, `parent`, `prev_objects`) |

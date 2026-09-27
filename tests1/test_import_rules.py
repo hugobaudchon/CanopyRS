@@ -32,8 +32,18 @@ LAYERS = [
 FORBIDDEN_PACKAGES = {"canopyrs", "geodataset"}
 
 FORBIDDEN_IN_CORE = {
-    "torch", "torchvision", "detectron2", "detrex", "mmdet", "mmcv", "mmengine",
-    "sam2", "sam3", "transformers", "timm", "deepforest",
+    "torch",
+    "torchvision",
+    "detectron2",
+    "detrex",
+    "mmdet",
+    "mmcv",
+    "mmengine",
+    "sam2",
+    "sam3",
+    "transformers",
+    "timm",
+    "deepforest",
 }
 
 
@@ -60,7 +70,7 @@ def import_violations(relative_path, source):
     canopyrs1/, e.g. "core/tables/imagery.py") whose code is ``source``. Returns an empty list when
     the module follows every rule."""
     parts = Path(relative_path).with_suffix("").parts
-    layer = None if parts == ("__init__",) else parts[0]      # None: canopyrs1/__init__.py itself
+    layer = None if parts == ("__init__",) else parts[0]  # None: canopyrs1/__init__.py itself
     if layer is not None and layer not in LAYERS:
         return [f"{relative_path}: '{layer}' is not in LAYERS; add it there"]
 
@@ -94,30 +104,43 @@ def test_canopyrs1_follows_the_import_rules():
 
 # The checker itself, on small made-up modules.
 
-@pytest.mark.parametrize("path, source", [
+ALLOWED_IMPORTS = [
     ("core/tables/imagery.py", "import numpy\nfrom canopyrs1.core.geometry import georef"),
     ("models/base.py", "import torch\nfrom canopyrs1.core.tables import Tiles"),
     ("models/base.py", "from canopyrs1 import config_definitions"),
-    ("training/sam.py", "from canopyrs1.pipeline import Pipeline\nfrom canopyrs1.benchmark import evaluator"),
+    (
+        "training/sam.py",
+        "from canopyrs1.pipeline import Pipeline\nfrom canopyrs1.benchmark import evaluator",
+    ),
     ("cli.py", "from canopyrs1.installers import setup"),
     ("__init__.py", "from importlib.metadata import version"),
-])
+]
+
+
+@pytest.mark.parametrize("path, source", ALLOWED_IMPORTS)
 def test_allowed_imports(path, source):
     assert import_violations(path, source) == []
 
 
-@pytest.mark.parametrize("path, source, reason", [
+FORBIDDEN_IMPORTS = [
     ("pipeline/run.py", "from canopyrs.engine.data import Tiles", "old code"),
     ("core/io/hf.py", "import geodataset", "old code"),
     ("core/tables/imagery.py", "from .table import Table", "absolute import"),
     ("core/raster/read.py", "import torch", "torch"),
     ("core/tiling/grid.py", "def f():\n    from detectron2 import model_zoo", "torch"),
-    ("core/tiling/grid.py", "from canopyrs1.config_definitions import TilerizerConfig", "only import core"),
+    (
+        "core/tiling/grid.py",
+        "from canopyrs1.config_definitions import TilerizerConfig",
+        "only import core",
+    ),
     ("models/base.py", "from canopyrs1.training import trainer", "comes before"),
     ("models/base.py", "from canopyrs1 import pipeline", "comes before"),
     ("models/base.py", "from canopyrs1.engine import data", "not in LAYERS"),
     ("engine/data.py", "import numpy", "not in LAYERS"),
-])
+]
+
+
+@pytest.mark.parametrize("path, source, reason", FORBIDDEN_IMPORTS)
 def test_forbidden_imports(path, source, reason):
     violations = import_violations(path, source)
     assert len(violations) == 1 and reason in violations[0], violations

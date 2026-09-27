@@ -28,8 +28,8 @@ def test_rgba_raster(rgba_raster):
         assert src.count == 4
         assert src.colorinterp[3] == ColorInterp.alpha
         data = src.read()
-    assert (data[:, :, :128] == 0).all()             # left half: transparent and black
-    assert (data[3, :, 128:] == 255).all()           # right half: opaque
+    assert (data[:, :, :128] == 0).all()  # left half: transparent and black
+    assert (data[3, :, 128:] == 255).all()  # right half: opaque
 
 
 def test_unprojected_raster(unprojected_raster):
@@ -47,7 +47,7 @@ def test_tiles_dir(tiles_dir, rgb_raster):
         with rasterio.open(path) as tile:
             assert (tile.width, tile.height) == (128, 128)
             assert (tile.bounds.left, tile.bounds.top) == (left, 256.0)
-            assert (tile.read() == full[:, :128, col:col + 128]).all()
+            assert (tile.read() == full[:, :128, col : col + 128]).all()
 
 
 def test_labels(box_labels, polygon_labels):

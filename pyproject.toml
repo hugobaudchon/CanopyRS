@@ -96,6 +96,9 @@ docs = [
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.25.0",
 ]
+dev = [
+    "ruff",
+]
 
 [project.scripts]
 canopyrs = "canopyrs.cli:main"
@@ -118,3 +121,13 @@ markers = [
     "slow: end-to-end / GPU tests (deselect with '-m \"not slow\"')",
     "integration: tests that touch real data or external services",
 ]
+
+[tool.ruff]
+# Only canopyrs1/ and tests1/ are formatted and checked.
+line-length = 100
+target-version = "py310"
+include = ["canopyrs1/**/*.py", "tests1/**/*.py"]
+
+[tool.ruff.lint]
+# Unused imports and undefined names only (the pyflakes rules).
+select = ["F"]

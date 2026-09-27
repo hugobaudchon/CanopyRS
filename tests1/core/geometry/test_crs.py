@@ -5,14 +5,17 @@ from rasterio.crs import CRS
 from canopyrs1.core.geometry.crs import get_projected_crs, get_utm_crs
 
 
-@pytest.mark.parametrize("lon, lat, expected", [
-    (-73.6, 45.5, "EPSG:32618"),       # Montreal
-    (151.2, -33.9, "EPSG:32756"),      # Sydney
-    (-180.0, 10.0, "EPSG:32601"),      # first zone
-    (180.0, 10.0, "EPSG:32660"),       # last zone, not a 61st one
-    (3.0, 0.0, "EPSG:32631"),          # the equator counts as north
-    (-78.0, -1.0, "EPSG:32718"),       # zone edge: -78 is the start of zone 18
-])
+UTM_ZONES = [
+    (-73.6, 45.5, "EPSG:32618"),  # Montreal
+    (151.2, -33.9, "EPSG:32756"),  # Sydney
+    (-180.0, 10.0, "EPSG:32601"),  # first zone
+    (180.0, 10.0, "EPSG:32660"),  # last zone, not a 61st one
+    (3.0, 0.0, "EPSG:32631"),  # the equator counts as north
+    (-78.0, -1.0, "EPSG:32718"),  # zone edge: -78 is the start of zone 18
+]
+
+
+@pytest.mark.parametrize("lon, lat, expected", UTM_ZONES)
 def test_get_utm_crs(lon, lat, expected):
     assert get_utm_crs(lon, lat) == expected
 

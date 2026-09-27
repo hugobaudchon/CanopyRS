@@ -41,7 +41,11 @@ def test_geom_kinds():
 
 def test_modalities():
     assert _names(Modality) == {
-        "RGB": "rgb", "MSI": "msi", "HSI": "hsi", "THERMAL": "thermal", "POINTCLOUD": "pointcloud",
+        "RGB": "rgb",
+        "MSI": "msi",
+        "HSI": "hsi",
+        "THERMAL": "thermal",
+        "POINTCLOUD": "pointcloud",
     }
 
 

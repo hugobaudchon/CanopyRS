@@ -21,17 +21,24 @@ _POLYGON_TYPES = (shapely.GeometryType.POLYGON, shapely.GeometryType.MULTIPOLYGO
 
 
 def _fills_its_bounds(geometries):
-    """Return, for each geometry, whether it is a Polygon filling its north-up bounding rectangle."""
+    """Return, for each geometry, whether it is a Polygon filling its north-up bounding
+    rectangle."""
     area = shapely.area(geometries)
-    return ((shapely.get_type_id(geometries) == shapely.GeometryType.POLYGON)
-            & (area > 0)
-            & (area >= _BOX_MIN_FILL * shapely.area(shapely.envelope(geometries))))
+    return (
+        (shapely.get_type_id(geometries) == shapely.GeometryType.POLYGON)
+        & (area > 0)
+        & (area >= _BOX_MIN_FILL * shapely.area(shapely.envelope(geometries)))
+    )
 
 
 def _reproject(geometries, crs, to_crs):
     """Return ``geometries`` moved from ``crs`` to ``to_crs``, as a numpy array."""
     transformer = Transformer.from_crs(crs, to_crs, always_xy=True)
-    return shapely.transform(geometries, lambda xy: np.column_stack(transformer.transform(xy[:, 0], xy[:, 1])))
+
+    def move(xy):
+        return np.column_stack(transformer.transform(xy[:, 0], xy[:, 1]))
+
+    return shapely.transform(geometries, move)
 
 
 def infer_geom_kind(geometries, crs=None, image_crs=None):
@@ -45,7 +52,8 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
     A box is drawn aligned with the image it annotates, so it may only look like one in the image's
     CRS. ``crs`` is the CRS the geometries are in (None for pixel coordinates), and ``image_crs``
     the CRS of their image, if known. A polygon is a box if it fills its bounding rectangle as
-    given, or once moved from ``crs`` to ``image_crs``. Both can be strings, pyproj or rasterio CRSs.
+    given, or once moved from ``crs`` to ``image_crs``. Both can be strings, pyproj or rasterio
+    CRSs.
 
     Raises a ValueError if a geometry is anything else, such as a line or a missing geometry.
     """
@@ -53,14 +61,19 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
     types = shapely.get_type_id(geometries)
     unsupported = ~np.isin(types, _POINT_TYPES + _POLYGON_TYPES)
     if unsupported.any():
-        found = sorted({str(g.geom_type) if g is not None else "None" for g in geometries[unsupported]})
+        found = sorted({"None" if g is None else str(g.geom_type) for g in geometries[unsupported]})
         raise ValueError(f"Expected points or polygons, found {', '.join(found)}")
 
     is_box = _fills_its_bounds(geometries)
-    if crs is not None and image_crs is not None and CRS.from_user_input(crs) != CRS.from_user_input(image_crs):
-        candidates = (types == shapely.GeometryType.POLYGON) & ~is_box
-        if candidates.any():
-            is_box[candidates] = _fills_its_bounds(_reproject(geometries[candidates], crs, image_crs))
+    in_other_crs = (
+        crs is not None
+        and image_crs is not None
+        and CRS.from_user_input(crs) != CRS.from_user_input(image_crs)
+    )
+    candidates = (types == shapely.GeometryType.POLYGON) & ~is_box
+    if in_other_crs and candidates.any():
+        reprojected = _reproject(geometries[candidates], crs, image_crs)
+        is_box[candidates] = _fills_its_bounds(reprojected)
 
     kinds = np.full(len(geometries), GeomKind.MASK, dtype=object)
     kinds[np.isin(types, _POINT_TYPES)] = GeomKind.POINT
@@ -79,7 +92,8 @@ def _from_parts(parts):
 def keep_polygon_parts(geometry):
     """Return the polygons in ``geometry``, dropping any line or point. A Polygon or MultiPolygon
     is returned unchanged; a mix of shapes (a GeometryCollection), as produced by repairing or
-    intersecting polygons, is reduced to its polygons. Returns an empty Polygon if there are none."""
+    intersecting polygons, is reduced to its polygons. Returns an empty Polygon if there are
+    none."""
     if isinstance(geometry, (Polygon, MultiPolygon)):
         return geometry
     parts = []

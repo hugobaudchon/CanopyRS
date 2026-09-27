@@ -1,19 +1,30 @@
 import pytest
 from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Point, Polygon, box
 
-from canopyrs1.core.geometry.shapes import (get_largest_part, keep_polygon_parts, remove_holes,
-                                            remove_small_parts, repair_polygon)
+from canopyrs1.core.geometry.shapes import (
+    get_largest_part,
+    keep_polygon_parts,
+    remove_holes,
+    remove_small_parts,
+    repair_polygon,
+)
 
-BOWTIE = Polygon([(0, 0), (2, 2), (2, 0), (0, 2)])                     # its outline crosses itself
-SPIKE = Polygon([(0, 0), (4, 0), (4, 4), (2, 4), (2, 6), (2, 4), (0, 4)])   # a line sticks out of the top
+BOWTIE = Polygon([(0, 0), (2, 2), (2, 0), (0, 2)])  # its outline crosses itself
+SPIKE = Polygon([(0, 0), (4, 0), (4, 4), (2, 4), (2, 6), (2, 4), (0, 4)])  # a line sticks out
 WITH_HOLE = Polygon(box(0, 0, 10, 10).exterior, holes=[box(4, 4, 6, 6).exterior])
-TWO_PARTS = MultiPolygon([box(0, 0, 10, 10), box(20, 20, 21, 21)])     # areas 100 and 1
+TWO_PARTS = MultiPolygon([box(0, 0, 10, 10), box(20, 20, 21, 21)])  # areas 100 and 1
 
 
 def test_keep_polygon_parts():
     assert keep_polygon_parts(TWO_PARTS) is TWO_PARTS
-    mixed = GeometryCollection([box(0, 0, 1, 1), LineString([(5, 5), (6, 6)]), Point(9, 9),
-                                MultiPolygon([box(2, 2, 3, 3), box(4, 4, 5, 5)])])
+    mixed = GeometryCollection(
+        [
+            box(0, 0, 1, 1),
+            LineString([(5, 5), (6, 6)]),
+            Point(9, 9),
+            MultiPolygon([box(2, 2, 3, 3), box(4, 4, 5, 5)]),
+        ]
+    )
     kept = keep_polygon_parts(mixed)
     assert isinstance(kept, MultiPolygon) and len(kept.geoms) == 3 and kept.area == 3
     # Two boxes that only touch intersect along a line: nothing with an area is left.
@@ -26,8 +37,8 @@ def test_repair_polygon():
     bowtie = repair_polygon(BOWTIE)
     assert bowtie.is_valid and isinstance(bowtie, MultiPolygon) and bowtie.area == pytest.approx(2)
     spike = repair_polygon(SPIKE)
-    assert spike.is_valid and spike.equals(box(0, 0, 4, 4))            # the line is dropped
-    flat = Polygon([(0, 0), (1, 1), (2, 2)])                            # no area at all
+    assert spike.is_valid and spike.equals(box(0, 0, 4, 4))  # the line is dropped
+    flat = Polygon([(0, 0), (1, 1), (2, 2)])  # no area at all
     assert repair_polygon(flat) == Polygon()
 
 
@@ -51,4 +62,4 @@ def test_remove_small_parts():
     assert remove_small_parts(TWO_PARTS, min_area=1).equals(TWO_PARTS)
     assert remove_small_parts(TWO_PARTS, min_area=1000) == Polygon()
     small = box(0, 0, 1, 1)
-    assert remove_small_parts(small, min_area=10) is small               # a single part is kept
+    assert remove_small_parts(small, min_area=10) is small  # a single part is kept

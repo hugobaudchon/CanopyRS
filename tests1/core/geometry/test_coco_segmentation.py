@@ -29,6 +29,7 @@ def _uncompressed_rle(mask):
 # The polygons format
 # =============================================================================
 
+
 def test_encode_as_points():
     assert encode_segmentation(box(1, 2, 5, 6)) == [[5.0, 2.0, 5.0, 6.0, 1.0, 6.0, 1.0, 2.0]]
     assert len(encode_segmentation(TWO_PARTS)) == 2
@@ -40,14 +41,17 @@ def test_points_round_trip():
     circle = Point(20, 20).buffer(8)
     assert decode_segmentation(encode_segmentation(circle)).equals_exact(circle, 1e-9)
     assert decode_segmentation(encode_segmentation(TWO_PARTS)).equals(TWO_PARTS)
-    assert decode_segmentation(encode_segmentation(WITH_HOLE)).equals(box(2, 2, 12, 12))   # holes are lost
+    # Holes are lost.
+    assert decode_segmentation(encode_segmentation(WITH_HOLE)).equals(box(2, 2, 12, 12))
 
 
 def test_decode_points_repairs_and_skips_bad_parts():
-    bowtie = [[0, 0, 2, 2, 2, 0, 0, 2]]                               # its outline crosses itself
+    bowtie = [[0, 0, 2, 2, 2, 0, 0, 2]]  # its outline crosses itself
     repaired = decode_segmentation(bowtie)
     assert repaired.is_valid and repaired.area == pytest.approx(2)
-    assert decode_segmentation([[0, 0, 5, 5], [1, 1, 4, 1, 4, 4]]).equals(Polygon([(1, 1), (4, 1), (4, 4)]))
+    two_points_and_a_triangle = [[0, 0, 5, 5], [1, 1, 4, 1, 4, 4]]
+    triangle = Polygon([(1, 1), (4, 1), (4, 4)])
+    assert decode_segmentation(two_points_and_a_triangle).equals(triangle)
     assert decode_segmentation([]) == Polygon()
 
 
@@ -63,11 +67,12 @@ def test_decode_points_to_box_and_mask():
 # The RLE format
 # =============================================================================
 
+
 def test_encode_as_rle():
     rle = encode_segmentation(WITH_HOLE, rle=True, height=20, width=30)
     assert rle["size"] == [20, 30] and isinstance(rle["counts"], str)
     assert json.loads(json.dumps(rle)) == rle
-    decoded = coco_mask.decode({**rle, "counts": rle["counts"].encode()})    # pycocotools reads it
+    decoded = coco_mask.decode({**rle, "counts": rle["counts"].encode()})  # pycocotools reads it
     assert (decoded == polygon_to_mask(WITH_HOLE, 20, 30)).all()
 
 
@@ -82,7 +87,8 @@ def test_rle_round_trip_on_random_masks():
     for _ in range(200):
         h, w = rng.integers(1, 30, size=2)
         mask = (rng.random((h, w)) < rng.uniform(0.05, 0.9)).astype(np.uint8)
-        rle = encode_segmentation(mask_to_polygon(mask, fill_holes=False), rle=True, height=h, width=w)
+        polygon = mask_to_polygon(mask, fill_holes=False)
+        rle = encode_segmentation(polygon, rle=True, height=h, width=w)
         assert (decode_segmentation(rle, "mask") == mask).all()
 
 

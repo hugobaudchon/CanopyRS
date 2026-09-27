@@ -34,7 +34,7 @@ def test_every_segmentation_decodes(selvamask_dataset):
             problems.append(f"{where}: reaches outside its {width} x {height} image")
         if not decode_segmentation(segmentation, "box").equals(box(*polygon.bounds)):
             problems.append(f"{where}: its box isn't the polygon's bounds")
-        if n % 50 == 0:                                   # masks are slow: check a sample
+        if n % 50 == 0:  # masks are slow: check a sample
             mask = decode_segmentation(segmentation, "mask", height=height, width=width)
             if mask.shape != (height, width) or not mask.any():
                 problems.append(f"{where}: bad mask {mask.shape}, {mask.sum()} pixels")

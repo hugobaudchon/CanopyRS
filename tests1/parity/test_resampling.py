@@ -1,4 +1,5 @@
-"""The resampled georef is the same as the one geodataset's read_raster resamples the raster onto."""
+"""The resampled georef is the same as the one geodataset's read_raster resamples the raster
+onto."""
 
 import pytest
 import rasterio
@@ -7,8 +8,15 @@ from geodataset.utils import read_raster
 
 from canopyrs1.core.raster.resampling import get_resampled_georef
 
-SETTINGS = [dict(), dict(scale_factor=0.5), dict(scale_factor=0.3), dict(scale_factor=2),
-            dict(ground_resolution=0.5), dict(ground_resolution=0.3), dict(ground_resolution=1.7)]
+SETTINGS = [
+    dict(),
+    dict(scale_factor=0.5),
+    dict(scale_factor=0.3),
+    dict(scale_factor=2),
+    dict(ground_resolution=0.5),
+    dict(ground_resolution=0.3),
+    dict(ground_resolution=1.7),
+]
 
 
 @pytest.mark.parametrize("raster", ["rgb_raster", "rgba_raster", "unprojected_raster"])

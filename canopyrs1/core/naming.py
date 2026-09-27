@@ -18,8 +18,10 @@ def _check(value, pattern, what):
     """Return ``value``, or raise a ValueError if it doesn't fully match ``pattern``. An underscore
     in a fold or AOI, for example, would make the name impossible to split into its parts."""
     if not re.fullmatch(pattern, str(value)):
-        raise ValueError(f"{what} {value!r} may only hold letters and digits"
-                         + (" and single underscores" if pattern == _PRODUCT_NAME else ""))
+        raise ValueError(
+            f"{what} {value!r} may only hold letters and digits"
+            + (" and single underscores" if pattern == _PRODUCT_NAME else "")
+        )
     return value
 
 
@@ -62,8 +64,18 @@ class NameConvention:
         return "sf1p0"
 
     @staticmethod
-    def tile(product_name, *, col, row, width, height, tile_id, aoi=None, scale_factor=None,
-             ground_resolution=None):
+    def tile(
+        product_name,
+        *,
+        col,
+        row,
+        width,
+        height,
+        tile_id,
+        aoi=None,
+        scale_factor=None,
+        ground_resolution=None,
+    ):
         """Return the file name of a tile: the ``width`` x ``height`` pixels whose top-left pixel is
         at column ``col`` and row ``row`` of the raster (negative if the tile starts past its edge),
         with its ``tile_id`` and the ``aoi`` it belongs to ("noaoi" if None).
@@ -71,33 +83,57 @@ class NameConvention:
         _check(product_name, _PRODUCT_NAME, "The product name")
         aoi = _check(aoi, _WORD, "The AOI") if aoi is not None else "noaoi"
         tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
-        return f"{product_name}_tile_{aoi}_{tag}_{int(col)}_{int(row)}_{int(width)}_{int(height)}_{int(tile_id)}.tif"
+        numbers = "_".join(str(int(n)) for n in (col, row, width, height, tile_id))
+        return f"{product_name}_tile_{aoi}_{tag}_{numbers}.tif"
 
     @staticmethod
-    def coco(product_name, fold, *, scale_factor=None, ground_resolution=None):
+    def coco(
+        product_name,
+        fold,
+        *,
+        scale_factor=None,
+        ground_resolution=None,
+    ):
         """Return the file name of the COCO file of one fold: "ortho_coco_gr0p045_train.json"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
         _check(fold, _WORD, "The fold")
-        return f"{product_name}_coco_{NameConvention.resolution_tag(scale_factor, ground_resolution)}_{fold}.json"
+        tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
+        return f"{product_name}_coco_{tag}_{fold}.json"
 
     @staticmethod
-    def gpkg(product_name, fold, *, scale_factor=None, ground_resolution=None):
+    def gpkg(
+        product_name,
+        fold,
+        *,
+        scale_factor=None,
+        ground_resolution=None,
+    ):
         """Return the file name of the GeoPackage of one fold, or of a run's final predictions when
         ``fold`` is "finalpreds": "ortho_gr0p045_finalpreds.gpkg"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
         _check(fold, _WORD, "The fold")
-        return f"{product_name}_{NameConvention.resolution_tag(scale_factor, ground_resolution)}_{fold}.gpkg"
+        tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
+        return f"{product_name}_{tag}_{fold}.gpkg"
 
     @staticmethod
-    def aoi_gpkg(product_name, aoi, *, scale_factor=None, ground_resolution=None):
-        """Return the file name of the GeoPackage holding one AOI's area: "ortho_aoi_gr0p045_train.gpkg"."""
+    def aoi_gpkg(
+        product_name,
+        aoi,
+        *,
+        scale_factor=None,
+        ground_resolution=None,
+    ):
+        """Return the file name of the GeoPackage holding one AOI's area:
+        "ortho_aoi_gr0p045_train.gpkg"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
         _check(aoi, _WORD, "The AOI")
-        return f"{product_name}_aoi_{NameConvention.resolution_tag(scale_factor, ground_resolution)}_{aoi}.gpkg"
+        tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
+        return f"{product_name}_aoi_{tag}_{aoi}.gpkg"
 
     @staticmethod
     def aoi_tiles_image(product_name, *, scale_factor=None, ground_resolution=None):
         """Return the file name of the picture showing which tiles are in which AOI:
         "ortho_aoistiles_gr0p045.png"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
-        return f"{product_name}_aoistiles_{NameConvention.resolution_tag(scale_factor, ground_resolution)}.png"
+        tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
+        return f"{product_name}_aoistiles_{tag}.png"

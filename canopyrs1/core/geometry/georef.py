@@ -19,7 +19,16 @@ from affine import Affine
 from shapely.geometry import Polygon
 
 
-def make_georef(*, transform, crs, width, height, count, dtype, nodata=None):
+def make_georef(
+    *,
+    transform,
+    crs,
+    width,
+    height,
+    count,
+    dtype,
+    nodata=None,
+):
     """Return the georef of an image from its values. ``transform`` can be an
     ``affine.Affine`` or its first six numbers, and ``crs`` a rasterio CRS, a string, or None."""
     return {
@@ -36,11 +45,25 @@ def make_georef(*, transform, crs, width, height, count, dtype, nodata=None):
 def read_georef(src):
     """Return the georef of a whole raster. ``src`` is an open rasterio dataset: a
     file, or a virtual raster such as a WarpedVRT."""
-    return make_georef(transform=src.transform, crs=src.crs, width=src.width, height=src.height,
-                       count=src.count, dtype=src.dtypes[0], nodata=src.nodata)
+    return make_georef(
+        transform=src.transform,
+        crs=src.crs,
+        width=src.width,
+        height=src.height,
+        count=src.count,
+        dtype=src.dtypes[0],
+        nodata=src.nodata,
+    )
 
 
-def window_georef(georef, *, col_off, row_off, width, height):
+def window_georef(
+    georef,
+    *,
+    col_off,
+    row_off,
+    width,
+    height,
+):
     """Return the georef of a window of the image described by ``georef``: the
     ``width`` x ``height`` pixels whose top-left pixel is at column ``col_off`` and row ``row_off``.
     The window may reach past the edges of the image."""
@@ -56,14 +79,19 @@ def window_georef(georef, *, col_off, row_off, width, height):
 def _apply_transform(geometry, transform):
     """Return ``geometry`` with the six-number ``transform`` applied to every coordinate."""
     a, b, c, d, e, f = transform
-    return shapely.transform(
-        geometry, lambda xy: np.column_stack([a * xy[:, 0] + b * xy[:, 1] + c, d * xy[:, 0] + e * xy[:, 1] + f]))
+
+    def apply(xy):
+        x, y = xy[:, 0], xy[:, 1]
+        return np.column_stack([a * x + b * y + c, d * x + e * y + f])
+
+    return shapely.transform(geometry, apply)
 
 
 def pixel_to_crs(geometry, georef):
     """Return ``geometry``, given in the pixel coordinates of the image described by ``georef``,
     in the image's CRS coordinates. ``geometry`` can be one shapely geometry, or several (a list,
-    an array or a GeoSeries); several geometries are returned as a numpy array, in the same order."""
+    an array or a GeoSeries); several geometries are returned as a numpy array, in the same
+    order."""
     return _apply_transform(geometry, georef["transform"])
 
 

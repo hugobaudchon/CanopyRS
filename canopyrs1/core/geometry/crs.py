@@ -5,8 +5,9 @@ from pyproj import CRS
 
 def get_utm_crs(lon, lat):
     """Return the UTM CRS of the zone that contains the point at longitude ``lon`` and latitude
-    ``lat`` (in degrees), as a string: "EPSG:326xx" north of the equator, "EPSG:327xx" south of it."""
-    zone = min(int((lon + 180) / 6) + 1, 60)        # longitude 180 belongs to zone 60
+    ``lat`` (in degrees), as a string: "EPSG:326xx" north of the equator, "EPSG:327xx" south of
+    it."""
+    zone = min(int((lon + 180) / 6) + 1, 60)  # longitude 180 belongs to zone 60
     return f"EPSG:{(32600 if lat >= 0 else 32700) + zone}"
 
 

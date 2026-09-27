@@ -11,18 +11,44 @@ from rasterio.windows import transform as rasterio_window_transform
 from shapely.affinity import affine_transform
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
-from canopyrs1.core.geometry.georef import (crs_to_pixel, get_bounds, get_footprint, make_georef,
-                                            pixel_to_crs, read_georef, window_georef)
+from canopyrs1.core.geometry.georef import (
+    crs_to_pixel,
+    get_bounds,
+    get_footprint,
+    make_georef,
+    pixel_to_crs,
+    read_georef,
+    window_georef,
+)
 
-NORTH_UP = make_georef(transform=[1.0, 0.0, 0.0, 0.0, -1.0, 256.0], crs="EPSG:32618",
-                       width=256, height=256, count=3, dtype="uint8")
-ROTATED = make_georef(transform=[0.3, 0.1, 500.0, 0.2, -0.3, 900.0], crs="EPSG:32618",
-                      width=100, height=50, count=3, dtype="uint8")
+NORTH_UP = make_georef(
+    transform=[1.0, 0.0, 0.0, 0.0, -1.0, 256.0],
+    crs="EPSG:32618",
+    width=256,
+    height=256,
+    count=3,
+    dtype="uint8",
+)
+ROTATED = make_georef(
+    transform=[0.3, 0.1, 500.0, 0.2, -0.3, 900.0],
+    crs="EPSG:32618",
+    width=100,
+    height=50,
+    count=3,
+    dtype="uint8",
+)
 
 
 def test_make_georef_turns_rasterio_objects_into_plain_values():
-    georef = make_georef(transform=Affine(0.5, 0.0, 10.0, 0.0, -0.5, 20.0), crs=CRS.from_epsg(32618),
-                         width=64, height=32, count=3, dtype="uint8", nodata=0)
+    georef = make_georef(
+        transform=Affine(0.5, 0.0, 10.0, 0.0, -0.5, 20.0),
+        crs=CRS.from_epsg(32618),
+        width=64,
+        height=32,
+        count=3,
+        dtype="uint8",
+        nodata=0,
+    )
     assert georef == {
         "transform": [0.5, 0.0, 10.0, 0.0, -0.5, 20.0],
         "crs": "EPSG:32618",
@@ -32,11 +58,18 @@ def test_make_georef_turns_rasterio_objects_into_plain_values():
         "dtype": "uint8",
         "nodata": 0.0,
     }
-    assert json.loads(json.dumps(georef)) == georef      # plain values only
+    assert json.loads(json.dumps(georef)) == georef  # plain values only
 
 
 def test_make_georef_without_crs():
-    georef = make_georef(transform=[1, 0, 0, 0, 1, 0], crs=None, width=8, height=8, count=3, dtype="uint8")
+    georef = make_georef(
+        transform=[1, 0, 0, 0, 1, 0],
+        crs=None,
+        width=8,
+        height=8,
+        count=3,
+        dtype="uint8",
+    )
     assert georef["crs"] is None and georef["nodata"] is None
 
 
@@ -57,23 +90,42 @@ def test_read_georef(rgb_raster, rgba_raster, unprojected_raster):
         assert read_georef(src)["crs"] == "EPSG:4326"
 
 
-@pytest.mark.parametrize("transform", [
-    Affine(1.0, 0.0, 0.0, 0.0, -1.0, 256.0),        # north-up
-    Affine(0.3, 0.1, 500.0, 0.2, -0.3, 900.0),      # rotated
-])
-@pytest.mark.parametrize("window", [
+TRANSFORMS = [
+    Affine(1.0, 0.0, 0.0, 0.0, -1.0, 256.0),  # north-up
+    Affine(0.3, 0.1, 500.0, 0.2, -0.3, 900.0),  # rotated
+]
+
+
+WINDOWS = [
     Window(0, 0, 128, 128),
     Window(100, 30, 50, 70),
-    Window(-20, -10, 64, 64),                        # past the top-left edge
-])
+    Window(-20, -10, 64, 64),  # past the top-left edge
+]
+
+
+@pytest.mark.parametrize("transform", TRANSFORMS)
+@pytest.mark.parametrize("window", WINDOWS)
 def test_window_georef_matches_rasterio(transform, window):
-    parent = make_georef(transform=transform, crs="EPSG:32618", width=256, height=256, count=3, dtype="uint8")
-    child = window_georef(parent, col_off=window.col_off, row_off=window.row_off,
-                          width=window.width, height=window.height)
-    assert child["transform"] == pytest.approx(list(rasterio_window_transform(window, transform))[:6])
+    parent = make_georef(
+        transform=transform,
+        crs="EPSG:32618",
+        width=256,
+        height=256,
+        count=3,
+        dtype="uint8",
+    )
+    child = window_georef(
+        parent,
+        col_off=window.col_off,
+        row_off=window.row_off,
+        width=window.width,
+        height=window.height,
+    )
+    expected = list(rasterio_window_transform(window, transform))[:6]
+    assert child["transform"] == pytest.approx(expected)
     assert (child["width"], child["height"]) == (window.width, window.height)
-    assert {k: child[k] for k in ("crs", "count", "dtype", "nodata")} == \
-           {k: parent[k] for k in ("crs", "count", "dtype", "nodata")}
+    kept = ("crs", "count", "dtype", "nodata")
+    assert {k: child[k] for k in kept} == {k: parent[k] for k in kept}
 
 
 def test_window_georef_matches_the_tile_file(rgb_raster, tiles_dir):
@@ -90,12 +142,15 @@ def test_pixel_to_crs_on_a_north_up_image():
     assert crs_to_pixel(box(0, 246, 10, 256), NORTH_UP).equals(box(0, 0, 10, 10))
 
 
-@pytest.mark.parametrize("geometry", [
+GEOMETRIES = [
     box(1, 2, 30, 40),
     Point(7, 3),
     Polygon([(0, 0), (10, 0), (5, 8)], holes=[[(4, 1), (6, 1), (5, 3)]]),
     MultiPolygon([box(0, 0, 1, 1), box(5, 5, 9, 9)]),
-])
+]
+
+
+@pytest.mark.parametrize("geometry", GEOMETRIES)
 @pytest.mark.parametrize("georef", [NORTH_UP, ROTATED])
 def test_pixel_to_crs_matches_shapely_and_round_trips(geometry, georef):
     a, b, c, d, e, f = georef["transform"]
@@ -129,4 +184,4 @@ def test_footprint_of_a_rotated_image():
     footprint = get_footprint(ROTATED)
     a, b, _, d, e, _ = ROTATED["transform"]
     assert footprint.area == pytest.approx(100 * 50 * abs(a * e - b * d))
-    assert footprint.area < box(*get_bounds(ROTATED)).area     # the bounds rectangle is larger
+    assert footprint.area < box(*get_bounds(ROTATED)).area  # the bounds rectangle is larger

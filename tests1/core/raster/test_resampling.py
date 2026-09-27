@@ -17,7 +17,8 @@ def raster_without_crs(tmp_path):
     path = tmp_path / "photo.tif"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", NotGeoreferencedWarning)
-        with rasterio.open(path, "w", driver="GTiff", width=64, height=64, count=3, dtype="uint8") as dst:
+        dst = rasterio.open(path, "w", driver="GTiff", width=64, height=64, count=3, dtype="uint8")
+        with dst:
             dst.write(np.zeros((3, 64, 64), np.uint8))
     return path
 
@@ -40,14 +41,15 @@ def test_scale_factor(rgb_raster, scale_factor, size):
     resampled, raster = _resample(rgb_raster, scale_factor=scale_factor)
     assert (resampled["width"], resampled["height"], resampled["crs"]) == (size, size, "EPSG:32618")
     assert resampled["transform"] == pytest.approx([256 / size, 0, 0, 0, -256 / size, 256])
-    assert get_bounds(resampled) == pytest.approx(get_bounds(raster))      # the same area, other pixels
+    assert get_bounds(resampled) == pytest.approx(get_bounds(raster))  # same area, other pixels
 
 
 @pytest.mark.parametrize("ground_resolution, size", [(0.5, 512), (2, 128)])
 def test_ground_resolution(rgb_raster, ground_resolution, size):
     resampled, _ = _resample(rgb_raster, ground_resolution=ground_resolution)
     assert (resampled["width"], resampled["height"], resampled["crs"]) == (size, size, "EPSG:32618")
-    assert resampled["transform"] == pytest.approx([ground_resolution, 0, 0, 0, -ground_resolution, 256])
+    expected = [ground_resolution, 0, 0, 0, -ground_resolution, 256]
+    assert resampled["transform"] == pytest.approx(expected)
 
 
 def test_a_raster_in_latitude_longitude_moves_to_utm(unprojected_raster):
@@ -66,13 +68,14 @@ def test_a_raster_in_latitude_longitude_moves_to_utm(unprojected_raster):
 
 def test_other_properties_are_kept(rgba_raster):
     resampled, raster = _resample(rgba_raster, ground_resolution=0.5)
-    assert {k: resampled[k] for k in ("count", "dtype", "nodata")} == {"count": 4, "dtype": "uint8", "nodata": None}
+    kept = {k: resampled[k] for k in ("count", "dtype", "nodata")}
+    assert kept == {"count": 4, "dtype": "uint8", "nodata": None}
 
 
 def test_a_raster_without_crs(raster_without_crs):
     resampled, _ = _resample(raster_without_crs, scale_factor=0.5)
     assert resampled["crs"] is None and (resampled["width"], resampled["height"]) == (32, 32)
-    assert resampled["transform"] == pytest.approx([2, 0, 0, 0, 2, 0])      # pixels of the photo, row down
+    assert resampled["transform"] == pytest.approx([2, 0, 0, 0, 2, 0])  # photo pixels, rows down
     with pytest.raises(ValueError, match="has no CRS"):
         _resample(raster_without_crs, ground_resolution=0.5)
 

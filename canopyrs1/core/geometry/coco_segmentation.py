@@ -14,7 +14,13 @@ from canopyrs1.core.geometry.masks import mask_to_polygon, polygon_to_mask
 from canopyrs1.core.geometry.shapes import repair_polygon
 
 
-def encode_segmentation(polygon, *, rle=False, height=None, width=None):
+def encode_segmentation(
+    polygon,
+    *,
+    rle=False,
+    height=None,
+    width=None,
+):
     """Return ``polygon`` (a Polygon or MultiPolygon, in pixel coordinates) as a COCO segmentation.
 
     - ``rle=False``: in the polygons format, one list per part. Holes are lost. An empty polygon
@@ -25,8 +31,9 @@ def encode_segmentation(polygon, *, rle=False, height=None, width=None):
     if rle:
         encoded = coco_mask.encode(np.asfortranarray(polygon_to_mask(polygon, height, width)))
         return {"size": [int(height), int(width)], "counts": encoded["counts"].decode("ascii")}
-    parts = getattr(polygon, "geoms", [polygon])
-    return [np.asarray(part.exterior.coords)[:-1].ravel().tolist() for part in parts if not part.is_empty]
+    parts = [part for part in getattr(polygon, "geoms", [polygon]) if not part.is_empty]
+    # The last point of an exterior repeats the first, and COCO leaves it out.
+    return [np.asarray(part.exterior.coords)[:-1].ravel().tolist() for part in parts]
 
 
 def _to_pycocotools_rle(segmentation):
@@ -49,7 +56,13 @@ def _points_to_polygon(segmentation):
     return repair_polygon(parts[0] if len(parts) == 1 else MultiPolygon(parts))
 
 
-def decode_segmentation(segmentation, to="polygon", *, height=None, width=None):
+def decode_segmentation(
+    segmentation,
+    to="polygon",
+    *,
+    height=None,
+    width=None,
+):
     """Return a COCO segmentation, in either format, as:
 
     - ``to="polygon"``: a Polygon or MultiPolygon in pixel coordinates. From RLE, it follows the
@@ -69,8 +82,8 @@ def decode_segmentation(segmentation, to="polygon", *, height=None, width=None):
         return box(*polygon.bounds) if to == "box" and not polygon.is_empty else polygon
 
     rle = _to_pycocotools_rle(segmentation)
-    if to == "box":                                       # from the runs, without tracing the outline
-        x, y, w, h = coco_mask.toBbox(rle)
+    if to == "box":
+        x, y, w, h = coco_mask.toBbox(rle)  # from the run lengths, without tracing the outline
         return box(x, y, x + w, y + h) if w > 0 else Polygon()
     mask = coco_mask.decode(rle)
     return mask if to == "mask" else mask_to_polygon(mask, fill_holes=False)
