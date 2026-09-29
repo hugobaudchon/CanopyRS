@@ -113,9 +113,11 @@ def get_footprints(georefs, crs):
     """Return the footprints of the images described by ``georefs``, as a GeoSeries in ``crs``:
     each footprint is moved from its image's own CRS into ``crs``. ``crs`` is None for images in
     pixel coordinates. Raises a ValueError if some images have a CRS and others don't."""
+    # check the CRSs
     crss = {georef["crs"] for georef in georefs} | {crs}
     if None in crss and len(crss) > 1:
         raise ValueError("Images with and without a CRS can't be together")
+    # make the footprints, and move those in another CRS
     polygons = [get_footprint(georef) for georef in georefs]
     footprints = gpd.GeoSeries(polygons, crs=crs)
     for other_crs in crss - {crs}:

@@ -26,6 +26,7 @@ def get_resampled_georef(src, *, ground_resolution=None, scale_factor=None):
         raise ValueError("Give a ground_resolution or a scale_factor, not both")
     georef = read_georef(src)
 
+    # at a ground resolution, in a CRS in metres
     if ground_resolution:
         if src.crs is None:
             raise ValueError(
@@ -51,6 +52,7 @@ def get_resampled_georef(src, *, ground_resolution=None, scale_factor=None):
             nodata=src.nodata,
         )
 
+    # at a scale factor, in its own CRS
     if scale_factor:
         width, height = int(src.width * scale_factor), int(src.height * scale_factor)
         a, b, c, d, e, f = georef["transform"]
@@ -62,4 +64,5 @@ def get_resampled_georef(src, *, ground_resolution=None, scale_factor=None):
             "height": height,
         }
 
+    # as it is
     return georef

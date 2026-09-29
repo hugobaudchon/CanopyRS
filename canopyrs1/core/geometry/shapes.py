@@ -48,6 +48,7 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
 
     Raises a ValueError if a geometry is anything else, such as a line or a missing geometry.
     """
+    # check the types
     geometries = np.asarray(geometries, dtype=object)
     types = shapely.get_type_id(geometries)
     unsupported = ~np.isin(types, _POINT_TYPES + _POLYGON_TYPES)
@@ -55,6 +56,7 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
         found = sorted({"None" if g is None else str(g.geom_type) for g in geometries[unsupported]})
         raise ValueError(f"Expected points or polygons, found {', '.join(found)}")
 
+    # find the boxes, as given or in the image's CRS
     is_box = _fills_its_bounds(geometries)
     in_other_crs = (
         crs is not None
@@ -67,6 +69,7 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
         reprojected = in_image_crs.to_numpy()
         is_box[candidates] = _fills_its_bounds(reprojected)
 
+    # name the kinds
     kinds = np.full(len(geometries), GeomKind.MASK, dtype=object)
     kinds[np.isin(types, _POINT_TYPES)] = GeomKind.POINT
     kinds[is_box] = GeomKind.BOX

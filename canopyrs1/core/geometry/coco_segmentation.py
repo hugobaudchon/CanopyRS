@@ -73,14 +73,17 @@ def decode_segmentation(
 
     An empty segmentation gives an empty Polygon, or a mask of zeros.
     """
+    # check the output
     if to not in ("polygon", "box", "mask"):
         raise ValueError(f"to must be 'polygon', 'box' or 'mask', not {to!r}")
+    # from the polygons format
     if not isinstance(segmentation, dict):
         polygon = _points_to_polygon(segmentation)
         if to == "mask":
             return polygon_to_mask(polygon, height, width)
         return box(*polygon.bounds) if to == "box" and not polygon.is_empty else polygon
 
+    # from the RLE format
     rle = _to_pycocotools_rle(segmentation)
     if to == "box":
         x, y, w, h = coco_mask.toBbox(rle)  # from the run lengths, without tracing the outline

@@ -60,9 +60,11 @@ def read_window(src, georef, bands=None):
     Pixels outside the raster are its nodata value, or 0 if it has none. ``bands`` are the band
     numbers to read, starting at 1; None reads them all.
     """
+    # choose the bands and the value outside the raster
     bands = list(bands) if bands is not None else list(range(1, src.count + 1))
     fill = src.nodata if src.nodata is not None else 0
 
+    # reproject if the CRS differs, or if either is rotated
     reproject = (
         not _same_crs(src.crs, georef["crs"])
         or _is_rotated(src.transform)
@@ -80,6 +82,7 @@ def read_window(src, georef, bands=None):
         with vrt:
             return vrt.read(bands)
 
+    # read directly if the image's pixels are exactly the file's pixels
     window = _file_window(src, georef)
     if _lies_on_file_pixels(window, georef):
         col, row = round(window.col_off), round(window.row_off)
@@ -90,6 +93,7 @@ def read_window(src, georef, bands=None):
             boundless=True,
             fill_value=fill,
         )
+    # otherwise resample (same CRS, another resolution)
     return src.read(
         bands,
         window=window,
@@ -121,6 +125,7 @@ def should_skip(pixels, conditions, alpha=None):
     when at least 75% of its pixels are empty; a threshold of 1 or more never skips. None or an
     empty dict never skips either. Raises a ValueError for any other key.
     """
+    # check the conditions
     known_conditions = {"ignore_black_white_alpha_tiles_threshold"}
     if not conditions:
         return False
@@ -133,6 +138,7 @@ def should_skip(pixels, conditions, alpha=None):
     threshold = conditions["ignore_black_white_alpha_tiles_threshold"]
     if threshold >= 1:
         return False
+    # count the empty pixels
     empty = np.all(pixels == 0, axis=0) | np.all(pixels == 255, axis=0)
     if alpha is not None:
         empty |= alpha == 0

@@ -14,12 +14,14 @@ def write_tile(path, pixels, georef, colorinterp=None, compress=None):
     ColorInterp.blue]; None leaves GDAL's default tags. ``compress`` is None (no compression) or
     "zstd" (lossless). Raises a ValueError if the pixels don't have ``georef``'s width and height.
     """
+    # check the size
     count, height, width = pixels.shape
     if (width, height) != (georef["width"], georef["height"]):
         raise ValueError(
             f"The pixels are {width} x {height}, but the georef is "
             f"{georef['width']} x {georef['height']}"
         )
+    # choose the compression
     compression = {}
     if compress == "zstd":
         # The predictor stores differences between neighbouring pixels, which compress better:
@@ -28,6 +30,7 @@ def write_tile(path, pixels, georef, colorinterp=None, compress=None):
         compression = {"compress": "zstd", "predictor": predictor}
     elif compress is not None:
         raise ValueError(f"compress must be None or 'zstd', not {compress!r}")
+    # write
     dst = rasterio.open(
         path,
         "w",

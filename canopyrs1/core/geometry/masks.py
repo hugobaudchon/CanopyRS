@@ -70,11 +70,13 @@ def mask_to_polygon(
     - ``min_part_area``: drop the parts smaller than this many pixels. A single part is always kept.
       0, the default, keeps every part.
     """
+    # view the mask as uint8
     mask = np.asarray(mask)
     if mask.dtype == bool:
         mask = mask.view(np.uint8)  # no copy
     elif mask.dtype != np.uint8:
         mask = (mask != 0).view(np.uint8)
+    # crop to the pixels' bounding box
     x, y, w, h = cv2.boundingRect(np.ascontiguousarray(mask))
     if w == 0:
         return Polygon()
@@ -88,6 +90,7 @@ def mask_to_polygon(
         borderType=cv2.BORDER_CONSTANT,
         value=0,
     )
+    # trace the outline
     if fill_holes:
         crop = _fill_holes(crop)
     outlines = features.shapes(
@@ -97,6 +100,7 @@ def mask_to_polygon(
     )
     parts = [shape(outline) for outline, _ in outlines]
     polygon = parts[0] if len(parts) == 1 else MultiPolygon(parts)
+    # clean it up
     if simplify_tolerance:
         polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
     return repair_polygon(remove_small_parts(polygon, min_part_area))
