@@ -31,6 +31,9 @@ def test_column_names():
         "CLASSIFIER_CLASS_NAME": "classifier_class_name",
         "CLASSIFIER_SCORES": "classifier_scores",
         "AGGREGATOR_SCORE": "aggregator_score",
+        "CATEGORY_ID": "category_id",
+        "CATEGORY_NAME": "category_name",
+        "SCORE": "score",
     }
 
 

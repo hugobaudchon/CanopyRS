@@ -11,7 +11,7 @@ from canopyrs1.core.constants import Col, GeomKind
 from canopyrs1.core.geometry.coco_segmentation import decode_segmentation
 from canopyrs1.core.geometry.georef import make_georef
 from canopyrs1.core.geometry.masks import polygon_to_mask
-from canopyrs1.core.io.coco import encode_annotation, write_coco
+from canopyrs1.core.io.coco import encode_annotation, read_coco, write_coco
 from canopyrs1.core.tables.imagery import Sources, Tiles
 from canopyrs1.core.tables.objects import Objects
 
@@ -325,3 +325,94 @@ def test_the_real_crop(real_raster, tmp_path):
     georef = sources.df[Col.GEOREF][0]
     assert coco["images"][0]["file_name"] == real_raster.name
     assert coco["annotations"][0]["bbox"] == [0, 0, georef["width"], georef["height"]]
+
+
+# =============================================================================
+# read_coco
+# =============================================================================
+
+
+def test_read_back_what_was_written(tiles_dir, tmp_path):
+    objects = _objects_on_tiles(
+        tiles_dir,
+        species=["Pinaceae", "PIMA", "Picea"],
+        **{Col.DETECTOR_SCORE: [0.9, 0.8, 0.7], "height_m": [12.5, 8.0, 20.0]},
+    )
+    path = write_coco(
+        objects,
+        tiles_dir / "coco.json",  # next to its tiles: the default images_dir
+        categories=TREES,
+        category_column="species",
+        score_column=Col.DETECTOR_SCORE,
+        attribute_columns=["height_m"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # its boxes and areas are those of its segmentations
+        tiles, back = read_coco(path)
+    assert list(tiles.df[Col.PATH]) == [
+        str(tiles_dir / "tile_0.tif"),
+        str(tiles_dir / "tile_1.tif"),
+    ]
+    assert back.parent_imagery is tiles and not back.has_crs
+    assert list(back.df[Col.PARENT_IMAGE_ID]) == [0, 0, 1]
+    assert list(back.df[Col.GEOM_KIND]) == [GeomKind.BOX, GeomKind.BOX, GeomKind.MASK]
+    for got, expected in zip(back.df.geometry, objects.df.geometry):
+        assert got.hausdorff_distance(expected) < 1e-9
+    assert list(back.df[Col.CATEGORY_ID]) == [1, 2, 2]
+    assert list(back.df[Col.CATEGORY_NAME]) == ["Pinaceae", "Picea", "Picea"]
+    assert list(back.df[Col.SCORE]) == [0.9, 0.8, 0.7]
+    assert list(back.df["height_m"]) == [12.5, 8.0, 20.0]
+
+
+def test_read_rle(tiles_dir, tmp_path):
+    objects = _objects_on_tiles(tiles_dir)
+    _, back = read_coco(write_coco(objects, tmp_path / "coco.json", rle=True), tiles_dir)
+    # The mask comes back as its pixels, the boxes exactly.
+    expected = polygon_to_mask(Point(64, 64).buffer(10), 128, 128)
+    assert np.array_equal(polygon_to_mask(back.df.geometry[2], 128, 128), expected)
+    assert back.df.geometry[0].equals(box(10, 6, 30, 16))
+
+
+def test_annotations_without_a_segmentation_are_boxes(tiles_dir, tmp_path):
+    coco = {
+        "images": [{"id": 5, "file_name": "tile_1.tif", "width": 128, "height": 128}],
+        "annotations": [
+            {"id": 1, "image_id": 5, "category_id": 1, "bbox": [10, 20, 30, 40]},
+            {"id": 2, "image_id": 5, "category_id": 1, "bbox": [0, 0, 5, 5], "segmentation": []},
+        ],
+        "categories": [{"id": 1, "name": "tree", "supercategory": None}],
+    }
+    path = tmp_path / "boxes.json"
+    path.write_text(json.dumps(coco))
+    tiles, objects = read_coco(path, tiles_dir)
+    assert len(tiles) == 1 and list(objects.df[Col.PARENT_IMAGE_ID]) == [0, 0]
+    assert objects.df.geometry[0].equals(box(10, 20, 40, 60))
+    assert (objects.df[Col.GEOM_KIND] == GeomKind.BOX).all()
+    assert Col.SCORE not in objects.df.columns  # no annotation has one
+
+
+def test_images_without_annotations(tiles_dir, tmp_path):
+    coco = {
+        "images": [{"id": 1, "file_name": "tile_0.tif", "width": 128, "height": 128}],
+        "annotations": [],
+        "categories": [],
+    }
+    path = tmp_path / "empty.json"
+    path.write_text(json.dumps(coco))
+    tiles, objects = read_coco(path, tiles_dir)
+    assert len(tiles) == 1 and len(objects) == 0
+
+
+def test_a_warning_when_boxes_and_areas_aren_t_those_of_the_segmentations(tiles_dir, tmp_path):
+    path = write_coco(_objects_on_tiles(tiles_dir), tmp_path / "coco.json")
+    coco = _read(path)
+    coco["annotations"][0]["area"] *= 1.1  # 10% larger than its segmentation's
+    coco["annotations"][1]["bbox"][2] += 2  # 2 pixels wider
+    path.write_text(json.dumps(coco))
+    with pytest.warns(UserWarning) as caught:
+        read_coco(path, tiles_dir)
+    assert str(caught[0].message) == (
+        "In coco.json, the bbox and area of 2 of 3 annotations aren't those of their "
+        "segmentation: the areas differ by 4.5% (median), and the boxes by up to 2.0 pixels. "
+        "They are recomputed from the segmentations."
+    )

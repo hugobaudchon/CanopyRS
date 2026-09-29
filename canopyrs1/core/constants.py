@@ -42,6 +42,11 @@ class Col:
     CLASSIFIER_SCORES = "classifier_scores"  # the scores of every class
     AGGREGATOR_SCORE = "aggregator_score"
 
+    # What objects read from a COCO file hold.
+    CATEGORY_ID = "category_id"
+    CATEGORY_NAME = "category_name"
+    SCORE = "score"
+
 
 # The band numbers of an RGB raster: the default value of Col.BANDS.
 RGB_BANDS = [1, 2, 3]

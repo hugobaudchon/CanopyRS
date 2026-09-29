@@ -1,4 +1,4 @@
-"""Writing objects to COCO files, the format detection and segmentation models train and are
+"""Reading and writing COCO files, the format detection and segmentation models train and are
 evaluated on."""
 
 import json
@@ -7,12 +7,16 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
-from shapely.geometry import MultiPolygon, Polygon
+import shapely
+from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
 from canopyrs1.core.constants import Col
-from canopyrs1.core.geometry.coco_segmentation import encode_segmentation
+from canopyrs1.core.geometry.coco_segmentation import decode_segmentation, encode_segmentation
+from canopyrs1.core.geometry.shapes import infer_geom_kind
+from canopyrs1.core.tables.imagery import Tiles
 from canopyrs1.core.tables.objects import Objects
 from canopyrs1.core.types import PathLike
 
@@ -209,3 +213,97 @@ def write_coco(
     text = json.dumps(coco, ensure_ascii=False, indent=2, default=lambda item: item.tolist())
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def _warn_about_boxes_and_areas(
+    path: Path,
+    polygons: np.ndarray,
+    annotations: list[dict],
+) -> None:
+    """Warn if the ``bbox`` and ``area`` the COCO file at ``path`` gives its ``annotations``
+    aren't those of their ``polygons``, saying by how much."""
+    # the file's values, and those of the polygons
+    file_areas = np.array([a.get("area", np.nan) for a in annotations], dtype=float)
+    file_boxes = np.array([a.get("bbox", [np.nan] * 4) for a in annotations], dtype=float)
+    minx, miny, maxx, maxy = shapely.bounds(polygons).T
+    boxes = np.column_stack([minx, miny, maxx - minx, maxy - miny])
+
+    # how far apart they are
+    area_gaps = np.abs(shapely.area(polygons) - file_areas) / np.maximum(file_areas, 1e-9)
+    box_gaps = np.abs(boxes - file_boxes).max(axis=1)
+    different = (area_gaps > 1e-6) | (box_gaps > 1e-6)
+    if different.any():
+        warnings.warn(
+            f"In {path.name}, the bbox and area of {different.sum()} of {len(annotations)} "
+            f"annotations aren't those of their segmentation: the areas differ by "
+            f"{np.nanmedian(area_gaps[different]):.1%} (median), and the boxes by up to "
+            f"{np.nanmax(box_gaps[different]):.1f} pixels. They are recomputed from the "
+            f"segmentations.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def _corners(bbox: list[float]) -> tuple[float, float, float, float]:
+    """Return a COCO ``bbox`` ([x, y, width, height]) as (minx, miny, maxx, maxy)."""
+    x, y, width, height = bbox
+    return x, y, x + width, y + height
+
+
+def read_coco(path: PathLike, images_dir: PathLike | None = None) -> tuple[Tiles, Objects]:
+    """Return the images and annotations of the COCO file at ``path``, as a Tiles table and an
+    Objects table.
+
+    - Tiles: one per image, in the file's order, read from its file in ``images_dir`` (the COCO
+      file's folder by default; see ``Imagery.from_paths``).
+    - Objects: one per annotation, in the file's order, in its image's pixels: its segmentation,
+      or its ``bbox`` if it has none. Their kind is found from their geometry (see
+      ``infer_geom_kind``). Each has its ``category_id``, its category's name
+      (``category_name``), its ``score`` if the file gives one, and each of its
+      ``other_attributes``, as columns.
+
+    The file's ``bbox`` and ``area`` aren't kept, as ``write_coco`` computes them from the
+    segmentation; if they aren't those of the segmentations, a warning says by how much.
+    """
+    # read the file
+    path = Path(path)
+    coco = json.loads(path.read_text(encoding="utf-8"))
+    images_dir = Path(images_dir) if images_dir is not None else path.parent
+
+    # the images
+    tiles = Tiles.from_paths([images_dir / image["file_name"] for image in coco["images"]])
+    position = {image["id"]: i for i, image in enumerate(coco["images"])}
+
+    # the geometry of each annotation: its segmentation, or its box
+    annotations = coco["annotations"]
+    geometry = [
+        decode_segmentation(a["segmentation"])
+        if a.get("segmentation")
+        else box(*_corners(a["bbox"]))
+        for a in annotations
+    ]
+    segmented = [i for i, a in enumerate(annotations) if a.get("segmentation")]
+    if segmented:
+        polygons = np.array(geometry, dtype=object)[segmented]
+        _warn_about_boxes_and_areas(path, polygons, [annotations[i] for i in segmented])
+
+    # their columns
+    names = {category["id"]: category["name"] for category in coco.get("categories", [])}
+    columns = {
+        Col.CATEGORY_ID: [a.get("category_id") for a in annotations],
+        Col.CATEGORY_NAME: [names.get(a.get("category_id")) for a in annotations],
+    }
+    if any("score" in a for a in annotations):
+        columns[Col.SCORE] = [a.get("score") for a in annotations]
+    attributes = {key for a in annotations for key in (a.get("other_attributes") or {})}
+    for key in sorted(attributes):
+        columns[key] = [(a.get("other_attributes") or {}).get(key) for a in annotations]
+
+    objects = Objects.build(
+        geometry=geometry,
+        geom_kind=infer_geom_kind(geometry),
+        parent_image_id=[position[a["image_id"]] for a in annotations],
+        parent_imagery=tiles,
+        columns=columns,
+    )
+    return tiles, objects
