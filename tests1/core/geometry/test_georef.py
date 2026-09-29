@@ -15,6 +15,7 @@ from canopyrs1.core.geometry.georef import (
     crs_to_pixel,
     get_bounds,
     get_footprint,
+    get_footprints,
     make_georef,
     pixel_to_crs,
     read_georef,
@@ -185,3 +186,68 @@ def test_footprint_of_a_rotated_image():
     a, b, _, d, e, _ = ROTATED["transform"]
     assert footprint.area == pytest.approx(100 * 50 * abs(a * e - b * d))
     assert footprint.area < box(*get_bounds(ROTATED)).area  # the bounds rectangle is larger
+
+
+ZONE_18 = make_georef(
+    transform=[1, 0, 700000, 0, -1, 5040000],
+    crs="EPSG:32618",
+    width=100,
+    height=100,
+    count=3,
+    dtype="uint8",
+)
+ZONE_19 = make_georef(
+    transform=[1, 0, 230000, 0, -1, 5040000],
+    crs="EPSG:32619",
+    width=100,
+    height=100,
+    count=3,
+    dtype="uint8",
+)
+PHOTO = make_georef(
+    transform=[1, 0, 0, 0, 1, 0],
+    crs=None,
+    width=64,
+    height=32,
+    count=3,
+    dtype="uint8",
+)
+
+
+def test_get_footprints_in_their_own_crs():
+    footprints = get_footprints([ZONE_18, NORTH_UP], "EPSG:32618")
+    assert footprints.crs == "EPSG:32618"
+    assert footprints[0].equals(get_footprint(ZONE_18))
+    assert footprints[1].equals(get_footprint(NORTH_UP))
+
+
+def test_get_footprints_moves_other_crss():
+    # Two rasters on either side of the UTM 18N / 19N line, near Montreal.
+    footprints = get_footprints([ZONE_18, ZONE_19], "EPSG:32618")
+    expected = gpd.GeoSeries([get_footprint(ZONE_19)], crs="EPSG:32619").to_crs("EPSG:32618")
+    assert footprints[0].equals(get_footprint(ZONE_18))
+    assert footprints[1].equals_exact(expected[0], 1e-6)
+    assert get_footprints([ZONE_18], "EPSG:32619")[0].equals_exact(
+        gpd.GeoSeries([get_footprint(ZONE_18)], crs="EPSG:32618").to_crs("EPSG:32619")[0],
+        1e-6,
+    )
+
+
+def test_get_footprints_in_pixel_coordinates():
+    footprints = get_footprints([PHOTO, PHOTO], None)
+    assert footprints.crs is None
+    assert footprints[0].equals(box(0, 0, 64, 32))
+    assert len(get_footprints([], None)) == 0
+
+
+MIXED_CRSS = [
+    ([ZONE_18, PHOTO], "EPSG:32618"),
+    ([PHOTO, ZONE_18], None),
+    ([PHOTO], "EPSG:32618"),
+]
+
+
+@pytest.mark.parametrize("georefs, crs", MIXED_CRSS)
+def test_get_footprints_refuses_images_with_and_without_a_crs(georefs, crs):
+    with pytest.raises(ValueError, match="with and without a CRS"):
+        get_footprints(georefs, crs)

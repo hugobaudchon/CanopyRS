@@ -5,9 +5,10 @@ Every cleanup function returns one part as a Polygon, several parts as a MultiPo
 as an empty Polygon.
 """
 
+import geopandas as gpd
 import numpy as np
 import shapely
-from pyproj import CRS, Transformer
+from pyproj import CRS
 from shapely import make_valid
 from shapely.geometry import MultiPolygon, Polygon
 
@@ -29,16 +30,6 @@ def _fills_its_bounds(geometries):
         & (area > 0)
         & (area >= _BOX_MIN_FILL * shapely.area(shapely.envelope(geometries)))
     )
-
-
-def _reproject(geometries, crs, to_crs):
-    """Return ``geometries`` moved from ``crs`` to ``to_crs``, as a numpy array."""
-    transformer = Transformer.from_crs(crs, to_crs, always_xy=True)
-
-    def move(xy):
-        return np.column_stack(transformer.transform(xy[:, 0], xy[:, 1]))
-
-    return shapely.transform(geometries, move)
 
 
 def infer_geom_kind(geometries, crs=None, image_crs=None):
@@ -72,7 +63,8 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
     )
     candidates = (types == shapely.GeometryType.POLYGON) & ~is_box
     if in_other_crs and candidates.any():
-        reprojected = _reproject(geometries[candidates], crs, image_crs)
+        in_image_crs = gpd.GeoSeries(geometries[candidates], crs=crs).to_crs(image_crs)
+        reprojected = in_image_crs.to_numpy()
         is_box[candidates] = _fills_its_bounds(reprojected)
 
     kinds = np.full(len(geometries), GeomKind.MASK, dtype=object)

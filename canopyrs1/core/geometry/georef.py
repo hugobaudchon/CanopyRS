@@ -13,6 +13,7 @@ its parent's file. It holds only plain values, so it is saved to parquet as it i
 It also moves geometries between an image's pixel coordinates and its CRS coordinates.
 """
 
+import geopandas as gpd
 import numpy as np
 import shapely
 from affine import Affine
@@ -106,6 +107,22 @@ def get_footprint(georef):
     coordinates: its four corners, which form a rotated rectangle if the image is rotated."""
     width, height = georef["width"], georef["height"]
     return pixel_to_crs(Polygon([(0, 0), (width, 0), (width, height), (0, height)]), georef)
+
+
+def get_footprints(georefs, crs):
+    """Return the footprints of the images described by ``georefs``, as a GeoSeries in ``crs``:
+    each footprint is moved from its image's own CRS into ``crs``. ``crs`` is None for images in
+    pixel coordinates. Raises a ValueError if some images have a CRS and others don't."""
+    crss = {georef["crs"] for georef in georefs} | {crs}
+    if None in crss and len(crss) > 1:
+        raise ValueError("Images with and without a CRS can't be together")
+    polygons = [get_footprint(georef) for georef in georefs]
+    footprints = gpd.GeoSeries(polygons, crs=crs)
+    for other_crs in crss - {crs}:
+        rows = [i for i, georef in enumerate(georefs) if georef["crs"] == other_crs]
+        moved = gpd.GeoSeries([polygons[i] for i in rows], crs=other_crs).to_crs(crs)
+        footprints.iloc[rows] = moved.values
+    return footprints
 
 
 def get_bounds(georef):
