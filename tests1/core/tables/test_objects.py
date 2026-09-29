@@ -1,7 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import Point, box
+from shapely.geometry import LineString, Point, box
 
 from canopyrs1.core.constants import Col, GeomKind
 from canopyrs1.core.geometry.georef import make_georef, window_georef
@@ -307,3 +307,84 @@ def test_tiles_of_a_raster_without_a_crs():
     [(path, gdf)] = objects.group_by_disk_path()
     assert path == "no_crs.tif" and gdf.crs is None
     assert _same(gdf.geometry[0], in_raster)
+
+
+# =============================================================================
+# from_file
+# =============================================================================
+
+
+def test_boxes_from_a_geopackage(box_labels):
+    boxes = Objects.from_file(box_labels)
+    assert list(boxes.df[Col.OBJECT_ID]) == [0, 1, 2, 3]
+    assert (boxes.df[Col.GEOM_KIND] == GeomKind.BOX).all()
+    assert list(boxes.df["class"]) == [0, 0, 0, 0]  # every column of the file is kept
+    assert boxes.df.crs == "EPSG:32618"
+    assert boxes.parent_imagery is None and boxes.df[Col.PARENT_IMAGE_ID].isna().all()
+
+
+def test_masks_from_a_geopackage(polygon_labels):
+    masks = Objects.from_file(polygon_labels)
+    assert (masks.df[Col.GEOM_KIND] == GeomKind.MASK).all()
+
+
+def test_from_a_geojson(box_labels, tmp_path):
+    path = tmp_path / "labels.geojson"
+    gpd.read_file(box_labels).to_file(path, driver="GeoJSON")
+    assert len(Objects.from_file(path)) == 4
+
+
+def test_from_a_geodataframe():
+    gdf = gpd.GeoDataFrame(
+        {"geom": [box(0, 0, 10, 10), Point(5, 5)]},
+        geometry="geom",
+        crs="EPSG:32618",
+    )
+    objects = Objects.from_file(gdf)
+    assert list(objects.df[Col.GEOM_KIND]) == [GeomKind.BOX, GeomKind.POINT]
+    assert objects.df.geometry.name == Col.GEOMETRY
+    assert list(gdf.columns) == ["geom"]  # the GeoDataFrame given is left as it was
+
+
+def test_the_file_s_own_kinds_are_kept():
+    gdf = gpd.GeoDataFrame({Col.GEOM_KIND: [GeomKind.MASK]}, geometry=[box(0, 0, 10, 10)])
+    assert Objects.from_file(gdf).df[Col.GEOM_KIND][0] == GeomKind.MASK
+
+
+def test_objects_on_a_single_raster(rgb_raster, box_labels):
+    sources = Sources.from_paths(rgb_raster)
+    boxes = Objects.from_file(box_labels, parent_imagery=sources)
+    assert boxes.parent_imagery is sources
+    assert list(boxes.df[Col.PARENT_IMAGE_ID]) == [0, 0, 0, 0]
+    # The first box, 10 to 30 m from the raster's bottom-left corner, in its 1 m pixels.
+    in_pixels = boxes.get_geometry_in_image_coords(pixels=True)
+    assert _same(in_pixels[0], box(10, 226, 30, 246))
+
+
+def test_objects_on_several_rasters(rgb_raster, box_labels):
+    sources = Sources.from_paths([rgb_raster, rgb_raster])
+    with pytest.raises(ValueError, match="need a parent_image_id column"):
+        Objects.from_file(box_labels, parent_imagery=sources)
+    gdf = gpd.read_file(box_labels)
+    gdf[Col.PARENT_IMAGE_ID] = [0, 1, 1, 0]
+    boxes = Objects.from_file(gdf, parent_imagery=sources)
+    assert list(boxes.df[Col.PARENT_IMAGE_ID]) == [0, 1, 1, 0]
+    gdf[Col.PARENT_IMAGE_ID] = [0, 1, 2, 0]
+    with pytest.raises(ValueError, match="ids outside its parent Sources"):
+        Objects.from_file(gdf, parent_imagery=sources)
+
+
+UNSUPPORTED_GEOMETRIES = [LineString([(0, 0), (1, 1)]), None]
+
+
+@pytest.mark.parametrize("geometry", UNSUPPORTED_GEOMETRIES)
+def test_geometries_that_aren_t_objects(geometry):
+    gdf = gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1), geometry])
+    with pytest.raises(ValueError, match="Expected points or polygons"):
+        Objects.from_file(gdf)
+
+
+def test_an_empty_file(tmp_path):
+    path = tmp_path / "empty.gpkg"
+    gpd.GeoDataFrame({"class": []}, geometry=[], crs="EPSG:32618").to_file(path)
+    assert len(Objects.from_file(path)) == 0

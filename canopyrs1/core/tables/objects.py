@@ -5,6 +5,7 @@ import pandas as pd
 
 from canopyrs1.core.constants import Col, GeomKind
 from canopyrs1.core.geometry.georef import crs_to_pixel, pixel_to_crs
+from canopyrs1.core.geometry.shapes import infer_geom_kind
 from canopyrs1.core.tables.table import Table
 
 
@@ -70,6 +71,45 @@ class Objects(Table):
             crs=crs,
         )
         return cls(df, parent_imagery=parent_imagery, parent_objects=parent_objects)
+
+    @classmethod
+    def from_file(cls, path_or_gdf, *, parent_imagery=None):
+        """Return an objects table with one object per row of a vector file (a GeoPackage, a
+        GeoJSON, or anything else geopandas reads) or of a GeoDataFrame, keeping all its columns.
+        Each object's kind is the file's ``geom_kind`` if it has that column, or else is found from
+        its geometry (see ``infer_geom_kind``).
+
+        With ``parent_imagery``, the objects are linked to the images they are on, through the
+        file's ``parent_image_id`` column, or, if it has none, to the only image of
+        ``parent_imagery``. Raises a ValueError if a kind is to be found and a geometry isn't a
+        point or a polygon, or if ``parent_imagery`` has several images and the file doesn't say
+        which one each object is on."""
+        # read the file, without changing a GeoDataFrame given
+        if isinstance(path_or_gdf, gpd.GeoDataFrame):
+            gdf = path_or_gdf.copy()
+        else:
+            gdf = gpd.read_file(path_or_gdf)
+        gdf = gdf.rename_geometry(Col.GEOMETRY) if gdf.geometry.name != Col.GEOMETRY else gdf
+
+        # find their kind, if the file doesn't say
+        if Col.GEOM_KIND not in gdf.columns:
+            image_crs = parent_imagery.df.crs if parent_imagery is not None else None
+            gdf[Col.GEOM_KIND] = infer_geom_kind(gdf.geometry, crs=gdf.crs, image_crs=image_crs)
+
+        # link them to their images
+        if Col.PARENT_IMAGE_ID not in gdf.columns:
+            if parent_imagery is None:
+                gdf[Col.PARENT_IMAGE_ID] = None
+            elif len(parent_imagery) == 1:
+                gdf[Col.PARENT_IMAGE_ID] = 0  # every object is on the only image
+            else:
+                raise ValueError(
+                    f"The objects need a {Col.PARENT_IMAGE_ID} column to say which of the "
+                    f"{len(parent_imagery)} images each one is on"
+                )
+        if Col.PARENT_OBJECT_ID not in gdf.columns:
+            gdf[Col.PARENT_OBJECT_ID] = None
+        return cls(gdf, parent_imagery=parent_imagery)
 
     def get_column(self, column):
         """Return the values of ``column`` for these objects, one per row. If these objects don't
