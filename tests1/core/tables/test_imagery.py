@@ -317,3 +317,50 @@ def test_from_paths_of_nothing():
 def test_from_paths_of_a_missing_file(tmp_path):
     with pytest.raises(RasterioIOError):
         Sources.from_paths(tmp_path / "missing.tif")
+
+
+# =============================================================================
+# from_image_dir
+# =============================================================================
+
+
+def test_tiles_from_a_folder(tiles_dir):
+    tiles = Tiles.from_image_dir(tiles_dir)
+    assert isinstance(tiles, Tiles) and tiles.parent_imagery is None
+    assert list(tiles.df[Col.PATH]) == [
+        str(tiles_dir / "tile_0.tif"),
+        str(tiles_dir / "tile_1.tif"),
+    ]
+    for path, georef in zip(tiles.df[Col.PATH], tiles.df[Col.GEOREF]):
+        with rasterio.open(path) as src:
+            assert georef == read_georef(src)
+    # The two tiles are the top-left and top-right quarters of their raster.
+    assert tiles.df.geometry[0].equals(box(0, 128, 128, 256))
+    assert tiles.df.geometry[1].equals(box(128, 128, 256, 256))
+
+
+def test_crops_from_a_folder(tiles_dir):
+    crops = Crops.from_image_dir(tiles_dir, timestamp=3)
+    assert isinstance(crops, Crops) and len(crops) == 2
+    assert list(crops.df[Col.TIMESTAMP]) == [3, 3]
+
+
+def test_only_geotiffs_directly_inside_the_folder(tiles_dir):
+    (tiles_dir / "tile_1.tif").rename(tiles_dir / "tile_1.TIFF")
+    (tiles_dir / "coco.json").write_text("{}")
+    (tiles_dir / "nested").mkdir()
+    (tiles_dir / "folder.tif").mkdir()
+    names = [Path(p).name for p in Tiles.from_image_dir(tiles_dir).df[Col.PATH]]
+    assert names == ["tile_0.tif", "tile_1.TIFF"]
+
+
+def test_sorted_by_file_name(tiles_dir):
+    (tiles_dir / "tile_1.tif").rename(tiles_dir / "a.tif")
+    names = [Path(p).name for p in Tiles.from_image_dir(tiles_dir).df[Col.PATH]]
+    assert names == ["a.tif", "tile_0.tif"]
+
+
+def test_a_folder_without_images(tmp_path):
+    (tmp_path / "notes.txt").write_text("")
+    with pytest.raises(ValueError, match="No .tif or .tiff images in"):
+        Tiles.from_image_dir(tmp_path)

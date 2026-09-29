@@ -1,6 +1,7 @@
 """The imagery tables: images, each with its georef, on disk or read as a window of its parent."""
 
 import os
+from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
@@ -9,6 +10,8 @@ import rasterio
 from canopyrs1.core.constants import RGB_BANDS, Col, Modality
 from canopyrs1.core.geometry.georef import get_footprints, read_georef
 from canopyrs1.core.tables.table import Table
+
+_IMAGE_SUFFIXES = {".tif", ".tiff"}
 
 
 class Imagery(Table):
@@ -83,9 +86,10 @@ class Imagery(Table):
         modality=Modality.RGB,
         timestamp=None,
     ):
-        """Return the images in the raster files at ``paths`` (one path or a list; local files or
-        URLs), each with the georef read from its file's header: no pixel is read. ``bands``,
-        ``modality`` and ``timestamp`` are as in ``build``."""
+        """Return a table of this type (Sources, Tiles or Crops) with one image per raster file in
+        ``paths``: one path or a list, of local files or URLs. Each image's georef is read from its
+        file's header, so no pixel is read. ``bands``, ``modality`` and ``timestamp`` are as in
+        ``build``."""
         # one path or several
         if isinstance(paths, (str, os.PathLike)):
             paths = [paths]
@@ -98,6 +102,34 @@ class Imagery(Table):
         return cls.build(
             georef=georefs,
             path=paths,
+            bands=bands,
+            modality=modality,
+            timestamp=timestamp,
+        )
+
+    @classmethod
+    def from_image_dir(
+        cls,
+        path,
+        *,
+        bands=RGB_BANDS,
+        modality=Modality.RGB,
+        timestamp=None,
+    ):
+        """Return a table of this type (Sources, Tiles or Crops) with one image per GeoTIFF file
+        (.tif or .tiff) in the folder ``path``, sorted by file name, as ``from_paths`` does.
+        Subfolders aren't searched. Raises a ValueError if the folder has no GeoTIFF file."""
+        # find the images
+        paths = sorted(
+            file
+            for file in Path(path).iterdir()
+            if file.is_file() and file.suffix.lower() in _IMAGE_SUFFIXES
+        )
+        if not paths:
+            raise ValueError(f"No .tif or .tiff images in {path}")
+        # read their headers
+        return cls.from_paths(
+            paths,
             bands=bands,
             modality=modality,
             timestamp=timestamp,
