@@ -18,9 +18,9 @@ class Objects(Table):
     - ``parent_objects``: the objects table they were made from, through ``parent_object_id``
       (a mask's box, a kept box's detection). Following it back gives an object's history.
 
-    A column, or the imagery, that these objects don't have is looked for in their history (see
-    ``get_column`` and ``get_parent_imagery``): a late step can read a score made several steps
-    before.
+    A column, or the imagery, that these objects don't have is looked for recursively in their
+    history (see ``get_column`` and ``get_parent_imagery``): a late step can read a score made
+    several steps before.
     """
 
     id_column = Col.OBJECT_ID
@@ -72,9 +72,9 @@ class Objects(Table):
 
     def get_column(self, column):
         """Return the values of ``column`` for these objects, one per row. If these objects don't
-        have the column, return their parents' values, looking one step further back in the
-        history until a table has it; an object without a parent then gets a missing value. Raises
-        a KeyError if no table in the history has the column."""
+        have the column, return their parents' values, looking recursively one step further back
+        in the history until a table has it; an object without a parent then gets a missing value.
+        Raises a KeyError if no table in the history has the column."""
         if column in self.df.columns:
             return self.df[column]
         if self.parent_objects is None:
@@ -84,17 +84,17 @@ class Objects(Table):
         return values.rename(column)
 
     def has_column(self, column):
-        """Return whether these objects, or the objects in their history, have ``column`` with at
-        least one value that isn't missing."""
+        """Return whether these objects, or recursively the objects in their history, have
+        ``column`` with at least one value that isn't missing."""
         if column in self.df.columns:
             return super().has_column(column)
         return self.parent_objects is not None and self.parent_objects.has_column(column)
 
     def get_parent_imagery(self):
         """Return the imagery table these objects were found in: their own ``parent_imagery``, or,
-        if they have none, the one of the objects in their history (aggregated objects find their
-        tiles through the detections they came from). Returns None if no table in the history has
-        one."""
+        if they have none, recursively the one of the objects in their history (aggregated objects
+        find their tiles through the detections they came from). Returns None if no table in the
+        history has one."""
         if self.parent_imagery is not None or self.parent_objects is None:
             return self.parent_imagery
         return self.parent_objects.get_parent_imagery()
