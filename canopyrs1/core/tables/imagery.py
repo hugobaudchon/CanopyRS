@@ -71,6 +71,14 @@ class Imagery(Table):
         )
         return cls(df, parent_imagery=parent_imagery)
 
+    def schema(self):
+        """Return what these images offer, as a Schema (see ``Table.schema``), with their link to
+        ``parent_imagery`` if they have one."""
+        schema = super().schema()
+        if self.parent_imagery is not None:
+            schema.links.add("parent_imagery")
+        return schema
+
     def get_disk_paths(self):
         """Return, for each image, the path of the file on disk its pixels are read from: its own
         file, or recursively its nearest parent's that is on disk. The value is missing for an

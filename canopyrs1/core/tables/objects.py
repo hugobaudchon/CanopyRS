@@ -100,6 +100,22 @@ class Objects(Table):
             return self.parent_imagery
         return self.parent_objects.get_parent_imagery()
 
+    def schema(self):
+        """Return what these objects offer, as a Schema (see ``Table.schema``), with the columns
+        and imagery found in their history (see ``has_column`` and ``get_parent_imagery``)."""
+        schema = super().schema()
+        # the imagery they were found in
+        imagery = self.get_parent_imagery()
+        if imagery is not None:
+            schema.links.add("parent_imagery")
+            schema.on = type(imagery)
+        # the columns of their history
+        if self.parent_objects is not None:
+            schema.links.add("parent_objects")
+            history = self.parent_objects.schema().columns
+            schema.columns |= {column for column in history if self.has_column(column)}
+        return schema
+
     def get_geometry_in_image_coords(self, pixels=False):
         """Return each object's geometry in its image's CRS, or in its image's pixels if
         ``pixels`` is True. Raises a ValueError if an object has no image."""

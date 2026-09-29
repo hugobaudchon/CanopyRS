@@ -1,5 +1,7 @@
 """The base of every table: a (Geo)DataFrame with numbered rows and links to parent tables."""
 
+from canopyrs1.core.tables.contracts import Schema
+
 
 class Table:
     """A (Geo)DataFrame whose rows are numbered 0 to n - 1 in ``id_column``.
@@ -42,6 +44,12 @@ class Table:
         """Whether this table's geometries are in a CRS. Tables without geometry, or with
         geometries in pixel coordinates, have none."""
         return getattr(self.df, "crs", None) is not None
+
+    def schema(self):
+        """Return what this table offers, as a Schema: its columns with values (see
+        ``has_column``) and whether it is in a CRS. Subclasses add their links."""
+        columns = {column for column in self.df.columns if self.has_column(column)}
+        return Schema(columns=columns, has_crs=self.has_crs)
 
     def __len__(self):
         return len(self.df)
