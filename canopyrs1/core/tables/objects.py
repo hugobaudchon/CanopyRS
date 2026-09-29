@@ -1,12 +1,17 @@
 """The objects table: boxes, masks and points, each found in an image."""
 
+from collections.abc import Sequence
+
 import geopandas as gpd
 import pandas as pd
 
 from canopyrs1.core.constants import Col, GeomKind
 from canopyrs1.core.geometry.georef import crs_to_pixel, get_pixel_footprint, pixel_to_crs
 from canopyrs1.core.geometry.shapes import infer_geom_kind
+from canopyrs1.core.tables.contracts import Schema
+from canopyrs1.core.tables.imagery import Imagery
 from canopyrs1.core.tables.table import Table
+from canopyrs1.core.types import CRSLike, Geometries, PathLike
 
 
 class Objects(Table):
@@ -27,7 +32,12 @@ class Objects(Table):
 
     id_column = Col.OBJECT_ID
 
-    def __init__(self, df, parent_imagery=None, parent_objects=None):
+    def __init__(
+        self,
+        df: gpd.GeoDataFrame,
+        parent_imagery: Imagery | None = None,
+        parent_objects: "Objects | None" = None,
+    ):
         """Wrap ``df``, which must have the ``geom_kind``, ``parent_image_id`` and
         ``parent_object_id`` columns (``build`` writes them all). Raises a ValueError if a kind
         isn't one of GeomKind's, or if a parent id is outside its parent table."""
@@ -46,15 +56,15 @@ class Objects(Table):
     def build(
         cls,
         *,
-        geometry,
-        geom_kind,
-        crs=None,
-        parent_image_id=None,
-        parent_imagery=None,
-        parent_object_id=None,
-        parent_objects=None,
-        columns=None,
-    ):
+        geometry: Geometries,
+        geom_kind: str | Sequence[str],
+        crs: CRSLike | None = None,
+        parent_image_id: int | Sequence[int] | None = None,
+        parent_imagery: Imagery | None = None,
+        parent_object_id: int | Sequence[int] | None = None,
+        parent_objects: "Objects | None" = None,
+        columns: dict[str, object] | None = None,
+    ) -> "Objects":
         """Return objects built from their ``geometry`` (in ``crs``, or in pixel coordinates if
         None) and ``geom_kind``, with their parent ids and parent tables. ``columns`` holds any
         other column, by its Col name: ``{Col.DETECTOR_SCORE: scores}``. ``geom_kind``, the parent
@@ -73,7 +83,12 @@ class Objects(Table):
         return cls(df, parent_imagery=parent_imagery, parent_objects=parent_objects)
 
     @classmethod
-    def from_file(cls, path_or_gdf, *, parent_imagery=None):
+    def from_file(
+        cls,
+        path_or_gdf: PathLike | gpd.GeoDataFrame,
+        *,
+        parent_imagery: Imagery | None = None,
+    ) -> "Objects":
         """Return an objects table with one object per row of a vector file (a GeoPackage, a
         GeoJSON, or anything else geopandas reads) or of a GeoDataFrame, keeping all its columns.
         Each object's kind is the file's ``geom_kind`` if it has that column, or else is found from
@@ -112,7 +127,7 @@ class Objects(Table):
         return cls(gdf, parent_imagery=parent_imagery)
 
     @classmethod
-    def from_imagery(cls, imagery):
+    def from_imagery(cls, imagery: Imagery) -> "Objects":
         """Return an objects table with one box per image of ``imagery``, covering the whole image,
         in its pixel coordinates. A folder of crops becomes the objects the classifier reads them
         for, one per crop."""
@@ -123,7 +138,7 @@ class Objects(Table):
             parent_imagery=imagery,
         )
 
-    def get_column(self, column):
+    def get_column(self, column: str) -> pd.Series:
         """Return the values of ``column`` for these objects, one per row. If these objects don't
         have the column, return their parents' values, looking recursively one step further back
         in the history until a table has it; an object without a parent then gets a missing value.
@@ -136,14 +151,14 @@ class Objects(Table):
         values = self.df[Col.PARENT_OBJECT_ID].map(parent_values)
         return values.rename(column)
 
-    def has_column(self, column):
+    def has_column(self, column: str) -> bool:
         """Return whether these objects, or recursively the objects in their history, have
         ``column`` with at least one value that isn't missing."""
         if column in self.df.columns:
             return super().has_column(column)
         return self.parent_objects is not None and self.parent_objects.has_column(column)
 
-    def get_parent_imagery(self):
+    def get_parent_imagery(self) -> Imagery | None:
         """Return the imagery table these objects were found in: their own ``parent_imagery``, or,
         if they have none, recursively the one of the objects in their history (aggregated objects
         find their tiles through the detections they came from). Returns None if no table in the
@@ -152,7 +167,7 @@ class Objects(Table):
             return self.parent_imagery
         return self.parent_objects.get_parent_imagery()
 
-    def schema(self):
+    def schema(self) -> Schema:
         """Return what these objects offer, as a Schema (see ``Table.schema``), with the columns
         and imagery found in their history (see ``has_column`` and ``get_parent_imagery``)."""
         schema = super().schema()
@@ -170,7 +185,7 @@ class Objects(Table):
             schema.columns |= {column for column in history if self.has_column(column)}
         return schema
 
-    def get_geometry_in_image_coords(self, pixels=False):
+    def get_geometry_in_image_coords(self, pixels: bool = False) -> gpd.GeoSeries:
         """Return each object's geometry in its image's CRS, or in its image's pixels if
         ``pixels`` is True. Raises a ValueError if an object has no image."""
         # check every object has an image
@@ -189,7 +204,7 @@ class Objects(Table):
                 geometry[rows] = part if pixels else pixel_to_crs(part, georef)
         return gpd.GeoSeries(geometry, index=self.df.index)
 
-    def group_by_disk_path(self):
+    def group_by_disk_path(self) -> list[tuple[str, gpd.GeoDataFrame]]:
         """Return the objects as ``(path, gdf)`` pairs, one per file their pixels are read from
         (see ``Imagery.get_disk_paths``), each ``gdf`` in its images' CRS. Raises a ValueError if
         an object has no image, or no file."""

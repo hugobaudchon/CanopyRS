@@ -3,9 +3,19 @@
 import numpy as np
 import rasterio
 from affine import Affine
+from rasterio.enums import ColorInterp
+
+from canopyrs1.core.geometry.georef import Georef
+from canopyrs1.core.types import PathLike
 
 
-def write_tile(path, pixels, georef, colorinterp=None, compress=None):
+def write_tile(
+    path: PathLike,
+    pixels: np.ndarray,
+    georef: Georef,
+    colorinterp: list[ColorInterp] | None = None,
+    compress: str | None = None,
+) -> PathLike:
     """Write ``pixels`` (bands, height, width) to a GeoTIFF file at ``path``, placed on the ground
     by ``georef``, and return ``path``. The file holds the pixels' own band count and dtype, and
     ``georef``'s CRS (none if it has none), transform and nodata value.

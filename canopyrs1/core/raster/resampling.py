@@ -4,13 +4,19 @@ The result is the georef of the resampled raster. Its tiles are windows of it (s
 ``window_georef``), and each window's pixels are read from the raster file only when needed.
 """
 
+from rasterio.io import DatasetReader
 from rasterio.warp import calculate_default_transform
 
 from canopyrs1.core.geometry.crs import get_projected_crs
-from canopyrs1.core.geometry.georef import make_georef, read_georef
+from canopyrs1.core.geometry.georef import Georef, make_georef, read_georef
 
 
-def get_resampled_georef(src, *, ground_resolution=None, scale_factor=None):
+def get_resampled_georef(
+    src: DatasetReader,
+    *,
+    ground_resolution: float | None = None,
+    scale_factor: float | None = None,
+) -> Georef:
     """Return the georef of the raster ``src`` (an open rasterio dataset) once resampled:
 
     - ``ground_resolution``: resamples to pixels of that many metres. A raster in latitude and

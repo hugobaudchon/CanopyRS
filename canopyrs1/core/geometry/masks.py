@@ -12,11 +12,12 @@ import numpy as np
 from affine import Affine
 from rasterio import features
 from shapely.geometry import MultiPolygon, Polygon, shape
+from shapely.geometry.base import BaseGeometry
 
 from canopyrs1.core.geometry.shapes import remove_small_parts, repair_polygon
 
 
-def polygon_to_mask(polygon, height, width):
+def polygon_to_mask(polygon: BaseGeometry, height: int, width: int) -> np.ndarray:
     """Return a ``height`` x ``width`` uint8 mask holding 1 in each pixel whose centre is inside
     ``polygon`` (in pixel coordinates), and 0 elsewhere, including in the polygon's holes. Parts
     of the polygon outside the mask are ignored."""
@@ -38,7 +39,7 @@ def polygon_to_mask(polygon, height, width):
     return mask
 
 
-def _fill_holes(mask):
+def _fill_holes(mask: np.ndarray) -> np.ndarray:
     """Return ``mask`` (uint8, 0 or 1, with an empty border) with its holes set to 1. A hole is a
     group of empty pixels that can't reach the border moving up, down, left or right."""
     reached = mask.copy()
@@ -53,12 +54,12 @@ def _fill_holes(mask):
 
 
 def mask_to_polygon(
-    mask,
+    mask: np.ndarray,
     *,
-    fill_holes=True,
-    simplify_tolerance=0.0,
-    min_part_area=0,
-):
+    fill_holes: bool = True,
+    simplify_tolerance: float = 0.0,
+    min_part_area: float = 0,
+) -> Polygon | MultiPolygon:
     """Return the outline of the nonzero pixels of ``mask`` (a 2D array of any type), in pixel
     coordinates, along the pixel edges. Pixels touching only at a corner are in different parts; one
     part is returned as a Polygon, several as a MultiPolygon. Returns an empty Polygon if the mask

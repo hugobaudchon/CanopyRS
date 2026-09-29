@@ -3,7 +3,7 @@
 import numpy as np
 
 
-def to_uint8(pixels, nodata=None):
+def to_uint8(pixels: np.ndarray, nodata: float | None = None) -> np.ndarray:
     """Return ``pixels`` (bands, height, width) as uint8, decided from these pixels alone:
 
     - uint8: returned as they are;

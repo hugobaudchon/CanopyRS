@@ -1,6 +1,7 @@
 """The imagery tables: images, each with its georef, on disk or read as a window of its parent."""
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 import geopandas as gpd
@@ -8,8 +9,10 @@ import pandas as pd
 import rasterio
 
 from canopyrs1.core.constants import RGB_BANDS, Col, Modality
-from canopyrs1.core.geometry.georef import get_footprints, read_georef
+from canopyrs1.core.geometry.georef import Georef, get_footprints, read_georef
+from canopyrs1.core.tables.contracts import Schema
 from canopyrs1.core.tables.table import Table
+from canopyrs1.core.types import PathLike
 
 _IMAGE_SUFFIXES = {".tif", ".tiff"}
 
@@ -34,7 +37,7 @@ class Imagery(Table):
 
     id_column = Col.IMAGE_ID
 
-    def __init__(self, df, parent_imagery=None):
+    def __init__(self, df: gpd.GeoDataFrame, parent_imagery: "Imagery | None" = None):
         """Wrap ``df``, which must have the ``parent_image_id`` column (``build`` writes it). Raises
         a ValueError if a parent id is outside ``parent_imagery``."""
         super().__init__(df)
@@ -45,15 +48,15 @@ class Imagery(Table):
     def build(
         cls,
         *,
-        georef,
-        path=None,
-        parent_image_id=None,
-        parent_imagery=None,
-        bands=RGB_BANDS,
-        modality=Modality.RGB,
-        timestamp=None,
-        columns=None,
-    ):
+        georef: Sequence[Georef],
+        path: str | Sequence[str | None] | None = None,
+        parent_image_id: int | Sequence[int] | None = None,
+        parent_imagery: "Imagery | None" = None,
+        bands: Sequence[int] = RGB_BANDS,
+        modality: str | Sequence[str] = Modality.RGB,
+        timestamp: int | Sequence[int] | None = None,
+        columns: dict[str, object] | None = None,
+    ) -> "Imagery":
         """Return images built from their ``georef`` (one per image), their ``path`` (None for
         windows of their parent), their parent ids and parent table, the ``bands`` to read (the
         same for every image), their ``modality`` and ``timestamp``. ``columns`` holds any other
@@ -80,12 +83,12 @@ class Imagery(Table):
     @classmethod
     def from_paths(
         cls,
-        paths,
+        paths: PathLike | Sequence[PathLike],
         *,
-        bands=RGB_BANDS,
-        modality=Modality.RGB,
-        timestamp=None,
-    ):
+        bands: Sequence[int] = RGB_BANDS,
+        modality: str | Sequence[str] = Modality.RGB,
+        timestamp: int | Sequence[int] | None = None,
+    ) -> "Imagery":
         """Return a table of this type (Sources, Tiles or Crops) with one image per raster file in
         ``paths``: one path or a list, of local files or URLs. Each image's georef is read from its
         file's header, so no pixel is read. ``bands``, ``modality`` and ``timestamp`` are as in
@@ -111,12 +114,12 @@ class Imagery(Table):
     @classmethod
     def from_image_dir(
         cls,
-        path,
+        path: PathLike,
         *,
-        bands=RGB_BANDS,
-        modality=Modality.RGB,
-        timestamp=None,
-    ):
+        bands: Sequence[int] = RGB_BANDS,
+        modality: str | Sequence[str] = Modality.RGB,
+        timestamp: int | Sequence[int] | None = None,
+    ) -> "Imagery":
         """Return a table of this type (Sources, Tiles or Crops) with one image per GeoTIFF file
         (.tif or .tiff) in the folder ``path``, sorted by file name, as ``from_paths`` does.
         Subfolders aren't searched. Raises a ValueError if the folder has no GeoTIFF file."""
@@ -137,7 +140,7 @@ class Imagery(Table):
             timestamp=timestamp,
         )
 
-    def schema(self):
+    def schema(self) -> Schema:
         """Return what these images offer, as a Schema (see ``Table.schema``), with their link to
         ``parent_imagery`` if they have one."""
         schema = super().schema()
@@ -145,7 +148,7 @@ class Imagery(Table):
             schema.links.add("parent_imagery")
         return schema
 
-    def get_disk_paths(self):
+    def get_disk_paths(self) -> pd.Series:
         """Return, for each image, the path of the file on disk its pixels are read from: its own
         file, or recursively its nearest parent's that is on disk. The value is missing for an
         image with no parent on disk."""
@@ -155,7 +158,7 @@ class Imagery(Table):
         parent_paths = pd.Series(self.parent_imagery.get_disk_paths().to_numpy())
         return paths.fillna(self.df[Col.PARENT_IMAGE_ID].map(parent_paths))
 
-    def get_ancestor(self, ancestor_type):
+    def get_ancestor(self, ancestor_type: type["Imagery"]) -> "Imagery":
         """Return the nearest imagery table of ``ancestor_type`` (Sources, Tiles or Crops), going up
         ``parent_imagery`` recursively: this table itself if it is one. Raises a ValueError if
         there is none."""
@@ -168,7 +171,11 @@ class Imagery(Table):
             table = table.parent_imagery
         return table
 
-    def get_ancestor_ids(self, image_ids, ancestor_type):
+    def get_ancestor_ids(
+        self,
+        image_ids: Sequence[int],
+        ancestor_type: type["Imagery"],
+    ) -> pd.Series:
         """Return, for each of these ``image_ids``, the id of the image it came from in the nearest
         imagery table of ``ancestor_type`` (see ``get_ancestor``). For crops of tiles:
         ``crops.get_ancestor_ids([0, 2], Tiles)`` gives the tiles of crops 0 and 2. Raises a

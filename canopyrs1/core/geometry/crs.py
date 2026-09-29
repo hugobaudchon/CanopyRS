@@ -2,8 +2,10 @@
 
 from pyproj import CRS
 
+from canopyrs1.core.types import CRSLike
 
-def get_utm_crs(lon, lat):
+
+def get_utm_crs(lon: float, lat: float) -> str:
     """Return the UTM CRS of the zone that contains the point at longitude ``lon`` and latitude
     ``lat`` (in degrees), as a string: "EPSG:326xx" north of the equator, "EPSG:327xx" south of
     it."""
@@ -11,7 +13,10 @@ def get_utm_crs(lon, lat):
     return f"EPSG:{(32600 if lat >= 0 else 32700) + zone}"
 
 
-def get_projected_crs(crs, bounds):
+def get_projected_crs(
+    crs: CRSLike,
+    bounds: tuple[float, float, float, float],
+) -> CRSLike:
     """Return ``crs`` unchanged if it is projected (in metres or feet, not degrees). Otherwise,
     return the UTM CRS of the centre of ``bounds``, the (left, bottom, right, top) of the data in
     ``crs``. ``crs`` can be a string, a rasterio CRS or a pyproj CRS."""

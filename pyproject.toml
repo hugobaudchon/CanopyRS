@@ -129,5 +129,13 @@ target-version = "py310"
 include = ["canopyrs1/**/*.py", "tests1/**/*.py"]
 
 [tool.ruff.lint]
-# Unused imports and undefined names (the pyflakes rules), and lines over 100 characters.
-select = ["F", "E501"]
+# Unused imports and undefined names (the pyflakes rules), lines over 100 characters, and type
+# hints on every function's arguments and return (except in the tests).
+select = ["F", "E501", "ANN"]
+
+[tool.ruff.lint.flake8-annotations]
+# __init__ needs no "-> None" once its arguments have hints.
+mypy-init-return = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests1/**/*.py" = ["ANN"]

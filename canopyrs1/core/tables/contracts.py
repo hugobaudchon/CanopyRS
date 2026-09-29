@@ -10,8 +10,8 @@ class Schema:
     type of imagery they were found in (``on``). A field left at None is unknown, and isn't
     checked."""
 
-    columns: set = field(default_factory=set)
-    links: set = field(default_factory=set)
+    columns: set[str] = field(default_factory=set)
+    links: set[str] = field(default_factory=set)
     has_crs: bool | None = None
     on: type | None = None
 
@@ -24,12 +24,12 @@ class Need:
     type, or a tuple of the types allowed)."""
 
     data_type: type
-    columns: tuple = ()
-    links: tuple = ()
+    columns: tuple[str, ...] = ()
+    links: tuple[str, ...] = ()
     has_crs: bool | None = None
-    on: type | tuple | None = None
+    on: type | tuple[type, ...] | None = None
 
-    def check(self, schema):
+    def check(self, schema: Schema) -> list[str]:
         """Return why ``schema`` doesn't meet this need, as a list of short sentences, one per
         problem ("Objects must be found in Crops, not in Tiles"). Returns an empty list if it
         does."""

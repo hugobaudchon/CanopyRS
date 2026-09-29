@@ -1,5 +1,7 @@
 """The base of every table: a (Geo)DataFrame with numbered rows and links to parent tables."""
 
+import pandas as pd
+
 from canopyrs1.core.tables.contracts import Schema
 
 
@@ -17,12 +19,12 @@ class Table:
 
     id_column = None
 
-    def __init__(self, df):
+    def __init__(self, df: pd.DataFrame):
         """Wrap ``df``, numbering its rows in ``id_column``."""
         df[self.id_column] = range(len(df))
         self.df = df
 
-    def _check_parent_ids(self, column, parent):
+    def _check_parent_ids(self, column: str, parent: "Table | None") -> None:
         """Raise a ValueError if an id in ``column`` is outside ``parent``, the table these ids
         point to. Does nothing if ``parent`` is None."""
         if parent is None:
@@ -34,25 +36,25 @@ class Table:
                 f"{type(parent).__name__}, which has {len(parent)} rows"
             )
 
-    def has_column(self, column):
+    def has_column(self, column: str) -> bool:
         """Return whether this table has ``column`` with at least one value that isn't missing (an
         empty table only needs to have the column)."""
         return column in self.df.columns and (self.df.empty or self.df[column].notna().any())
 
     @property
-    def has_crs(self):
+    def has_crs(self) -> bool:
         """Whether this table's geometries are in a CRS. Tables without geometry, or with
         geometries in pixel coordinates, have none."""
         return getattr(self.df, "crs", None) is not None
 
-    def schema(self):
+    def schema(self) -> Schema:
         """Return what this table offers, as a Schema: its columns with values (see
         ``has_column``) and whether it is in a CRS. Subclasses add their links."""
         columns = {column for column in self.df.columns if self.has_column(column)}
         return Schema(columns=columns, has_crs=self.has_crs)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.df)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{type(self).__name__}({len(self.df)} rows)"

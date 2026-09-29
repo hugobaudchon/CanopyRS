@@ -11,8 +11,10 @@ import shapely
 from pyproj import CRS
 from shapely import make_valid
 from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry.base import BaseGeometry
 
 from canopyrs1.core.constants import GeomKind
+from canopyrs1.core.types import CRSLike, Geometries
 
 # A box fills its north-up bounding rectangle; the last 0.1% allows for floating-point rounding.
 _BOX_MIN_FILL = 0.999
@@ -21,7 +23,7 @@ _POINT_TYPES = (shapely.GeometryType.POINT, shapely.GeometryType.MULTIPOINT)
 _POLYGON_TYPES = (shapely.GeometryType.POLYGON, shapely.GeometryType.MULTIPOLYGON)
 
 
-def _fills_its_bounds(geometries):
+def _fills_its_bounds(geometries: np.ndarray) -> np.ndarray:
     """Return, for each geometry, whether it is a Polygon filling its north-up bounding
     rectangle."""
     area = shapely.area(geometries)
@@ -32,7 +34,11 @@ def _fills_its_bounds(geometries):
     )
 
 
-def infer_geom_kind(geometries, crs=None, image_crs=None):
+def infer_geom_kind(
+    geometries: Geometries,
+    crs: CRSLike | None = None,
+    image_crs: CRSLike | None = None,
+) -> np.ndarray:
     """Return the GeomKind of each geometry in ``geometries`` (a list, an array or a GeoSeries), as
     a numpy array in the same order:
 
@@ -76,7 +82,7 @@ def infer_geom_kind(geometries, crs=None, image_crs=None):
     return kinds
 
 
-def _from_parts(parts):
+def _from_parts(parts: list[Polygon]) -> Polygon | MultiPolygon:
     """Return ``parts``, a list of polygons, as one geometry: an empty Polygon if there are none,
     the Polygon itself if there is one, and a MultiPolygon if there are several."""
     if not parts:
@@ -84,7 +90,7 @@ def _from_parts(parts):
     return parts[0] if len(parts) == 1 else MultiPolygon(parts)
 
 
-def keep_polygon_parts(geometry):
+def keep_polygon_parts(geometry: BaseGeometry) -> Polygon | MultiPolygon:
     """Return the polygons in ``geometry``, dropping any line or point. A Polygon or MultiPolygon
     is returned unchanged; a mix of shapes (a GeometryCollection), as produced by repairing or
     intersecting polygons, is reduced to its polygons. Returns an empty Polygon if there are
@@ -100,7 +106,7 @@ def keep_polygon_parts(geometry):
     return _from_parts(parts)
 
 
-def repair_polygon(geometry):
+def repair_polygon(geometry: BaseGeometry) -> Polygon | MultiPolygon:
     """Return ``geometry`` made valid (for example, a self-crossing outline split into the parts it
     encloses), keeping only its polygons. A valid Polygon or MultiPolygon is returned unchanged.
     Returns an empty Polygon if nothing with an area is left."""
@@ -109,7 +115,7 @@ def repair_polygon(geometry):
     return keep_polygon_parts(geometry)
 
 
-def get_largest_part(geometry):
+def get_largest_part(geometry: BaseGeometry) -> BaseGeometry:
     """Return the part of ``geometry`` with the largest area if it is a MultiPolygon (an empty
     Polygon if it has no parts). Any other geometry is returned unchanged."""
     if not isinstance(geometry, MultiPolygon):
@@ -117,7 +123,7 @@ def get_largest_part(geometry):
     return max(geometry.geoms, key=lambda part: part.area, default=Polygon())
 
 
-def remove_holes(geometry):
+def remove_holes(geometry: BaseGeometry) -> BaseGeometry:
     """Return ``geometry`` with the holes of each of its polygons filled. Anything other than a
     Polygon or MultiPolygon is returned unchanged."""
     if isinstance(geometry, Polygon):
@@ -127,7 +133,7 @@ def remove_holes(geometry):
     return geometry
 
 
-def remove_small_parts(geometry, min_area):
+def remove_small_parts(geometry: BaseGeometry, min_area: float) -> BaseGeometry:
     """Return ``geometry`` without the parts whose area is below ``min_area``, if it is a
     MultiPolygon. Returns an empty Polygon if every part is too small. Any other geometry, even a
     small Polygon, is returned unchanged: this only removes the extra parts."""

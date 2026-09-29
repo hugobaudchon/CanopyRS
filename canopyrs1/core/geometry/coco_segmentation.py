@@ -9,18 +9,19 @@ COCO stores a segmentation in one of two formats:
 import numpy as np
 from pycocotools import mask as coco_mask
 from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.geometry.base import BaseGeometry
 
 from canopyrs1.core.geometry.masks import mask_to_polygon, polygon_to_mask
 from canopyrs1.core.geometry.shapes import repair_polygon
 
 
 def encode_segmentation(
-    polygon,
+    polygon: BaseGeometry,
     *,
-    rle=False,
-    height=None,
-    width=None,
-):
+    rle: bool = False,
+    height: int | None = None,
+    width: int | None = None,
+) -> list[list[float]] | dict:
     """Return ``polygon`` (a Polygon or MultiPolygon, in pixel coordinates) as a COCO segmentation.
 
     - ``rle=False``: in the polygons format, one list per part. Holes are lost. An empty polygon
@@ -36,7 +37,7 @@ def encode_segmentation(
     return [np.asarray(part.exterior.coords)[:-1].ravel().tolist() for part in parts]
 
 
-def _to_pycocotools_rle(segmentation):
+def _to_pycocotools_rle(segmentation: dict) -> dict:
     """Return an RLE segmentation in the form pycocotools reads: "counts" compressed, as bytes.
     COCO files store it as a string, or, for some crowd annotations, as a list of run lengths."""
     counts = segmentation["counts"]
@@ -47,7 +48,7 @@ def _to_pycocotools_rle(segmentation):
     return segmentation
 
 
-def _points_to_polygon(segmentation):
+def _points_to_polygon(segmentation: list[list[float]]) -> Polygon | MultiPolygon:
     """Return the polygon of a segmentation in the polygons format, repaired if it isn't valid.
     Parts with fewer than 3 points are left out. Returns an empty Polygon if no part is left."""
     parts = [Polygon(np.reshape(coords, (-1, 2))) for coords in segmentation if len(coords) >= 6]
@@ -57,12 +58,12 @@ def _points_to_polygon(segmentation):
 
 
 def decode_segmentation(
-    segmentation,
-    to="polygon",
+    segmentation: list[list[float]] | dict,
+    to: str = "polygon",
     *,
-    height=None,
-    width=None,
-):
+    height: int | None = None,
+    width: int | None = None,
+) -> Polygon | MultiPolygon | np.ndarray:
     """Return a COCO segmentation, in either format, as:
 
     - ``to="polygon"``: a Polygon or MultiPolygon in pixel coordinates. From RLE, it follows the

@@ -1,10 +1,12 @@
 """Checking a pipeline's wiring before running it: which tables each component would find, and
 whether they meet its needs."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from canopyrs1.core.tables.contracts import Schema
+from canopyrs1.core.tables.contracts import Need, Schema
 from canopyrs1.core.tables.objects import Objects
+from canopyrs1.core.tables.table import Table
 
 
 @dataclass
@@ -13,11 +15,11 @@ class SimulatedStep:
     before and just after it (dicts of {table type: Schema})."""
 
     component: object
-    before: dict
-    after: dict
+    before: dict[type, Schema]
+    after: dict[type, Schema]
 
 
-def _made_schema(need, before):
+def _made_schema(need: Need, before: dict[type, Schema]) -> Schema:
     """Return the Schema of the table a component promises in ``need`` (one of its
     ``produces``), ``before`` holding the newest table of each type before the component."""
     if isinstance(need.on, tuple):
@@ -42,7 +44,7 @@ def _made_schema(need, before):
     return schema
 
 
-def simulate(inputs, components):
+def simulate(inputs: Sequence[Table], components: Sequence[object]) -> list[SimulatedStep]:
     """Return what running ``components`` on the ``inputs`` tables would look like, without
     running anything: one SimulatedStep per component. Each component reads the newest table of
     each type its ``requires`` asks for, and its ``produces`` describe the tables it makes. Objects

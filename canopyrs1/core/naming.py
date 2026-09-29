@@ -10,11 +10,13 @@ from pathlib import Path
 
 import numpy as np
 
+from canopyrs1.core.types import PathLike
+
 _WORD = r"[a-zA-Z0-9]+"
 _PRODUCT_NAME = rf"{_WORD}(?:_{_WORD})*"
 
 
-def _check(value, pattern, what):
+def _check(value: str, pattern: str, what: str) -> str:
     """Return ``value``, or raise a ValueError if it doesn't fully match ``pattern``. An underscore
     in a fold or AOI, for example, would make the name impossible to split into its parts."""
     if not re.fullmatch(pattern, str(value)):
@@ -25,7 +27,7 @@ def _check(value, pattern, what):
     return value
 
 
-def _number_tag(value):
+def _number_tag(value: float) -> str:
     """Return ``value`` with "p" for the decimal point, never in scientific notation: 0.045 gives
     "0p045", 2 gives "2p0"."""
     return np.format_float_positional(float(value), trim="0").replace(".", "p")
@@ -36,7 +38,7 @@ class NameConvention:
     a resolution tag, and the details of the file."""
 
     @staticmethod
-    def clean_product_name(name):
+    def clean_product_name(name: str) -> str:
         """Return ``name`` cleaned up to be used in file names: lowercase, with spaces and dashes
         turned into single underscores, and no underscore at either end. Raises a ValueError if it
         then holds anything other than letters, digits and underscores."""
@@ -44,7 +46,7 @@ class NameConvention:
         return _check(cleaned, _PRODUCT_NAME, f"The product name {name!r}, cleaned up to")
 
     @staticmethod
-    def product_name(path):
+    def product_name(path: PathLike) -> str:
         """Return the product name of the file at ``path``: its file name without its folder and
         without any of its extensions ("a/b/ortho.cog.tif" gives "ortho"), cleaned up."""
         name = Path(path).name
@@ -53,7 +55,10 @@ class NameConvention:
         return NameConvention.clean_product_name(name)
 
     @staticmethod
-    def resolution_tag(scale_factor=None, ground_resolution=None):
+    def resolution_tag(
+        scale_factor: float | None = None,
+        ground_resolution: float | None = None,
+    ) -> str:
         """Return the tag of a raster read at ``ground_resolution`` metres per pixel ("gr0p045" is
         4.5 cm), or rescaled by ``scale_factor`` ("sf0p5"). With neither, returns "sf1p0": the
         raster's own resolution."""
@@ -65,17 +70,17 @@ class NameConvention:
 
     @staticmethod
     def tile(
-        product_name,
+        product_name: str,
         *,
-        col,
-        row,
-        width,
-        height,
-        tile_id,
-        aoi=None,
-        scale_factor=None,
-        ground_resolution=None,
-    ):
+        col: int,
+        row: int,
+        width: int,
+        height: int,
+        tile_id: int,
+        aoi: str | None = None,
+        scale_factor: float | None = None,
+        ground_resolution: float | None = None,
+    ) -> str:
         """Return the file name of a tile: the ``width`` x ``height`` pixels whose top-left pixel is
         at column ``col`` and row ``row`` of the raster (negative if the tile starts past its edge),
         with its ``tile_id`` and the ``aoi`` it belongs to ("noaoi" if None).
@@ -88,12 +93,12 @@ class NameConvention:
 
     @staticmethod
     def coco(
-        product_name,
-        fold,
+        product_name: str,
+        fold: str,
         *,
-        scale_factor=None,
-        ground_resolution=None,
-    ):
+        scale_factor: float | None = None,
+        ground_resolution: float | None = None,
+    ) -> str:
         """Return the file name of the COCO file of one fold: "ortho_coco_gr0p045_train.json"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
         _check(fold, _WORD, "The fold")
@@ -102,12 +107,12 @@ class NameConvention:
 
     @staticmethod
     def gpkg(
-        product_name,
-        fold,
+        product_name: str,
+        fold: str,
         *,
-        scale_factor=None,
-        ground_resolution=None,
-    ):
+        scale_factor: float | None = None,
+        ground_resolution: float | None = None,
+    ) -> str:
         """Return the file name of the GeoPackage of one fold, or of a run's final predictions when
         ``fold`` is "finalpreds": "ortho_gr0p045_finalpreds.gpkg"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
@@ -117,12 +122,12 @@ class NameConvention:
 
     @staticmethod
     def aoi_gpkg(
-        product_name,
-        aoi,
+        product_name: str,
+        aoi: str,
         *,
-        scale_factor=None,
-        ground_resolution=None,
-    ):
+        scale_factor: float | None = None,
+        ground_resolution: float | None = None,
+    ) -> str:
         """Return the file name of the GeoPackage holding one AOI's area:
         "ortho_aoi_gr0p045_train.gpkg"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
@@ -131,7 +136,12 @@ class NameConvention:
         return f"{product_name}_aoi_{tag}_{aoi}.gpkg"
 
     @staticmethod
-    def aoi_tiles_image(product_name, *, scale_factor=None, ground_resolution=None):
+    def aoi_tiles_image(
+        product_name: str,
+        *,
+        scale_factor: float | None = None,
+        ground_resolution: float | None = None,
+    ) -> str:
         """Return the file name of the picture showing which tiles are in which AOI:
         "ortho_aoistiles_gr0p045.png"."""
         _check(product_name, _PRODUCT_NAME, "The product name")

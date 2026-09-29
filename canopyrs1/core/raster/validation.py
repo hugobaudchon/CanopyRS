@@ -1,11 +1,13 @@
 """Checking that a raster can be used as RGB input, from its header only."""
 
 import warnings
+from collections.abc import Sequence
 
 import rasterio
 from rasterio.enums import ColorInterp
 
 from canopyrs1.core.constants import RGB_BANDS
+from canopyrs1.core.types import PathLike
 
 
 class RasterValidationError(ValueError):
@@ -13,12 +15,12 @@ class RasterValidationError(ValueError):
 
 
 def validate_rgb_raster(
-    path,
+    path: PathLike,
     *,
-    bands=RGB_BANDS,
-    strict_rgb_validation=True,
-    require_uint8=True,
-):
+    bands: Sequence[int] = RGB_BANDS,
+    strict_rgb_validation: bool = True,
+    require_uint8: bool = True,
+) -> None:
     """Check that the raster at ``path`` (a local file or a URL) can be used as RGB input, reading
     only its header:
 

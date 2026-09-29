@@ -2,28 +2,33 @@
 whether they are worth keeping."""
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 from affine import Affine
 from pyproj import CRS
 from rasterio.enums import ColorInterp, Resampling
+from rasterio.io import DatasetReader
 from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 
+from canopyrs1.core.geometry.georef import Georef
+from canopyrs1.core.types import CRSLike
 
-def _same_crs(a, b):
+
+def _same_crs(a: CRSLike | None, b: CRSLike | None) -> bool:
     """Return whether the CRSs ``a`` and ``b`` (strings, CRS objects or None) are the same."""
     if a is None or b is None:
         return a is None and b is None
     return CRS.from_user_input(a) == CRS.from_user_input(b)
 
 
-def _is_rotated(transform):
+def _is_rotated(transform: Sequence[float]) -> bool:
     """Return whether a six-number transform turns the image, so its rows don't run east-west."""
     return transform[1] != 0 or transform[3] != 0
 
 
-def _file_window(src, georef):
+def _file_window(src: DatasetReader, georef: Georef) -> Window:
     """Return the window of ``src``'s own pixels covering the image described by ``georef``, in the
     same CRS and with neither rotated. Its offsets and size are fractional when the image's pixels
     don't line up with the file's."""
@@ -36,7 +41,7 @@ def _file_window(src, georef):
     return Window(col, row, width, height)
 
 
-def _lies_on_file_pixels(window, georef):
+def _lies_on_file_pixels(window: Window, georef: Georef) -> bool:
     """Return whether ``window`` covers whole file pixels, one image pixel per file pixel."""
     return (
         math.isclose(window.width, georef["width"], abs_tol=1e-6)
@@ -46,7 +51,11 @@ def _lies_on_file_pixels(window, georef):
     )
 
 
-def read_window(src, georef, bands=None):
+def read_window(
+    src: DatasetReader,
+    georef: Georef,
+    bands: Sequence[int] | None = None,
+) -> np.ndarray:
     """Return the pixels of the image described by ``georef``, read from the raster ``src`` (an open
     rasterio dataset), as an array of shape (bands, height, width) in the raster's dtype.
 
@@ -105,7 +114,7 @@ def read_window(src, georef, bands=None):
     )
 
 
-def get_alpha_band(src):
+def get_alpha_band(src: DatasetReader) -> int | None:
     """Return the number (starting at 1) of the alpha band of the raster ``src``, an open rasterio
     dataset, or None if it has none."""
     for number, colour in enumerate(src.colorinterp, start=1):
@@ -114,7 +123,11 @@ def get_alpha_band(src):
     return None
 
 
-def should_skip(pixels, conditions, alpha=None):
+def should_skip(
+    pixels: np.ndarray,
+    conditions: dict | None,
+    alpha: np.ndarray | None = None,
+) -> bool:
     """Return whether an image should be skipped, given its ``pixels`` (bands, height, width) and
     the ``conditions`` it must meet.
 
