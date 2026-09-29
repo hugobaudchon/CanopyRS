@@ -94,6 +94,7 @@ class Imagery(Table):
         if isinstance(paths, (str, os.PathLike)):
             paths = [paths]
         paths = [os.fspath(path) for path in paths]
+
         # read each georef from its file's header
         georefs = []
         for path in paths:
@@ -127,6 +128,7 @@ class Imagery(Table):
         )
         if not paths:
             raise ValueError(f"No .tif or .tiff images in {path}")
+
         # read their headers
         return cls.from_paths(
             paths,

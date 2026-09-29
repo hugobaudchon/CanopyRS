@@ -76,6 +76,7 @@ def decode_segmentation(
     # check the output
     if to not in ("polygon", "box", "mask"):
         raise ValueError(f"to must be 'polygon', 'box' or 'mask', not {to!r}")
+
     # from the polygons format
     if not isinstance(segmentation, dict):
         polygon = _points_to_polygon(segmentation)

@@ -117,6 +117,7 @@ def get_footprints(georefs, crs):
     crss = {georef["crs"] for georef in georefs} | {crs}
     if None in crss and len(crss) > 1:
         raise ValueError("Images with and without a CRS can't be together")
+
     # make the footprints, and move those in another CRS
     polygons = [get_footprint(georef) for georef in georefs]
     footprints = gpd.GeoSeries(polygons, crs=crs)

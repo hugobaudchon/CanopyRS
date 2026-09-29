@@ -104,11 +104,13 @@ class Objects(Table):
         """Return what these objects offer, as a Schema (see ``Table.schema``), with the columns
         and imagery found in their history (see ``has_column`` and ``get_parent_imagery``)."""
         schema = super().schema()
+
         # the imagery they were found in
         imagery = self.get_parent_imagery()
         if imagery is not None:
             schema.links.add("parent_imagery")
             schema.on = type(imagery)
+
         # the columns of their history
         if self.parent_objects is not None:
             schema.links.add("parent_objects")
@@ -122,6 +124,7 @@ class Objects(Table):
         # check every object has an image
         if self.parent_imagery is None or self.df[Col.PARENT_IMAGE_ID].isna().any():
             raise ValueError("Every object needs its image: parent_imagery and a parent_image_id")
+
         # convert the objects of each image with its georef
         geometry = self.df.geometry.to_numpy().copy()
         for image_id, rows in self.df.groupby(Col.PARENT_IMAGE_ID).indices.items():
@@ -143,11 +146,13 @@ class Objects(Table):
             self.df[[Col.OBJECT_ID, Col.PARENT_IMAGE_ID]],
             geometry=self.get_geometry_in_image_coords(),
         )
+
         # find disk paths
         disk_paths = pd.Series(self.parent_imagery.get_disk_paths().to_numpy())
         paths = gdf[Col.PARENT_IMAGE_ID].map(disk_paths)
         if paths.isna().any():
             raise ValueError("Some objects have no file on disk above their image")
+
         # group by disk path
         georefs = self.parent_imagery.df[Col.GEOREF]
         groups = []

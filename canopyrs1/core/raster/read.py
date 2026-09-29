@@ -93,6 +93,7 @@ def read_window(src, georef, bands=None):
             boundless=True,
             fill_value=fill,
         )
+
     # otherwise resample (same CRS, another resolution)
     return src.read(
         bands,
@@ -138,6 +139,7 @@ def should_skip(pixels, conditions, alpha=None):
     threshold = conditions["ignore_black_white_alpha_tiles_threshold"]
     if threshold >= 1:
         return False
+
     # count the empty pixels
     empty = np.all(pixels == 0, axis=0) | np.all(pixels == 255, axis=0)
     if alpha is not None:

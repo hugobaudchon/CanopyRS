@@ -21,6 +21,7 @@ def write_tile(path, pixels, georef, colorinterp=None, compress=None):
             f"The pixels are {width} x {height}, but the georef is "
             f"{georef['width']} x {georef['height']}"
         )
+
     # choose the compression
     compression = {}
     if compress == "zstd":
@@ -30,6 +31,7 @@ def write_tile(path, pixels, georef, colorinterp=None, compress=None):
         compression = {"compress": "zstd", "predictor": predictor}
     elif compress is not None:
         raise ValueError(f"compress must be None or 'zstd', not {compress!r}")
+
     # write
     dst = rasterio.open(
         path,

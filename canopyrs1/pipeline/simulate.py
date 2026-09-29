@@ -31,6 +31,7 @@ def _made_schema(need, before):
         has_crs=need.has_crs,
         on=need.on,
     )
+
     # objects made from objects keep their history, as at run time
     history = before.get(Objects)
     if need.data_type is Objects and "parent_objects" in need.links and history is not None:
@@ -53,9 +54,11 @@ def simulate(inputs, components):
     # start from the inputs
     available = {type(table): table.schema() for table in inputs}
     simulated = []
+
     # iterate over components
     for number, component in enumerate(components, start=1):
         before = dict(available)
+
         # check what it needs
         errors = []
         for need in component.requires:
@@ -64,11 +67,13 @@ def simulate(inputs, components):
                 errors.append(f"There are no {need.data_type.__name__} before this step")
             else:
                 errors += need.check(schema)
+
         # stop at the first component whose needs aren't met
         if errors:
             problems = "\n".join(f"  - {error}" for error in errors)
             name = type(component).__name__
             raise ValueError(f"Step {number}, {name}, can't run:\n{problems}")
+
         # describe what it makes
         for need in component.produces:
             available[need.data_type] = _made_schema(need, before)

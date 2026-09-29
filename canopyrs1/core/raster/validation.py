@@ -42,6 +42,7 @@ def validate_rgb_raster(
             raise RasterValidationError(
                 f"The raster {path} has {src.count} band(s), but bands {list(bands)} are to be read"
             )
+
         # check the RGB tags
         tags = [src.colorinterp[band - 1] for band in bands]
         expected = [ColorInterp.red, ColorInterp.green, ColorInterp.blue]
@@ -56,6 +57,7 @@ def validate_rgb_raster(
                     f"strict_rgb_validation=False to only warn."
                 )
             warnings.warn(message, UserWarning, stacklevel=2)
+
         # check the dtype
         dtypes = {src.dtypes[band - 1] for band in bands}
         if require_uint8 and dtypes != {"uint8"}:
