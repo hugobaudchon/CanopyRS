@@ -1,9 +1,20 @@
+from pathlib import Path
+
 import geopandas as gpd
+import numpy as np
 import pytest
+import rasterio
+from affine import Affine
+from rasterio.errors import RasterioIOError
 from shapely.geometry import box
 
 from canopyrs1.core.constants import RGB_BANDS, Col, GeomKind, Modality
-from canopyrs1.core.geometry.georef import get_footprint, make_georef, window_georef
+from canopyrs1.core.geometry.georef import (
+    get_footprint,
+    make_georef,
+    read_georef,
+    window_georef,
+)
 from canopyrs1.core.tables.imagery import Crops, Imagery, Sources, Tiles
 from canopyrs1.core.tables.objects import Objects
 
@@ -242,3 +253,67 @@ def test_which_tiles_cover_an_area():
     corner = box(600001, 5039990, 600005, 5039995)
     assert sorted(tiles.df.sindex.query(centre, predicate="intersects")) == [0, 1, 2, 3]
     assert list(tiles.df.sindex.query(corner, predicate="intersects")) == [0]
+
+
+# =============================================================================
+# from_paths
+# =============================================================================
+
+
+def test_sources_from_one_path(rgb_raster):
+    sources = Sources.from_paths(rgb_raster)
+    assert isinstance(sources, Sources) and len(sources) == 1
+    row = sources.df.iloc[0]
+    assert row[Col.PATH] == str(rgb_raster)
+    with rasterio.open(rgb_raster) as src:
+        assert row[Col.GEOREF] == read_georef(src)
+    assert row[Col.MODALITY] == Modality.RGB and row[Col.BANDS] == RGB_BANDS
+    assert sources.df.geometry[0].equals(box(0, 0, 256, 256))  # its footprint, in its CRS
+    assert sources.parent_imagery is None
+
+
+def test_sources_from_several_paths(rgb_raster, unprojected_raster):
+    sources = Sources.from_paths(
+        [Path(rgb_raster), str(unprojected_raster)],
+        modality=[Modality.RGB, Modality.RGB],
+        timestamp=[0, 1],
+    )
+    assert list(sources.df[Col.PATH]) == [str(rgb_raster), str(unprojected_raster)]
+    assert list(sources.df[Col.TIMESTAMP]) == [0, 1]
+    # Each georef stays in its file's own CRS; the footprints are all in the first one's.
+    assert sources.df[Col.GEOREF][1]["crs"] == "EPSG:4326"
+    assert sources.df.crs == "EPSG:32618"
+
+
+def test_from_paths_with_the_real_crop(real_raster):
+    sources = Sources.from_paths(real_raster)
+    with rasterio.open(real_raster) as src:
+        assert sources.df[Col.GEOREF][0] == read_georef(src)
+        assert sources.df.crs == src.crs.to_string()
+
+
+def test_from_paths_of_a_raster_without_a_crs(tmp_path):
+    path = tmp_path / "photo.tif"
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=64,
+        height=32,
+        count=3,
+        dtype="uint8",
+        transform=Affine.identity(),
+    ) as dst:
+        dst.write(np.zeros((3, 32, 64), dtype=np.uint8))
+    tiles = Tiles.from_paths(path)
+    assert isinstance(tiles, Tiles) and not tiles.has_crs
+    assert tiles.df.geometry[0].equals(box(0, 0, 64, 32))
+
+
+def test_from_paths_of_nothing():
+    assert len(Sources.from_paths([])) == 0
+
+
+def test_from_paths_of_a_missing_file(tmp_path):
+    with pytest.raises(RasterioIOError):
+        Sources.from_paths(tmp_path / "missing.tif")

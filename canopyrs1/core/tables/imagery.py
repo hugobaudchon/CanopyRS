@@ -1,10 +1,13 @@
 """The imagery tables: images, each with its georef, on disk or read as a window of its parent."""
 
+import os
+
 import geopandas as gpd
 import pandas as pd
+import rasterio
 
 from canopyrs1.core.constants import RGB_BANDS, Col, Modality
-from canopyrs1.core.geometry.georef import get_footprints
+from canopyrs1.core.geometry.georef import get_footprints, read_georef
 from canopyrs1.core.tables.table import Table
 
 
@@ -70,6 +73,35 @@ class Imagery(Table):
             crs=crs,
         )
         return cls(df, parent_imagery=parent_imagery)
+
+    @classmethod
+    def from_paths(
+        cls,
+        paths,
+        *,
+        bands=RGB_BANDS,
+        modality=Modality.RGB,
+        timestamp=None,
+    ):
+        """Return the images in the raster files at ``paths`` (one path or a list; local files or
+        URLs), each with the georef read from its file's header: no pixel is read. ``bands``,
+        ``modality`` and ``timestamp`` are as in ``build``."""
+        # one path or several
+        if isinstance(paths, (str, os.PathLike)):
+            paths = [paths]
+        paths = [os.fspath(path) for path in paths]
+        # read each georef from its file's header
+        georefs = []
+        for path in paths:
+            with rasterio.open(path) as src:
+                georefs.append(read_georef(src))
+        return cls.build(
+            georef=georefs,
+            path=paths,
+            bands=bands,
+            modality=modality,
+            timestamp=timestamp,
+        )
 
     def schema(self):
         """Return what these images offer, as a Schema (see ``Table.schema``), with their link to
