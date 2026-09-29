@@ -13,6 +13,10 @@ class Imagery(Table):
     the geometry, in the CRS of the table's first image (in pixel coordinates for images without a
     CRS).
 
+    The georef is what places an image: its pixels are read, and coordinates converted, with it,
+    in the image's own CRS. The footprint is made from it, only to find images by area across the
+    table (``df.sindex``), which is why it is in one CRS for the whole table.
+
     An image is on disk (``path`` is its file) or a window of its parent image (``path`` is
     empty, and its pixels are read from the nearest parent on disk). Its parent is in
     ``parent_imagery``, through ``parent_image_id``: a tile's source, a crop's tile or source.

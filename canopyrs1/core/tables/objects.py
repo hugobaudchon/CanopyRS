@@ -4,6 +4,7 @@ import geopandas as gpd
 import pandas as pd
 
 from canopyrs1.core.constants import Col, GeomKind
+from canopyrs1.core.geometry.georef import crs_to_pixel, pixel_to_crs
 from canopyrs1.core.tables.table import Table
 
 
@@ -98,3 +99,44 @@ class Objects(Table):
         if self.parent_imagery is not None or self.parent_objects is None:
             return self.parent_imagery
         return self.parent_objects.get_parent_imagery()
+
+    def get_geometry_in_image_coords(self, pixels=False):
+        """Return each object's geometry in its image's CRS, or in its image's pixels if
+        ``pixels`` is True. Raises a ValueError if an object has no image."""
+        # check every object has an image
+        if self.parent_imagery is None or self.df[Col.PARENT_IMAGE_ID].isna().any():
+            raise ValueError("Every object needs its image: parent_imagery and a parent_image_id")
+        # convert the objects of each image with its georef
+        geometry = self.df.geometry.to_numpy().copy()
+        for image_id, rows in self.df.groupby(Col.PARENT_IMAGE_ID).indices.items():
+            georef = self.parent_imagery.df[Col.GEOREF].iloc[image_id]
+            part = geometry[rows]
+            if self.has_crs:
+                part = gpd.GeoSeries(part, crs=self.df.crs).to_crs(georef["crs"]).to_numpy()
+                geometry[rows] = crs_to_pixel(part, georef) if pixels else part
+            else:
+                geometry[rows] = part if pixels else pixel_to_crs(part, georef)
+        return gpd.GeoSeries(geometry, index=self.df.index)
+
+    def group_by_disk_path(self):
+        """Return the objects as ``(path, gdf)`` pairs, one per file their pixels are read from
+        (see ``Imagery.get_disk_paths``), each ``gdf`` in its images' CRS. Raises a ValueError if
+        an object has no image, or no file."""
+        # put the objects in their images' CRS
+        gdf = gpd.GeoDataFrame(
+            self.df[[Col.OBJECT_ID, Col.PARENT_IMAGE_ID]],
+            geometry=self.get_geometry_in_image_coords(),
+        )
+        # find disk paths
+        disk_paths = pd.Series(self.parent_imagery.get_disk_paths().to_numpy())
+        paths = gdf[Col.PARENT_IMAGE_ID].map(disk_paths)
+        if paths.isna().any():
+            raise ValueError("Some objects have no file on disk above their image")
+        # group by disk path
+        georefs = self.parent_imagery.df[Col.GEOREF]
+        groups = []
+        for path, group in gdf.groupby(paths, sort=False):
+            first_image_id = group[Col.PARENT_IMAGE_ID].iloc[0]
+            crs = georefs.iloc[first_image_id]["crs"]  # all images of one file share its CRS
+            groups.append((path, group.set_crs(crs)))
+        return groups
