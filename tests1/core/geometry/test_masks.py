@@ -6,7 +6,7 @@ from affine import Affine
 from rasterio import features
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
-from canopyrs1.core.geometry.masks import mask_to_polygon, polygon_to_mask
+from canopyrs1.core.geometry.masks import mask_to_polygon, polygon_to_mask, rasterize_in_bounds
 
 
 def _mask(size, pixels):
@@ -198,3 +198,29 @@ def test_matches_rasterizing_the_whole_mask():
             dtype="uint8",
         )
         assert (polygon_to_mask(polygon, 40, 40) == full).all()
+
+
+# =============================================================================
+# rasterize_in_bounds
+# =============================================================================
+
+IN_BOUNDS_CASES = [
+    Point(10, 8).buffer(4),  # inside
+    box(-3, -2, 5, 6),  # past the top-left corner
+    box(15, 12, 30, 30),  # past the bottom-right corner
+    MultiPolygon([box(1, 1, 3, 3), box(12, 9, 18, 14)]),
+]
+
+
+@pytest.mark.parametrize("polygon", IN_BOUNDS_CASES)
+def test_rasterize_in_bounds_is_a_part_of_the_mask(polygon):
+    pixels, row, col = rasterize_in_bounds(polygon, 16, 20)
+    mask = polygon_to_mask(polygon, 16, 20)
+    assert np.array_equal(pixels, mask[row : row + pixels.shape[0], col : col + pixels.shape[1]])
+    assert pixels.sum() == mask.sum()  # nothing outside it
+
+
+def test_rasterize_in_bounds_of_nothing():
+    for polygon in (Polygon(), box(30, 30, 40, 40)):
+        pixels, _, _ = rasterize_in_bounds(polygon, 16, 20)
+        assert pixels.size == 0

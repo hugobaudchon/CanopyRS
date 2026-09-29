@@ -1,4 +1,5 @@
 import json
+import warnings
 
 import numpy as np
 import pytest
@@ -6,9 +7,13 @@ from pycocotools import mask as coco_mask
 from pycocotools.coco import COCO
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
+from canopyrs1.core.constants import Col, GeomKind
 from canopyrs1.core.geometry.coco_segmentation import decode_segmentation
+from canopyrs1.core.geometry.georef import make_georef
 from canopyrs1.core.geometry.masks import polygon_to_mask
-from canopyrs1.core.io.coco import encode_annotation
+from canopyrs1.core.io.coco import encode_annotation, write_coco
+from canopyrs1.core.tables.imagery import Sources, Tiles
+from canopyrs1.core.tables.objects import Objects
 
 # =============================================================================
 # encode_annotation
@@ -119,3 +124,204 @@ def test_pycocotools_reads_it(tmp_path):
     # pycocotools draws polygons its own way: the two masks differ only along the outline.
     assert np.abs(from_polygon.astype(int) - from_rle).sum() < 0.1 * from_rle.sum()
     assert coco_mask.area(coco_mask.encode(np.asfortranarray(from_rle))) == from_rle.sum()
+
+
+# =============================================================================
+# write_coco
+# =============================================================================
+
+
+def _objects_on_tiles(tiles_dir, **columns):
+    """Return three objects in the pixels of the two tiles of ``tiles_dir``: two boxes on the
+    first tile, a round mask on the second, with ``columns``."""
+    tiles = Tiles.from_image_dir(tiles_dir)
+    return Objects.build(
+        geometry=[box(10, 6, 30, 16), box(50, 50, 60, 70), Point(64, 64).buffer(10)],
+        geom_kind=[GeomKind.BOX, GeomKind.BOX, GeomKind.MASK],
+        parent_image_id=[0, 0, 1],
+        parent_imagery=tiles,
+        columns=columns,
+    )
+
+
+def _read(path):
+    return json.loads(path.read_text())
+
+
+def test_a_coco_file(tiles_dir, tmp_path):
+    path = write_coco(_objects_on_tiles(tiles_dir), tmp_path / "out" / "coco.json", description="d")
+    assert path == tmp_path / "out" / "coco.json"
+    coco = _read(path)
+    assert coco["info"]["description"] == "d" and coco["licenses"] == []
+    assert coco["images"] == [
+        {"id": 1, "file_name": "tile_0.tif", "width": 128, "height": 128},
+        {"id": 2, "file_name": "tile_1.tif", "width": 128, "height": 128},
+    ]
+    assert [a["id"] for a in coco["annotations"]] == [1, 2, 3]
+    assert [a["image_id"] for a in coco["annotations"]] == [1, 1, 2]
+    assert coco["annotations"][0]["bbox"] == [10.0, 6.0, 20.0, 10.0]
+    # Without categories: one for every object.
+    assert coco["categories"] == [{"id": 1, "name": "NoCategory", "supercategory": ""}]
+    assert {a["category_id"] for a in coco["annotations"]} == {1}
+
+
+def test_pycocotools_reads_the_file(tiles_dir, tmp_path):
+    for rle in (False, True):
+        path = write_coco(_objects_on_tiles(tiles_dir), tmp_path / f"coco_{rle}.json", rle=rle)
+        loaded = COCO(str(path))
+        mask = loaded.annToMask(loaded.anns[3])
+        if rle:  # exactly the pixels whose centre is inside
+            assert np.array_equal(mask, polygon_to_mask(Point(64, 64).buffer(10), 128, 128))
+        assert mask.sum() == pytest.approx(np.pi * 10**2, rel=0.05)
+
+
+def test_objects_in_a_crs_are_moved_into_their_tile_s_pixels(tiles_dir, tmp_path):
+    # tile_0.tif covers x 0 to 128 m and y 128 to 256 m, in 1 m pixels.
+    tiles = Tiles.from_image_dir(tiles_dir)
+    objects = Objects.build(
+        geometry=[box(10, 234, 30, 250)],
+        geom_kind=GeomKind.BOX,
+        crs=tiles.df.crs,
+        parent_image_id=0,
+        parent_imagery=tiles,
+    )
+    annotation = _read(write_coco(objects, tmp_path / "coco.json"))["annotations"][0]
+    assert annotation["bbox"] == pytest.approx([10, 6, 20, 16])
+
+
+def test_images_without_objects_are_kept(tiles_dir, tmp_path):
+    tiles = Tiles.from_image_dir(tiles_dir)
+    objects = Objects.build(
+        geometry=[box(0, 0, 5, 5)],
+        geom_kind=GeomKind.BOX,
+        parent_image_id=1,
+        parent_imagery=tiles,
+    )
+    coco = _read(write_coco(objects, tmp_path / "coco.json"))
+    assert [image["file_name"] for image in coco["images"]] == ["tile_0.tif", "tile_1.tif"]
+    assert coco["annotations"][0]["image_id"] == 2
+
+
+def test_images_need_a_file_of_their_own(tmp_path):
+    georef = make_georef(
+        transform=[1, 0, 0, 0, -1, 64],
+        crs="EPSG:32618",
+        width=64,
+        height=64,
+        count=3,
+        dtype="uint8",
+    )
+    windows = Tiles.build(georef=[georef])  # no file of its own
+    objects = Objects.build(
+        geometry=[box(0, 0, 5, 5)],
+        geom_kind=GeomKind.BOX,
+        parent_image_id=0,
+        parent_imagery=windows,
+    )
+    with pytest.raises(ValueError, match="write the tiles to disk first"):
+        write_coco(objects, tmp_path / "coco.json")
+
+
+def test_scores_and_attributes_found_in_the_history(tiles_dir, tmp_path):
+    detections = _objects_on_tiles(tiles_dir, **{Col.DETECTOR_SCORE: [0.9, np.nan, 0.7]})
+    kept = Objects.build(
+        geometry=detections.df.geometry,
+        geom_kind=detections.df[Col.GEOM_KIND],
+        parent_image_id=detections.df[Col.PARENT_IMAGE_ID],
+        parent_imagery=detections.parent_imagery,
+        parent_object_id=[0, 1, 2],
+        parent_objects=detections,
+        columns={"height_m": [12.5, np.nan, 20.0]},
+    )
+    annotations = _read(
+        write_coco(
+            kept,
+            tmp_path / "coco.json",
+            score_column=Col.DETECTOR_SCORE,
+            attribute_columns=[Col.DETECTOR_SCORE, "height_m"],
+        )
+    )["annotations"]
+    assert annotations[0]["score"] == 0.9 and "score" not in annotations[1]
+    assert annotations[0]["other_attributes"] == {"detector_score": 0.9, "height_m": 12.5}
+    assert annotations[1]["other_attributes"] == {"detector_score": None, "height_m": None}
+
+
+TREES = [
+    {"id": 1, "name": "Pinaceae", "other_names": [], "supercategory": None},
+    {"id": 2, "name": "Picea", "other_names": ["PIGL", "PIMA"], "supercategory": 1},
+]
+
+
+def test_categories_from_a_list(tiles_dir, tmp_path):
+    objects = _objects_on_tiles(tiles_dir, species=["Pinaceae", "PIMA", "Picea"])
+    coco = _read(
+        write_coco(objects, tmp_path / "coco.json", categories=TREES, category_column="species")
+    )
+    assert coco["categories"] == TREES
+    assert [a["category_id"] for a in coco["annotations"]] == [1, 2, 2]
+
+
+def test_a_category_not_in_the_list(tiles_dir, tmp_path):
+    objects = _objects_on_tiles(tiles_dir, species=["Pinaceae", "Quercus", None])
+    with pytest.warns(UserWarning, match=r"\['\(missing\)', 'Quercus'\] aren't known"):
+        coco = _read(
+            write_coco(objects, tmp_path / "c.json", categories=TREES, category_column="species")
+        )
+    assert [a["category_id"] for a in coco["annotations"]] == [1, -1, -1]
+
+
+def test_a_list_of_one_category_without_a_column(tiles_dir, tmp_path):
+    tree = [{"id": 1, "name": "tree", "supercategory": None}]
+    coco = _read(write_coco(_objects_on_tiles(tiles_dir), tmp_path / "c.json", categories=tree))
+    assert coco["categories"] == tree
+    assert {a["category_id"] for a in coco["annotations"]} == {1}
+
+
+def test_categories_found_in_a_column(tiles_dir, tmp_path):
+    # Numbered in the order of their names, the same from one run to the next.
+    objects = _objects_on_tiles(tiles_dir, species=["pine", "birch", "pine"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # every name is known: no warning
+        coco = _read(write_coco(objects, tmp_path / "c.json", category_column="species"))
+    assert coco["categories"] == [
+        {"id": 1, "name": "birch", "supercategory": ""},
+        {"id": 2, "name": "pine", "supercategory": ""},
+    ]
+    assert [a["category_id"] for a in coco["annotations"]] == [2, 1, 2]
+
+
+BAD_CATEGORIES = [
+    ([{"id": 1, "name": "tree"}], "has no supercategory"),
+    (
+        [
+            {"id": 1, "name": "a", "supercategory": ""},
+            {"id": 2, "name": "b", "other_names": ["a"], "supercategory": ""},
+        ],
+        "'a' is given twice",
+    ),
+    (
+        [{"id": 1, "name": "a", "supercategory": ""}, {"id": 1, "name": "b", "supercategory": ""}],
+        "Two categories have the same id",
+    ),
+]
+
+
+@pytest.mark.parametrize("categories, message", BAD_CATEGORIES)
+def test_categories_that_aren_t_valid(categories, message, tiles_dir, tmp_path):
+    objects = _objects_on_tiles(tiles_dir, species=["a", "b", "a"])
+    with pytest.raises(ValueError, match=message):
+        write_coco(objects, tmp_path / "c.json", categories=categories, category_column="species")
+
+
+def test_several_categories_without_a_column(tiles_dir, tmp_path):
+    with pytest.raises(ValueError, match="which of the 2 categories"):
+        write_coco(_objects_on_tiles(tiles_dir), tmp_path / "c.json", categories=TREES)
+
+
+def test_the_real_crop(real_raster, tmp_path):
+    # One box covering the whole crop, in the crop's own file.
+    sources = Sources.from_paths(real_raster)
+    coco = _read(write_coco(Objects.from_imagery(sources), tmp_path / "coco.json"))
+    georef = sources.df[Col.GEOREF][0]
+    assert coco["images"][0]["file_name"] == real_raster.name
+    assert coco["annotations"][0]["bbox"] == [0, 0, georef["width"], georef["height"]]

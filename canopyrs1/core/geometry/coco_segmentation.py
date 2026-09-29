@@ -11,8 +11,33 @@ from pycocotools import mask as coco_mask
 from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
-from canopyrs1.core.geometry.masks import mask_to_polygon, polygon_to_mask
+from canopyrs1.core.geometry.masks import mask_to_polygon, polygon_to_mask, rasterize_in_bounds
 from canopyrs1.core.geometry.shapes import repair_polygon
+
+
+def _rle_counts(polygon: BaseGeometry, height: int, width: int) -> list[int]:
+    """Return the run lengths of ``polygon_to_mask(polygon, height, width)``, read column after
+    column, from the columns the polygon covers only: every column left and right of them is
+    empty, so they only add to the first and last runs of zeros."""
+    # the mask of the columns the polygon covers
+    pixels, row, col = rasterize_in_bounds(polygon, height, width)
+    strip = np.zeros((height, pixels.shape[1]), dtype=np.uint8)
+    strip[row : row + pixels.shape[0]] = pixels
+
+    # its runs, the first one of zeros (maybe empty), then alternating
+    flat = strip.ravel(order="F")
+    changes = np.flatnonzero(flat[1:] != flat[:-1]) + 1
+    runs = np.diff(np.concatenate([[0], changes, [flat.size]])).tolist()
+    counts = [0, *runs] if flat.size and flat[0] else runs or [0]
+
+    # the empty columns on its left and right
+    counts[0] += height * col
+    right = height * (width - col - pixels.shape[1])
+    if len(counts) % 2 == 1:
+        counts[-1] += right  # it ends with a run of zeros
+    elif right:
+        counts.append(right)
+    return counts
 
 
 def encode_segmentation(
@@ -21,16 +46,23 @@ def encode_segmentation(
     rle: bool = False,
     height: int | None = None,
     width: int | None = None,
+    fast: bool = True,
 ) -> list[list[float]] | dict:
     """Return ``polygon`` (a Polygon or MultiPolygon, in pixel coordinates) as a COCO segmentation.
 
     - ``rle=False``: in the polygons format, one list per part. Holes are lost. An empty polygon
       gives an empty list.
     - ``rle=True``: in the RLE format, for a mask of ``height`` x ``width`` pixels, holding the
-      pixels whose centre is inside the polygon (see ``polygon_to_mask``). Holes are kept.
+      pixels whose centre is inside the polygon (see ``polygon_to_mask``). Holes are kept. With
+      ``fast``, only the columns the polygon covers are rasterized, which gives the same RLE much
+      faster; otherwise the whole mask is.
     """
     if rle:
-        encoded = coco_mask.encode(np.asfortranarray(polygon_to_mask(polygon, height, width)))
+        if fast:
+            uncompressed = {"size": [height, width], "counts": _rle_counts(polygon, height, width)}
+            encoded = coco_mask.frPyObjects(uncompressed, height, width)
+        else:
+            encoded = coco_mask.encode(np.asfortranarray(polygon_to_mask(polygon, height, width)))
         return {"size": [int(height), int(width)], "counts": encoded["counts"].decode("ascii")}
     parts = [part for part in getattr(polygon, "geoms", [polygon]) if not part.is_empty]
     # The last point of an exterior repeats the first, and COCO leaves it out.

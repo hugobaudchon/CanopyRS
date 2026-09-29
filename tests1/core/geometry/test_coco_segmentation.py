@@ -113,6 +113,35 @@ def test_every_way_of_storing_rle_counts(counts_as):
     assert decode_segmentation(rle, "box").equals(box(1, 1, 15, 13))
 
 
+FAST_RLE_CASES = [
+    (WITH_HOLE, 20, 30),
+    (TWO_PARTS, 20, 20),
+    (Polygon(), 5, 5),  # empty
+    (box(-10, -10, -5, -5), 8, 8),  # outside
+    (box(0, 0, 8, 8), 8, 8),  # the whole image: no run of zeros at all
+    (box(0, 0, 3, 8), 8, 8),  # on the left edge
+    (box(5, 0, 8, 8), 8, 8),  # on the right edge: it ends with a run of ones
+    (box(7, 7, 20, 20), 8, 8),  # past the bottom-right corner
+    (Point(3.3, 11.7).buffer(2.6), 13, 9),  # not on pixel edges
+]
+
+
+@pytest.mark.parametrize("polygon, height, width", FAST_RLE_CASES)
+def test_fast_rle_is_the_same_as_encoding_the_whole_mask(polygon, height, width):
+    fast = encode_segmentation(polygon, rle=True, height=height, width=width)
+    full = encode_segmentation(polygon, rle=True, height=height, width=width, fast=False)
+    assert fast == full
+
+
+def test_fast_rle_on_random_masks():
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        h, w = rng.integers(5, 40, size=2)
+        polygon = mask_to_polygon(rng.random((h, w)) > 0.6)
+        fast = encode_segmentation(polygon, rle=True, height=h, width=w)
+        assert fast == encode_segmentation(polygon, rle=True, height=h, width=w, fast=False)
+
+
 def test_empty_rle():
     rle = encode_segmentation(Polygon(), rle=True, height=5, width=5)
     assert decode_segmentation(rle) == Polygon()
