@@ -29,3 +29,29 @@ def selvamask_dataset():
     dataset.download_and_extract(root_output_path=str(root), folds=["valid", "test"])
     dataset.verify_dataset(root_output_path=str(root), folds=["valid", "test"])
     return root
+
+
+SELVAMASK_GPKGS = [
+    "20240131_zf2block4_ms_m3m_labels_masks.gpkg",
+    "20240613_tbsnewsite2_m3e_labels_masks.gpkg",
+    "20241122_bcifairchildn_m3m_rgb_labels_masks.gpkg",
+]
+
+
+@pytest.fixture(scope="session")
+def selvamask_gpkgs():
+    """Return the paths of the three SelvaMask ground-truth GeoPackages (the tree crowns of each
+    raster), downloading them into the Hugging Face cache first if they aren't there yet."""
+    from huggingface_hub import hf_hub_download
+
+    return [
+        Path(
+            hf_hub_download(
+                repo_id="CanopyRS/SelvaMask",
+                repo_type="dataset",
+                revision="gpkg",
+                filename=filename,
+            )
+        )
+        for filename in SELVAMASK_GPKGS
+    ]
