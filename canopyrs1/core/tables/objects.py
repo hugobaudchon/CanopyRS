@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 
 from canopyrs1.core.constants import Col, GeomKind
-from canopyrs1.core.geometry.georef import crs_to_pixel, pixel_to_crs
+from canopyrs1.core.geometry.georef import crs_to_pixel, get_pixel_footprint, pixel_to_crs
 from canopyrs1.core.geometry.shapes import infer_geom_kind
 from canopyrs1.core.tables.table import Table
 
@@ -110,6 +110,18 @@ class Objects(Table):
         if Col.PARENT_OBJECT_ID not in gdf.columns:
             gdf[Col.PARENT_OBJECT_ID] = None
         return cls(gdf, parent_imagery=parent_imagery)
+
+    @classmethod
+    def from_imagery(cls, imagery):
+        """Return an objects table with one box per image of ``imagery``, covering the whole image,
+        in its pixel coordinates. A folder of crops becomes the objects the classifier reads them
+        for, one per crop."""
+        return cls.build(
+            geometry=[get_pixel_footprint(georef) for georef in imagery.df[Col.GEOREF]],
+            geom_kind=GeomKind.BOX,
+            parent_image_id=imagery.df[Col.IMAGE_ID].to_numpy(),
+            parent_imagery=imagery,
+        )
 
     def get_column(self, column):
         """Return the values of ``column`` for these objects, one per row. If these objects don't

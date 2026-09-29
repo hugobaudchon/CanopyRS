@@ -5,7 +5,8 @@ from shapely.geometry import LineString, Point, box
 
 from canopyrs1.core.constants import Col, GeomKind
 from canopyrs1.core.geometry.georef import make_georef, window_georef
-from canopyrs1.core.tables.imagery import Sources, Tiles
+from canopyrs1.core.tables.contracts import Need
+from canopyrs1.core.tables.imagery import Crops, Sources, Tiles
 from canopyrs1.core.tables.objects import Objects
 from canopyrs1.core.tables.table import Table
 
@@ -388,3 +389,43 @@ def test_an_empty_file(tmp_path):
     path = tmp_path / "empty.gpkg"
     gpd.GeoDataFrame({"class": []}, geometry=[], crs="EPSG:32618").to_file(path)
     assert len(Objects.from_file(path)) == 0
+
+
+# =============================================================================
+# from_imagery
+# =============================================================================
+
+
+def test_one_object_per_crop(tiles_dir):
+    crops = Crops.from_image_dir(tiles_dir)
+    objects = Objects.from_imagery(crops)
+    assert list(objects.df[Col.PARENT_IMAGE_ID]) == [0, 1]
+    assert (objects.df[Col.GEOM_KIND] == GeomKind.BOX).all()
+    assert objects.parent_imagery is crops and not objects.has_crs
+    assert all(_same(g, box(0, 0, 128, 128)) for g in objects.df.geometry)
+    # In their images' CRS, each object is its crop's footprint.
+    for got, footprint in zip(objects.get_geometry_in_image_coords(), crops.df.geometry):
+        assert _same(got, footprint)
+    # What the classifier needs.
+    assert Need(Objects, links=("parent_imagery",), on=Crops).check(objects.schema()) == []
+
+
+def test_one_object_per_tile_of_a_raster_without_a_crs():
+    # Each box is in its own tile's pixels, not in the raster's frame the tile's footprint is in.
+    raster = make_georef(
+        transform=[1, 0, 0, 0, 1, 0],
+        crs=None,
+        width=2048,
+        height=2048,
+        count=3,
+        dtype="uint8",
+    )
+    tile = window_georef(raster, col_off=1024, row_off=512, width=256, height=128)
+    tiles = Tiles.build(georef=[tile])
+    objects = Objects.from_imagery(tiles)
+    assert _same(objects.df.geometry[0], box(0, 0, 256, 128))
+    assert _same(objects.get_geometry_in_image_coords()[0], box(1024, 512, 1280, 640))
+
+
+def test_one_object_per_image_of_nothing():
+    assert len(Objects.from_imagery(Crops.build(georef=[]))) == 0

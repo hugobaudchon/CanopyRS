@@ -102,11 +102,17 @@ def crs_to_pixel(geometry, georef):
     return _apply_transform(geometry, list(~Affine(*georef["transform"]))[:6])
 
 
+def get_pixel_footprint(georef):
+    """Return the area covered by the image described by ``georef``, in its pixel coordinates:
+    the box from (0, 0) to (width, height)."""
+    width, height = georef["width"], georef["height"]
+    return Polygon([(0, 0), (width, 0), (width, height), (0, height)])
+
+
 def get_footprint(georef):
     """Return the area covered by the image described by ``georef``, as a polygon in CRS
     coordinates: its four corners, which form a rotated rectangle if the image is rotated."""
-    width, height = georef["width"], georef["height"]
-    return pixel_to_crs(Polygon([(0, 0), (width, 0), (width, height), (0, height)]), georef)
+    return pixel_to_crs(get_pixel_footprint(georef), georef)
 
 
 def get_footprints(georefs, crs):

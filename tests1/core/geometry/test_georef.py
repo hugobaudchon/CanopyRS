@@ -16,6 +16,7 @@ from canopyrs1.core.geometry.georef import (
     get_bounds,
     get_footprint,
     get_footprints,
+    get_pixel_footprint,
     make_georef,
     pixel_to_crs,
     read_georef,
@@ -179,6 +180,13 @@ def test_footprint_and_bounds_of_a_north_up_image(rgb_raster):
 def test_footprint_of_a_window_matches_the_tile_file(tiles_dir):
     with rasterio.open(tiles_dir / "tile_1.tif") as tile:
         assert get_bounds(read_georef(tile)) == pytest.approx((128.0, 128.0, 256.0, 256.0))
+
+
+def test_pixel_footprint():
+    # Always the box of the image's pixels, whether rotated or not, and whatever its CRS.
+    for georef in (NORTH_UP, ROTATED):
+        assert get_pixel_footprint(georef).equals(box(0, 0, georef["width"], georef["height"]))
+    assert get_footprint(ROTATED).equals(pixel_to_crs(get_pixel_footprint(ROTATED), ROTATED))
 
 
 def test_footprint_of_a_rotated_image():
