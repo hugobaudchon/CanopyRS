@@ -223,7 +223,7 @@ def test_footprints_in_another_crs_are_moved_into_the_first_image_s():
         count=3,
         dtype="uint8",
     )
-    sources = Sources.build(georef=[zone_18, zone_19], path=["a.tif", "b.tif"])
+    sources = Tiles.build(georef=[zone_18, zone_19], path=["a.tif", "b.tif"])  # two places
     assert sources.df.crs == "EPSG:32618"
     expected = gpd.GeoSeries([get_footprint(zone_19)], crs="EPSG:32619").to_crs("EPSG:32618")[0]
     assert sources.df.geometry[1].equals_exact(expected, 1e-6)
@@ -272,8 +272,8 @@ def test_sources_from_one_path(rgb_raster):
     assert sources.parent_imagery is None
 
 
-def test_sources_from_several_paths(rgb_raster, unprojected_raster):
-    sources = Sources.from_paths(
+def test_images_from_several_paths(rgb_raster, unprojected_raster):
+    sources = Tiles.from_paths(
         [Path(rgb_raster), str(unprojected_raster)],
         modality=[Modality.RGB, Modality.RGB],
         timestamp=[0, 1],
@@ -427,3 +427,37 @@ def test_select_an_image_that_isn_t_there():
         _tiles(_sources()).select([-1])
     with pytest.raises(IndexError):
         _tiles(_sources()).select([4])
+
+
+# =============================================================================
+# Sources are one place
+# =============================================================================
+
+
+def test_sources_of_one_place():
+    # Two dates, and a second modality of the first date.
+    sources = Sources.build(
+        georef=[RASTER] * 3,
+        path=["2023.tif", "2024.tif", "2024_chm.tif"],
+        modality=[Modality.RGB, Modality.RGB, "chm"],  # any modality name works
+        timestamp=[0, 1, 1],
+    )
+    assert len(sources) == 3
+
+
+def test_sources_with_the_same_date_and_modality():
+    with pytest.raises(ValueError, match="two of them have the same timestamp and modality"):
+        Sources.build(georef=[RASTER] * 2, path=["a.tif", "b.tif"])
+
+
+def test_sources_of_two_places():
+    elsewhere = make_georef(
+        transform=[0.1, 0, 900000, 0, -0.1, 5040000],
+        crs="EPSG:32618",
+        width=2048,
+        height=2048,
+        count=3,
+        dtype="uint8",
+    )
+    with pytest.raises(ValueError, match="one of them doesn't overlap the first"):
+        Sources.build(georef=[RASTER, elsewhere], path=["a.tif", "b.tif"], timestamp=[0, 1])

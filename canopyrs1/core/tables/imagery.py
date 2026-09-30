@@ -208,7 +208,30 @@ class Imagery(Table):
 
 
 class Sources(Imagery):
-    """Whole input rasters, such as orthomosaics: they have no parent, and are to be tiled."""
+    """Whole input rasters of one place, such as orthomosaics: several dates or modalities of it,
+    each with its own timestamp or modality. They have no parent, and are to be tiled together (see
+    ``grid_tiles``)."""
+
+    def __init__(self, df: gpd.GeoDataFrame, parent_imagery: "Imagery | None" = None):
+        """Wrap ``df`` (see ``Imagery``). Raises a ValueError if two sources have the same
+        timestamp and modality, or if a source doesn't overlap the first: other places are tiled
+        separately."""
+        super().__init__(df, parent_imagery=parent_imagery)
+
+        # each source a different date or modality
+        pairs = list(zip(df[Col.TIMESTAMP], df[Col.MODALITY]))
+        if len(set(pairs)) < len(pairs):
+            raise ValueError(
+                "Sources are one place: two of them have the same timestamp and modality. Tile "
+                "other places separately"
+            )
+
+        # all of the same place
+        if len(df) and not df.geometry.intersects(df.geometry.iloc[0]).all():
+            raise ValueError(
+                "Sources are one place: one of them doesn't overlap the first. Tile other places "
+                "separately"
+            )
 
 
 class Tiles(Imagery):

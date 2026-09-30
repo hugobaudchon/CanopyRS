@@ -157,9 +157,10 @@ ZONE_19 = _raster("EPSG:32619", 230000)
 
 
 def _two_zones():
-    """Return (sources, tiles): the two orthos, and two 1024 px windows of each, none on disk.
-    Tiles 0 and 1 are the top-left and top-right windows of ZONE_18, 2 and 3 of ZONE_19."""
-    sources = Sources.build(georef=[ZONE_18, ZONE_19], path=["zone_18.tif", "zone_19.tif"])
+    """Return (orthos, tiles): the two orthos, on disk, and two 1024 px windows of each, none on
+    disk. Tiles 0 and 1 are the top-left and top-right windows of ZONE_18, 2 and 3 of ZONE_19. The
+    orthos are two places, so a Tiles table rather than Sources."""
+    sources = Tiles.build(georef=[ZONE_18, ZONE_19], path=["zone_18.tif", "zone_19.tif"])
     georefs = [
         window_georef(raster, col_off=col, row_off=0, width=1024, height=1024)
         for raster in (ZONE_18, ZONE_19)
@@ -363,7 +364,7 @@ def test_objects_on_a_single_raster(rgb_raster, box_labels):
 
 
 def test_objects_on_several_rasters(rgb_raster, box_labels):
-    sources = Sources.from_paths([rgb_raster, rgb_raster])
+    sources = Sources.from_paths([rgb_raster, rgb_raster], timestamp=[0, 1])  # two dates
     with pytest.raises(ValueError, match="need a parent_image_id column"):
         Objects.from_file(box_labels, parent_imagery=sources)
     gdf = gpd.read_file(box_labels)
