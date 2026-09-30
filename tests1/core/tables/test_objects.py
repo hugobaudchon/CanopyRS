@@ -466,3 +466,51 @@ def test_select_objects_checks_them_like_build():
         boxes.select([0], columns={Col.GEOM_KIND: "polygon"})
     with pytest.raises(ValueError, match="has 2 values for 1 rows"):
         boxes.select([0], columns={Col.SCORE: [0.1, 0.2]})
+
+
+def test_select_objects_onto_other_images():
+    _, boxes, _, _ = _history()
+    crops = _images(3)  # one crop per box
+    on_crops = boxes.select([0, 1, 2], parent_image_id=[2, 0, 1], parent_imagery=crops)
+    assert on_crops.parent_imagery is crops and on_crops.parent_objects is boxes
+    assert list(on_crops.df[Col.PARENT_IMAGE_ID]) == [2, 0, 1]
+    assert list(on_crops.get_column(Col.DETECTOR_SCORE)) == [0.9, 0.8, 0.7]
+    # The new ids are checked against the new images.
+    with pytest.raises(ValueError, match="parent_image_id has ids outside its parent Images"):
+        boxes.select([0], parent_image_id=[5], parent_imagery=crops)
+
+
+def test_select_onto_other_images_needs_both():
+    _, boxes, _, _ = _history()
+    with pytest.raises(ValueError, match="Give both parent_image_id and parent_imagery"):
+        boxes.select([0], parent_image_id=[0])
+    with pytest.raises(ValueError, match="Give both parent_image_id and parent_imagery"):
+        boxes.select([0], parent_imagery=_images())
+
+
+def test_select_pixel_objects_onto_images_with_another_georef():
+    # Objects in pixel coordinates are relative to their image: moved as they are onto a window
+    # 50 px to the right, they land 50 px further right on the ground. The caller has to give their
+    # geometry in the new images' pixels, or keep them in a CRS.
+    tile = _raster("EPSG:32618", 700000)
+    window = window_georef(tile, col_off=500, row_off=0, width=1000, height=1000)
+    tiles = Tiles.build(georef=[tile])
+    windows = Tiles.build(georef=[window])
+    boxes = Objects.build(
+        geometry=[box(600, 10, 610, 20)],
+        geom_kind=GeomKind.BOX,
+        parent_image_id=0,
+        parent_imagery=tiles,
+    )
+    moved_as_is = boxes.select([0], parent_image_id=0, parent_imagery=windows)
+    before = boxes.get_geometry_in_image_coords()[0]
+    after = moved_as_is.get_geometry_in_image_coords()[0]
+    assert after.bounds[0] - before.bounds[0] == pytest.approx(50)  # 500 px of 0.1 m
+    # Given in the window's pixels, it stays where it was.
+    in_window = boxes.select(
+        [0],
+        columns={Col.GEOMETRY: [box(100, 10, 110, 20)]},
+        parent_image_id=0,
+        parent_imagery=windows,
+    )
+    assert _same(in_window.get_geometry_in_image_coords()[0], before)

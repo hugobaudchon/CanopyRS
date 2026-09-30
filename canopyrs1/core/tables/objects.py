@@ -106,12 +106,12 @@ class Objects(Table):
             gdf = gpd.read_file(path_or_gdf)
         gdf = gdf.rename_geometry(Col.GEOMETRY) if gdf.geometry.name != Col.GEOMETRY else gdf
 
-        # find their kind, if the file doesn't say
+        # find the objects' kind, if the file doesn't say
         if Col.GEOM_KIND not in gdf.columns:
             image_crs = parent_imagery.df.crs if parent_imagery is not None else None
             gdf[Col.GEOM_KIND] = infer_geom_kind(gdf.geometry, crs=gdf.crs, image_crs=image_crs)
 
-        # link them to their images
+        # link the objects to the images
         if Col.PARENT_IMAGE_ID not in gdf.columns:
             if parent_imagery is None:
                 gdf[Col.PARENT_IMAGE_ID] = None
@@ -171,12 +171,25 @@ class Objects(Table):
         self,
         object_ids: Sequence[int],
         columns: dict[str, object] | None = None,
+        parent_image_id: int | Sequence[int] | None = None,
+        parent_imagery: Imagery | None = None,
     ) -> "Objects":
         """Return a table holding the objects ``object_ids`` of this one, each pointing to the
-        object it came from (its ``parent_object_id``), on the same images. ``columns`` sets other
-        columns, by Col name, as in ``build``: ``{Col.AGGREGATOR_SCORE: scores}``."""
+        object it came from (its ``parent_object_id``). ``columns`` sets other columns, by Col
+        name, as in ``build``: ``{Col.AGGREGATOR_SCORE: scores}``.
+
+        They stay on their images, unless ``parent_image_id`` and ``parent_imagery`` put them on
+        others, as in ``build``: their geometry must then be in a CRS, or in the new images'
+        pixels. Raises a ValueError if only one of the two is given."""
+        if (parent_image_id is None) != (parent_imagery is None):
+            raise ValueError("Give both parent_image_id and parent_imagery, or neither")
         rows = self._select_rows(object_ids, columns)
         rows[Col.PARENT_OBJECT_ID] = list(object_ids)
+
+        # if assigning the objects to new images, for example new tiles
+        if parent_imagery is not None:
+            rows[Col.PARENT_IMAGE_ID] = parent_image_id
+            return Objects(rows, parent_imagery=parent_imagery, parent_objects=self)
         return Objects(rows, parent_imagery=self.parent_imagery, parent_objects=self)
 
     def schema(self) -> Schema:
@@ -184,13 +197,13 @@ class Objects(Table):
         and imagery found in their history (see ``has_column`` and ``get_parent_imagery``)."""
         schema = super().schema()
 
-        # the imagery they were found in
+        # the imagery the objects were found in
         imagery = self.get_parent_imagery()
         if imagery is not None:
             schema.links.add("parent_imagery")
             schema.on = type(imagery)
 
-        # the columns of their history
+        # the columns of the objects' history
         if self.parent_objects is not None:
             schema.links.add("parent_objects")
             history = self.parent_objects.schema().columns
