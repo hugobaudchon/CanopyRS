@@ -58,7 +58,7 @@ def get_resampled_georef(
             nodata=src.nodata,
         )
 
-    # at a scale factor, in its own CRS
+    # at a scale factor, in the raster's own CRS
     if scale_factor:
         width, height = int(src.width * scale_factor), int(src.height * scale_factor)
         a, b, c, d, e, f = georef["transform"]
@@ -70,5 +70,5 @@ def get_resampled_georef(
             "height": height,
         }
 
-    # as it is
+    # the raster as it is
     return georef

@@ -24,17 +24,17 @@ def _rle_counts(polygon: BaseGeometry, height: int, width: int) -> list[int]:
     strip = np.zeros((height, pixels.shape[1]), dtype=np.uint8)
     strip[row : row + pixels.shape[0]] = pixels
 
-    # its runs, the first one of zeros (maybe empty), then alternating
+    # the strip's runs, the first one of zeros (maybe empty), then alternating
     flat = strip.ravel(order="F")
     changes = np.flatnonzero(flat[1:] != flat[:-1]) + 1
     runs = np.diff(np.concatenate([[0], changes, [flat.size]])).tolist()
     counts = [0, *runs] if flat.size and flat[0] else runs or [0]
 
-    # the empty columns on its left and right
+    # the empty columns left and right of the strip
     counts[0] += height * col
     right = height * (width - col - pixels.shape[1])
     if len(counts) % 2 == 1:
-        counts[-1] += right  # it ends with a run of zeros
+        counts[-1] += right  # the counts end with a run of zeros
     elif right:
         counts.append(right)
     return counts

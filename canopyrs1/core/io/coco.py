@@ -287,7 +287,7 @@ def read_coco(path: PathLike, images_dir: PathLike | None = None) -> tuple[Tiles
         polygons = np.array(geometry, dtype=object)[segmented]
         _warn_about_boxes_and_areas(path, polygons, [annotations[i] for i in segmented])
 
-    # their columns
+    # the objects' columns
     names = {category["id"]: category["name"] for category in coco.get("categories", [])}
     columns = {
         Col.CATEGORY_ID: [a.get("category_id") for a in annotations],

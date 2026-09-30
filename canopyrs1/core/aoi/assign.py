@@ -28,7 +28,7 @@ def assign_to_aois(tiles: Imagery, aois: gpd.GeoDataFrame) -> Imagery:
     parts = parts.map(keep_polygon_parts)  # without the lines where they only touch
     kept = (parts.area > 0).to_numpy()
 
-    # a copy of each tile per AOI, cut to it
+    # a copy of each tile per AOI, cut to the AOI
     names = aois["aoi"].to_numpy()[aoi_ids[kept]]
     geometry = parts[kept].to_numpy()
     return tiles.select(tile_ids[kept], columns={Col.AOI: names, Col.GEOMETRY: geometry})

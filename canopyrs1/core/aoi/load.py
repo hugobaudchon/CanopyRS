@@ -19,7 +19,7 @@ def _load_aoi(
 ) -> Polygon | MultiPolygon:
     """Return the area of the AOI ``name``: the union of the polygons of ``source`` (a vector file
     or a GeoDataFrame), moved into ``crs``."""
-    # read it
+    # read the AOI
     gdf = source if isinstance(source, gpd.GeoDataFrame) else gpd.read_file(source)
     if len(gdf) == 0:
         raise ValueError(f"The AOI {name!r} has no polygon")
@@ -33,7 +33,7 @@ def _load_aoi(
             f"The AOI {name!r} should only hold polygons, not {', '.join(sorted(others))}"
         )
 
-    # move it into the CRS
+    # move the AOI into the CRS
     if (gdf.crs is None) != (crs is None):
         where = "a CRS" if crs is not None else "pixel coordinates, without a CRS"
         raise ValueError(f"The AOI {name!r} has to be in {where}, like the images")

@@ -134,7 +134,7 @@ class Imagery(Table):
         if not paths:
             raise ValueError(f"No .tif or .tiff images in {path}")
 
-        # read their headers
+        # read the images' headers
         return cls.from_paths(
             paths,
             bands=bands,

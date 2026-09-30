@@ -61,7 +61,7 @@ def simulate(inputs: Sequence[Table], components: Sequence[object]) -> list[Simu
     for number, component in enumerate(components, start=1):
         before = dict(available)
 
-        # check what it needs
+        # check what the component needs
         errors = []
         for need in component.requires:
             schema = before.get(need.data_type)
@@ -76,7 +76,7 @@ def simulate(inputs: Sequence[Table], components: Sequence[object]) -> list[Simu
             name = type(component).__name__
             raise ValueError(f"Step {number}, {name}, can't run:\n{problems}")
 
-        # describe what it makes
+        # describe what the component makes
         for need in component.produces:
             available[need.data_type] = _made_schema(need, before)
         simulated.append(SimulatedStep(component, before, dict(available)))
