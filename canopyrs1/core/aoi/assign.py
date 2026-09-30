@@ -7,7 +7,7 @@ from shapely.geometry.base import BaseGeometry
 from canopyrs1.core.constants import Col
 from canopyrs1.core.geometry.georef import Georef, crs_to_pixel
 from canopyrs1.core.geometry.masks import polygon_to_mask
-from canopyrs1.core.geometry.shapes import keep_polygon_parts
+from canopyrs1.core.geometry.shapes import get_overlaps, keep_polygon_parts
 from canopyrs1.core.tables.imagery import Imagery
 from canopyrs1.core.types import CRSLike
 
@@ -20,18 +20,16 @@ def assign_to_aois(tiles: Imagery, aois: gpd.GeoDataFrame) -> Imagery:
     if aois.crs != tiles.df.crs:
         raise ValueError(f"The AOIs are in {aois.crs}, the tiles in {tiles.df.crs}")
 
-    # the part of each tile in each AOI it overlaps, in the AOIs' order, then the tiles'
-    aoi_ids, tile_ids = tiles.df.sindex.query(aois.geometry, predicate="intersects")
-    order = np.lexsort((tile_ids, aoi_ids))
-    aoi_ids, tile_ids = aoi_ids[order], tile_ids[order]
+    # the tiles each AOI overlaps, in the AOIs' order, then the tiles'
+    aoi_ids, tile_ids = get_overlaps(aois.geometry, tiles.df.geometry)
+
+    # the part of each of these tiles inside its AOI
     parts = tiles.df.geometry.iloc[tile_ids].intersection(aois.geometry.iloc[aoi_ids], align=False)
-    parts = parts.map(keep_polygon_parts)  # without the lines where they only touch
-    kept = (parts.area > 0).to_numpy()
+    parts = parts.map(keep_polygon_parts).to_numpy()  # without lines where their edges meet
 
     # a copy of each tile per AOI, cut to the AOI
-    names = aois["aoi"].to_numpy()[aoi_ids[kept]]
-    geometry = parts[kept].to_numpy()
-    return tiles.select(tile_ids[kept], columns={Col.AOI: names, Col.GEOMETRY: geometry})
+    names = aois["aoi"].to_numpy()[aoi_ids]
+    return tiles.select(tile_ids, columns={Col.AOI: names, Col.GEOMETRY: parts})
 
 
 def get_usable_mask(geometry: BaseGeometry, crs: CRSLike | None, georef: Georef) -> np.ndarray:

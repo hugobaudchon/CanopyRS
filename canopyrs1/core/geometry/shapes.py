@@ -82,6 +82,23 @@ def infer_geom_kind(
     return kinds
 
 
+def get_overlaps(left: Geometries, right: Geometries) -> tuple[np.ndarray, np.ndarray]:
+    """Return the pairs of polygons ``left[i]`` and ``right[j]`` sharing an area, not only an edge
+    or a corner, as two arrays of ids (i, j), sorted by i, then j."""
+    left, right = np.asarray(left, dtype=object), np.asarray(right, dtype=object)
+
+    # the pairs that meet, from a spatial index
+    left_ids, right_ids = shapely.STRtree(right).query(left, predicate="intersects")
+
+    # without those meeting only along their edges
+    shared = ~shapely.touches(left[left_ids], right[right_ids])
+    left_ids, right_ids = left_ids[shared], right_ids[shared]
+
+    # sorted by left, then right
+    order = np.lexsort((right_ids, left_ids))
+    return left_ids[order], right_ids[order]
+
+
 def _from_parts(parts: list[Polygon]) -> Polygon | MultiPolygon:
     """Return ``parts``, a list of polygons, as one geometry: an empty Polygon if there are none,
     the Polygon itself if there is one, and a MultiPolygon if there are several."""
