@@ -8,7 +8,7 @@ from rasterio.io import DatasetReader
 from rasterio.warp import calculate_default_transform
 
 from canopyrs1.core.geometry.crs import get_projected_crs
-from canopyrs1.core.geometry.georef import Georef, make_georef, read_georef
+from canopyrs1.core.geometry.georef import Georef, make_georef, read_georef, resize_georef
 
 
 def get_resampled_georef(
@@ -61,14 +61,7 @@ def get_resampled_georef(
     # at a scale factor, in the raster's own CRS
     if scale_factor:
         width, height = int(src.width * scale_factor), int(src.height * scale_factor)
-        a, b, c, d, e, f = georef["transform"]
-        x_step, y_step = src.width / width, src.height / height  # raster pixels per new pixel
-        return {
-            **georef,
-            "transform": [a * x_step, b * y_step, c, d * x_step, e * y_step, f],
-            "width": width,
-            "height": height,
-        }
+        return resize_georef(georef, width, height)
 
     # the raster as it is
     return georef

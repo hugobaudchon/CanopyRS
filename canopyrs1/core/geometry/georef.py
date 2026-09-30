@@ -97,6 +97,19 @@ def window_georef(
     }
 
 
+def resize_georef(georef: Georef, width: int, height: int) -> Georef:
+    """Return the georef of the same ground as ``georef``, in ``width`` x ``height`` pixels: its
+    pixels are stretched to fit."""
+    a, b, c, d, e, f = georef["transform"]
+    x_step, y_step = georef["width"] / width, georef["height"] / height  # old pixels per new pixel
+    return {
+        **georef,
+        "transform": [a * x_step, b * y_step, c, d * x_step, e * y_step, f],
+        "width": int(width),
+        "height": int(height),
+    }
+
+
 def _apply_transform(
     geometry: BaseGeometry | Geometries,
     transform: Sequence[float],

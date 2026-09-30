@@ -20,6 +20,7 @@ from canopyrs1.core.geometry.georef import (
     make_georef,
     pixel_to_crs,
     read_georef,
+    resize_georef,
     window_georef,
 )
 
@@ -259,3 +260,31 @@ MIXED_CRSS = [
 def test_get_footprints_refuses_images_with_and_without_a_crs(georefs, crs):
     with pytest.raises(ValueError, match="with and without a CRS"):
         get_footprints(georefs, crs)
+
+
+# =============================================================================
+# resize_georef
+# =============================================================================
+
+RESIZES = [(64, 64), (512, 512), (100, 37), (256, 256)]  # coarser, finer, uneven, the same
+
+
+@pytest.mark.parametrize("width, height", RESIZES)
+def test_resize_keeps_the_ground(width, height):
+    resized = resize_georef(NORTH_UP, width, height)
+    assert (resized["width"], resized["height"]) == (width, height)
+    assert resized["transform"][0] == pytest.approx(256 / width)
+    assert resized["transform"][4] == pytest.approx(-256 / height)
+    assert get_footprint(resized).equals(get_footprint(NORTH_UP))
+
+
+def test_resize_a_rotated_image():
+    resized = resize_georef(ROTATED, 20, 10)
+    assert get_footprint(resized).hausdorff_distance(get_footprint(ROTATED)) < 1e-9
+
+
+def test_resize_keeps_the_rest():
+    resized = resize_georef({**NORTH_UP, "nodata": 0.0}, 64, 64)
+    for key in ("crs", "count", "dtype", "nodata"):
+        assert resized[key] == {**NORTH_UP, "nodata": 0.0}[key]
+    assert NORTH_UP["width"] == 256  # the georef given is left as it was
