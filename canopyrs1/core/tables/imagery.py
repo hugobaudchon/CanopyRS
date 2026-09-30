@@ -142,6 +142,19 @@ class Imagery(Table):
             timestamp=timestamp,
         )
 
+    def select(
+        self,
+        image_ids: Sequence[int],
+        columns: dict[str, object] | None = None,
+    ) -> "Imagery":
+        """Return a table of the same type holding the images ``image_ids`` of this one, each as
+        a window of the image it came from (its ``parent_image_id``). ``columns`` sets other
+        columns, by Col name, as in ``build``: ``{Col.AOI: names}``."""
+        rows = self._select_rows(image_ids, columns)
+        rows[Col.PATH] = None
+        rows[Col.PARENT_IMAGE_ID] = list(image_ids)
+        return type(self)(rows, parent_imagery=self)
+
     def schema(self) -> Schema:
         """Return what these images offer, as a Schema (see ``Table.schema``), with their link to
         ``parent_imagery`` if they have one."""

@@ -27,18 +27,11 @@ def assign_to_aois(tiles: Imagery, aois: gpd.GeoDataFrame) -> Imagery:
     parts = tiles.df.geometry.iloc[tile_ids].intersection(aois.geometry.iloc[aoi_ids], align=False)
     parts = parts.map(keep_polygon_parts)  # without the lines where they only touch
     kept = (parts.area > 0).to_numpy()
-    aoi_ids, tile_ids, parts = aoi_ids[kept], tile_ids[kept], parts[kept]
 
-    # the copies, as windows of their tile
-    rows = tiles.df.iloc[tile_ids].reset_index(drop=True)
-    rows[Col.PATH] = None
-    rows[Col.PARENT_IMAGE_ID] = tile_ids
-    rows[Col.AOI] = aois["aoi"].to_numpy()[aoi_ids]
-    rows[Col.GEOMETRY] = parts.to_numpy()
-
-    # return a table of the same type as tiles: Tiles, or Crops
-    table_type = type(tiles)
-    return table_type(rows, parent_imagery=tiles)
+    # a copy of each tile per AOI, cut to it
+    names = aois["aoi"].to_numpy()[aoi_ids[kept]]
+    geometry = parts[kept].to_numpy()
+    return tiles.select(tile_ids[kept], columns={Col.AOI: names, Col.GEOMETRY: geometry})
 
 
 def get_usable_mask(geometry: BaseGeometry, crs: CRSLike | None, georef: Georef) -> np.ndarray:

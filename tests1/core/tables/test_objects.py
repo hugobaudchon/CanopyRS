@@ -429,3 +429,40 @@ def test_one_object_per_tile_of_a_raster_without_a_crs():
 
 def test_one_object_per_image_of_nothing():
     assert len(Objects.from_imagery(Crops.build(georef=[]))) == 0
+
+
+# =============================================================================
+# select
+# =============================================================================
+
+
+def test_select_objects():
+    tiles, boxes, _, _ = _history()
+    kept = boxes.select([2, 0])
+    assert list(kept.df[Col.OBJECT_ID]) == [0, 1]
+    assert kept.parent_objects is boxes and list(kept.df[Col.PARENT_OBJECT_ID]) == [2, 0]
+    # On the same images.
+    assert kept.parent_imagery is tiles and list(kept.df[Col.PARENT_IMAGE_ID]) == [1, 0]
+    assert list(kept.get_column(Col.DETECTOR_SCORE)) == [0.7, 0.9]
+    assert kept.df.geometry[0].equals(boxes.df.geometry[2])
+
+
+def test_select_objects_with_new_columns():
+    _, boxes, _, _ = _history()
+    trimmed = [box(0, 0, 5, 5), box(30, 30, 35, 35)]
+    kept = boxes.select(
+        [0, 2],
+        columns={Col.AGGREGATOR_SCORE: [0.95, 0.6], Col.GEOMETRY: trimmed},
+    )
+    assert list(kept.df[Col.AGGREGATOR_SCORE]) == [0.95, 0.6]
+    assert kept.df.geometry[1].equals(box(30, 30, 35, 35))
+    assert Col.AGGREGATOR_SCORE not in boxes.df.columns  # left as they were
+    assert boxes.df.geometry[0].equals(box(0, 0, 10, 10))
+
+
+def test_select_objects_checks_them_like_build():
+    _, boxes, _, _ = _history()
+    with pytest.raises(ValueError, match="Unknown geom_kind"):
+        boxes.select([0], columns={Col.GEOM_KIND: "polygon"})
+    with pytest.raises(ValueError, match="has 2 values for 1 rows"):
+        boxes.select([0], columns={Col.SCORE: [0.1, 0.2]})

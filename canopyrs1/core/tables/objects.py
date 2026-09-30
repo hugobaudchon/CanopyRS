@@ -167,6 +167,18 @@ class Objects(Table):
             return self.parent_imagery
         return self.parent_objects.get_parent_imagery()
 
+    def select(
+        self,
+        object_ids: Sequence[int],
+        columns: dict[str, object] | None = None,
+    ) -> "Objects":
+        """Return a table holding the objects ``object_ids`` of this one, each pointing to the
+        object it came from (its ``parent_object_id``), on the same images. ``columns`` sets other
+        columns, by Col name, as in ``build``: ``{Col.AGGREGATOR_SCORE: scores}``."""
+        rows = self._select_rows(object_ids, columns)
+        rows[Col.PARENT_OBJECT_ID] = list(object_ids)
+        return Objects(rows, parent_imagery=self.parent_imagery, parent_objects=self)
+
     def schema(self) -> Schema:
         """Return what these objects offer, as a Schema (see ``Table.schema``), with the columns
         and imagery found in their history (see ``has_column`` and ``get_parent_imagery``)."""

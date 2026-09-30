@@ -364,3 +364,66 @@ def test_a_folder_without_images(tmp_path):
     (tmp_path / "notes.txt").write_text("")
     with pytest.raises(ValueError, match="No .tif or .tiff images in"):
         Tiles.from_image_dir(tmp_path)
+
+
+# =============================================================================
+# select
+# =============================================================================
+
+
+def test_select_images():
+    sources = _sources()
+    tiles = _tiles(sources)
+    kept = tiles.select([3, 1])
+    assert type(kept) is Tiles and len(kept) == 2
+    assert list(kept.df[Col.IMAGE_ID]) == [0, 1]
+    # Each is a window of the tile it came from, in the order asked.
+    assert kept.parent_imagery is tiles
+    assert list(kept.df[Col.PARENT_IMAGE_ID]) == [3, 1]
+    assert list(kept.df[Col.GEOREF]) == [tiles.df[Col.GEOREF][3], tiles.df[Col.GEOREF][1]]
+    assert kept.df[Col.PATH].isna().all()
+    assert list(kept.get_disk_paths()) == ["ortho.tif"] * 2
+    assert kept.df.geometry[0].equals(tiles.df.geometry[3]) and kept.df.crs == tiles.df.crs
+
+
+def test_select_an_image_on_disk_keeps_reading_its_file():
+    tiles = Tiles.build(georef=[RASTER] * 2, path=["tile_0.tif", "tile_1.tif"])
+    assert list(tiles.select([1]).get_disk_paths()) == ["tile_1.tif"]
+
+
+def test_select_the_same_image_twice():
+    kept = _tiles(_sources()).select([2, 2])
+    assert list(kept.df[Col.PARENT_IMAGE_ID]) == [2, 2]
+
+
+def test_select_with_new_columns():
+    tiles = _tiles(_sources())
+    kept = tiles.select(
+        [0, 1],
+        columns={
+            Col.AOI: ["train", "valid"],
+            Col.TIMESTAMP: 5,
+            Col.GEOMETRY: [box(0, 0, 1, 1)] * 2,
+        },
+    )
+    assert list(kept.df[Col.AOI]) == ["train", "valid"]
+    assert list(kept.df[Col.TIMESTAMP]) == [5, 5]
+    assert kept.df.geometry[1].equals(box(0, 0, 1, 1)) and kept.df.crs == tiles.df.crs
+    # The tiles it came from are left as they were.
+    assert Col.AOI not in tiles.df.columns and tiles.df[Col.TIMESTAMP].isna().all()
+
+
+def test_select_with_a_column_of_the_wrong_length():
+    with pytest.raises(ValueError, match="The column 'aoi' has 3 values for 2 rows"):
+        _tiles(_sources()).select([0, 1], columns={Col.AOI: ["a", "b", "c"]})
+
+
+def test_select_nothing():
+    assert len(_tiles(_sources()).select([])) == 0
+
+
+def test_select_an_image_that_isn_t_there():
+    with pytest.raises(ValueError, match="ids outside its parent Tiles"):
+        _tiles(_sources()).select([-1])
+    with pytest.raises(IndexError):
+        _tiles(_sources()).select([4])
