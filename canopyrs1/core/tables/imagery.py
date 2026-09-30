@@ -18,13 +18,15 @@ _IMAGE_SUFFIXES = {".tif", ".tiff"}
 
 
 class Imagery(Table):
-    """Holds a set of images, one per row, each described by its georef, with its footprint as
-    the geometry, in the CRS of the table's first image (in pixel coordinates for images without a
-    CRS).
+    """Holds a set of images, one per row, each described by its georef. A row's geometry is
+    where its usable pixels are: its footprint, cut to its AOI if it has one (the pixels outside
+    are blacked out when read). It is in the CRS of the table's first image (in pixel coordinates
+    for images without a CRS).
 
     The georef is what places an image: its pixels are read, and coordinates converted, with it,
-    in the image's own CRS. The footprint is made from it, only to find images by area across the
-    table (``df.sindex``), which is why it is in one CRS for the whole table.
+    in the image's own CRS; the whole image is always ``get_footprint(georef)``. The geometry is
+    only there to find images by area across the table (``df.sindex``), which is why it is in one
+    CRS for the whole table.
 
     An image is on disk (``path`` is its file) or a window of its parent image (``path`` is
     empty, and its pixels are read from the nearest parent on disk). Its parent is in

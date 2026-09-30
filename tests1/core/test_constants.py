@@ -21,6 +21,7 @@ def test_column_names():
         "GEOREF": "georef",
         "BANDS": "bands",
         "LAZY_CONDITIONS": "lazy_conditions",
+        "AOI": "aoi",
         "GEOMETRY": "geometry",
         "GEOM_KIND": "geom_kind",
         "DETECTOR_SCORE": "detector_score",

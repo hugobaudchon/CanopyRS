@@ -27,6 +27,7 @@ class Col:
     GEOREF = "georef"  # the image's georef (see core/geometry/georef.py)
     BANDS = "bands"  # the band numbers to read, starting at 1 (see RGB_BANDS)
     LAZY_CONDITIONS = "lazy_conditions"  # when to skip a window, once read (see should_skip)
+    AOI = "aoi"  # the name of the AOI an image is in, cut to (see core/aoi/assign.py)
 
     # Objects.
     GEOMETRY = "geometry"
