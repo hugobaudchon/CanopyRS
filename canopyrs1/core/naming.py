@@ -55,6 +55,12 @@ class NameConvention:
         return NameConvention.clean_product_name(name)
 
     @staticmethod
+    def check_aoi(aoi: str) -> str:
+        """Return ``aoi``, the name of an AOI, or raise a ValueError if it holds anything other
+        than letters and digits: it is written in file names."""
+        return _check(aoi, _WORD, "The AOI")
+
+    @staticmethod
     def resolution_tag(
         scale_factor: float | None = None,
         ground_resolution: float | None = None,
@@ -86,7 +92,7 @@ class NameConvention:
         with its ``tile_id`` and the ``aoi`` it belongs to ("noaoi" if None).
         Example: "ortho_tile_train_gr0p045_1024_0_1024_1024_3.tif"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
-        aoi = _check(aoi, _WORD, "The AOI") if aoi is not None else "noaoi"
+        aoi = NameConvention.check_aoi(aoi) if aoi is not None else "noaoi"
         tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
         numbers = "_".join(str(int(n)) for n in (col, row, width, height, tile_id))
         return f"{product_name}_tile_{aoi}_{tag}_{numbers}.tif"
@@ -131,7 +137,7 @@ class NameConvention:
         """Return the file name of the GeoPackage holding one AOI's area:
         "ortho_aoi_gr0p045_train.gpkg"."""
         _check(product_name, _PRODUCT_NAME, "The product name")
-        _check(aoi, _WORD, "The AOI")
+        NameConvention.check_aoi(aoi)
         tag = NameConvention.resolution_tag(scale_factor, ground_resolution)
         return f"{product_name}_aoi_{tag}_{aoi}.gpkg"
 

@@ -55,3 +55,33 @@ def selvamask_gpkgs():
         )
         for filename in SELVAMASK_GPKGS
     ]
+
+
+SELVAMASK_RASTERS = [
+    "20240131_zf2block4_ms_m3m_rgb",
+    "20240613_tbsnewsite2_m3e_rgb",
+    "20241122_bcifairchildn_m3m_rgb",
+]
+
+
+@pytest.fixture(scope="session")
+def selvamask_aoi_gpkgs():
+    """Return, for each SelvaMask raster, the paths of its valid and test AOIs: {raster:
+    {"valid": path, "test": path}}, downloading them into the Hugging Face cache first if they
+    aren't there yet."""
+    from huggingface_hub import hf_hub_download
+
+    return {
+        raster: {
+            fold: Path(
+                hf_hub_download(
+                    repo_id="CanopyRS/SelvaMask",
+                    repo_type="dataset",
+                    revision="gpkg",
+                    filename=f"{raster}_aoi_gr0p045_{fold}.gpkg",
+                )
+            )
+            for fold in ("valid", "test")
+        }
+        for raster in SELVAMASK_RASTERS
+    }

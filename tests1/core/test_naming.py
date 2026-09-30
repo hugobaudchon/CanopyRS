@@ -110,3 +110,15 @@ AMBIGUOUS_NAMES = [
 def test_names_refuse_parts_that_would_make_them_ambiguous(build):
     with pytest.raises(ValueError, match="may only hold letters and digits"):
         build()
+
+
+AOI_NAMES = [("train", True), ("test2", True), ("train_1", False), ("", False), ("tést", False)]
+
+
+@pytest.mark.parametrize("name, valid", AOI_NAMES)
+def test_check_aoi(name, valid):
+    if valid:
+        assert Names.check_aoi(name) == name
+    else:
+        with pytest.raises(ValueError, match="The AOI"):
+            Names.check_aoi(name)
