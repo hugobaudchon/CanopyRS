@@ -50,7 +50,7 @@ These are probe results against the real files, not assumptions. Several of them
 | GT NULL geometries | every row with `hull_status != 'ok'` has NULL geometry, and must be filtered |
 | GT self-overlap | **none** — Σ areas equals the union area exactly (top-view occlusion was already resolved upstream by `resolve_top_view`) |
 | Prediction self-overlap | **none** within the plots (Σ/union = 1.000) |
-| Georeferencing | **aligned.** A ±3 m grid search on rigid XY shift maximising GT∩Pred area gains 0.0 % (209) and 0.4 % (210). *No alignment step is needed.* |
+| Georeferencing | **aligned.** A ±3 m grid search on rigid XY shift maximising GT∩Pred area gains 0.0 % (209) and 0.4 % (210). *No alignment step is needed* **for this polygon evaluation** — but the probe is too coarse for pixel-level multi-modal training; see §15. |
 | Scale mismatch | GT covers ~38×38 m per plot; the RGB file covers ~377×524 m with 4 644 polygons. An AOI restriction is mandatory. |
 | Survivors after AOI filter | 35 predictions (209) and 49 (210), out of 4 644 |
 | Many-to-many is real | plot 210 yields 9 `split` and 4 `merge` clusters; a single GT crown intersects up to 7 RGB polygons |
@@ -266,6 +266,8 @@ plus the cluster-type histograms in §7, and `tau_floor = 0.05` removing 0 edges
 
 ## 14. Results
 
+> **Data regenerated 2026-11-10 — the table below is the previous data set.** Predictions are now `data/rgb_masks/20250318_asnortheast_50mm_p1_rgb_sf1p0_inferfinal.gpkg` (new CanopyRS run at 0.045 m/px, 3 502 masks site-wide) instead of `…_gr0p07_infer.gpkg` (0.07 m/px, 4 644 masks), and the GT was re-extracted with ForestMamba `extract_crown_hulls.py --gt` defaults (§16; same crown counts, outlines differ by ≤ 0.05 m² per crown). The old files are kept locally in `data/_previous_2026-11-10/`. Re-run at defaults, pooled: `mIoU_cluster` 0.414 → **0.394**, `mCov_cluster` 0.464 → 0.449, `mIoU_cluster_area` 0.589 → 0.603, `mIoU_1to1` 0.362 → 0.334, `IoU_global_linked` 0.671 → 0.690, Recall@IoU 0.75 0.03 → 0.05. Per plot `mIoU_cluster`: 203 0.296, 207 0.474, 208 0.542, 209 0.276, 210 0.424. Predictions surviving the AOI filter drop on every plot (203 28→24, 207 80→67, 208 30→29, 209 35→27, 210 49→41) while GT counts are unchanged, so the §13 end-to-end regression targets describe the previous data and no longer apply. Full detail in `output/summary.json`.
+
 Five plots, produced by `scripts/eval_crown_overlap.py` at defaults (`tau_link=0.5`). Full detail in `output/summary.json`; every regression target in §13 reproduced exactly, and adding plots 203/207/208 left the 209/210 figures bit-identical.
 
 | | 203 | 207 | 208 | 209 | 210 | **pooled** |
@@ -300,3 +302,129 @@ Cluster types, pooled: 95 `one_to_one`, 43 `missed`, 25 `split`, 7 `merge`, 3 `t
 5. **Boundaries agree far less than presence.** Recall@IoU 0.25 is 0.66 but Recall@IoU 0.75 is 0.03 — uniformly, on every plot. RGB finds roughly the right trees and draws roughly the wrong outlines. This is the single most consistent finding across the site.
 6. **Ground-truth attrition is severe and uneven.** Plot 207 keeps 51 of 85 annotated trees and plot 208 keeps 21 of 50 — mostly `below_canopy` (23 and 21 respectively), i.e. trees the LiDAR annotated that never reach the canopy top and so are invisible from above by construction. Plot 208's headline 0.496 therefore rests on 21 crowns. Read every figure next to its `n_gt`.
 7. **58 unmatched RGB masks (442 m²) are excluded from every metric except `IoU_global`**, per §2 and the caveat in §9. Within GT-anchored clusters, linked masks put only 1.3–4.5 % of their area outside any annotated crown, so the documented lower-bound effect on `mIoU_cluster` is real but small. Plot 207 alone contributes 23. Reviewing what share are genuinely unannotated trees remains the highest-value next step, since it bounds how pessimistic these numbers are.
+
+## 15. RGB ↔ LiDAR raster co-registration (planned)
+
+Everything above compares *polygons*. Fine-tuning CanopyRS on stacked RGB + LiDAR channels needs the **rasters** to agree at pixel level, which is a much stricter requirement. This section plans how to measure and, if needed, correct that. Status: **Phase 2 implemented (`scripts/check_alignment.py`); plot 203 measured (§15.9); other plots pending.**
+
+### 15.1 Why the §3 probe is not enough
+
+The §3 georeferencing probe (±3 m rigid XY shift on GT∩Pred polygon area, plots 209/210) is sound for the polygon evaluation but cannot certify raster alignment:
+
+- **Low sensitivity.** It is computed against CanopyRS predictions whose boundaries already disagree with GT (Recall@IoU 0.75 = 0.03, §14), so the objective is flat — a 0.3–1 m offset would not register.
+- **Translation only.** It cannot detect rotation, scale, or spatially varying distortion.
+- **Blind to relief displacement**, the most likely forest-ortho failure: tree tops displaced proportionally to height.
+- **Two of twelve plots.**
+
+### 15.2 Facts established (probed, not assumed)
+
+| Property | Finding |
+|---|---|
+| Acquisition dates | LiDAR `gps_time` decodes to 2025-03-17 (plots 153/161/170/264) and 2025-03-18 (203–210, 256, 257) — same days as the `20250318_*` orthos. No phenological or growth change. |
+| CRS | LAS headers and both local orthos declare EPSG:32617 (WGS 84 / UTM 17N). Equality of labels, not yet of practice (§15.3). |
+| LiDAR colour | Every point carries populated `red/green/blue` (max ≈ 56 000–65 000). A LiDAR-colourised raster is a near-same-modality reference for the ortho. |
+| LiDAR Z | **Height-normalised**, not elevation (≈ −2 to 26 m). Absolute Z requires the DTM (`ForestMamba/tools/dtm_reader.py`, `denormalize_height.py`). Plot 257 reaches 55 m — outlier noise to filter. |
+| Local orthos | `../../rgb_ortho/` holds `asnorthnorth` (≈1.10 cm/px; contains plots 153, 161, 170, 264) and `asnorthwestcent` (≈1.04 cm/px; contains none). |
+| Missing ortho | The `asnortheast` ortho behind the §14 predictions (plots 203–210, 256, 257) is **not on disk locally**. |
+
+### 15.3 Phase 0 — Inventory
+
+1. Locate the `asnortheast` ortho; record its GSD and pixel-grid origin.
+2. Record ortho provenance: software, **DSM-based (true ortho) vs DTM-based**, RTK/PPK/GCPs. Same for LiDAR (sensor, trajectory processing). DTM-based orthorectification predicts metres of displacement on 25 m crowns and makes §15.6 the main work.
+3. Verify CRS and vertical datum agree in practice (§15.5 measures it).
+4. Fix one **reference grid per plot**: the ortho pixel grid, plus training-GSD derivatives (e.g. 0.07 m, the inference GSD). All LiDAR rasters snap to these; no ad-hoc resampling anywhere downstream.
+
+### 15.4 Phase 1 — LiDAR rasters on the reference grid (`scripts/lidar_rasters.py`)
+
+Per plot: pit-free **CHM** (max-Z, outliers filtered), **LiDAR-colour RGB** (top-return colour), **intensity**, **point density**. These double as the LiDAR input channels for fine-tuning, so they are built once, correctly.
+
+### 15.5 Phase 2 — Measure misalignment three independent ways (`scripts/check_alignment.py`)
+
+Each estimator runs on overlapping ~10×10 m windows, producing a **displacement field** rather than one number.
+
+| Estimator | Signal | Strength |
+|---|---|---|
+| **A. RGB ↔ LiDAR-colour** | phase correlation / NCC between ortho and LiDAR-colour raster | sub-pixel; near-same modality |
+| **B. RGB ↔ CHM structure** | mutual information or gradient-orientation NCC (ortho luminance/edges vs CHM edges/gaps) | independent of the LiDAR's own colourisation, which may itself be mis-projected |
+| **C. Object level** | per-crown centroid offsets for linked GT↔pred pairs from `eval_crown_overlap.py`, regressed on **crown height** and **direction** | diagnoses relief displacement (offset ∝ height, radial pattern) |
+
+Plus **manual tie-points**: 10–20 per plot (gaps, dead trees, trail edges) picked in QGIS as independent truth. A–C are trusted only where they agree with the tie-points.
+
+Outputs → `output/alignment/`: per-window offsets (CSV + GPKG), per-plot rigid/affine fit with residuals, offset-vs-height plot, QA overlays (CHM contours on RGB, checkerboard/swipe composites).
+
+### 15.6 Phase 3 — Decide and correct
+
+Tolerance, fixed before looking: **p95 residual ≤ 2 px at the training GSD (≈ 0.14 m at 0.07 m)**. Wind sway (~0.1–0.3 m at crown tops) is an irreducible floor.
+
+| Diagnosis | Correction |
+|---|---|
+| Constant offset per plot | translate the LiDAR rasters (never resample the RGB); store the shift in a per-plot sidecar |
+| Rotation / scale / tilt | per-plot 2D affine fitted to the window offsets |
+| Offset ∝ height (DTM-based ortho) | best: re-orthorectify on a LiDAR-derived DSM if raw images exist; else warp RGB with CHM × measured displacement-per-metre; failing both, document as label noise |
+| Unstructured local error | smooth displacement field only where A and B agree; otherwise flag windows and exclude them from training |
+
+Apply the same transform to the GT crown polygons so evaluation and training stay consistent, then re-run `eval_crown_overlap.py` and compare with §14 as the baseline.
+
+### 15.7 Phase 4 — Lock it in
+
+- **Tests**: synthetic known shift / rotation / height-proportional displacement must be recovered to ≤ 0.25 px.
+- **Gate**: multi-modal tile creation refuses any plot without a passing alignment report.
+- **Docs**: replace "verified to be well co-registered" in `CLAUDE.md` with the measured per-plot residuals and the date measured.
+
+### 15.8 Open questions that change the plan
+
+1. Where is the `asnortheast` ortho, and do the raw drone images exist (needed for re-orthorectification)?
+2. DSM- or DTM-based orthorectification?
+
+**Cheapest first step:** run estimator A on plots 153 / 161 / 170 / 264, which sit inside the local `asnorthnorth` ortho — a real displacement field before any other infrastructure is built.
+
+### 15.9 Results — plot 203 (2026-11-05)
+
+`scripts/check_alignment.py` on a 0.05 m grid; ortho `../../rgb_ortho/20250318_asnortheast_50mm_p1_rgb.cog.tif` (1.10 cm/px, resampled by averaging); 74.7 M points, 47 LAZ files. Outputs in `output/alignment/plot_203/`. Shift convention: a feature at LiDAR (x, y) appears in the ortho at (x+dx, y+dy).
+
+| Measure | Result |
+|---|---|
+| Self-test (injected (+0.37, −0.52) m) | recovered to **0.003 m** — sign and sub-pixel logic correct |
+| A, global (RGB vs LiDAR colour) | **(+0.013, −0.047) m**, \|d\| = 0.048 m; single clean NCC peak |
+| A, 10 m windows (45 of 60 had a clear match) | median (+0.03, −0.04) m; std 0.08 / 0.06 m; p50 \|d\| 0.06 m, **p95 0.15 m**; 40/45 windows ≤ 0.15 m |
+| B, CHM-only (10 of 60 had a clear match) | median (+0.00, −0.03) m — agrees with A; most windows give no clear match, so B is corroboration only |
+| C, per crown (20 of 43 had a clear match) | median (+0.03, −0.04) m; residual after rigid p50 0.08 m |
+| Height dependence | none. Theil–Sen \|d\| vs height −0.003 m/m (CI −0.027…+0.003), Spearman p = 0.57; the 6 crowns ≥ 10 m tall (up to 19 m) all have \|d\| ≤ 0.15 m |
+
+**Verdict: aligned; no correction needed.** The constant offset is ~5 cm (1 px at 0.05 m, < 1 px at the 0.07 m training GSD). The p95 of 0.15 m sits at the §15.6 tolerance (0.14 m) but is dominated by noise in the estimator itself (cross-camera NCC peaks of only 0.2–0.4). No offset grows with tree height, so the ortho behaves like a true ortho (DSM-based); relief displacement is not a concern on this plot. The large outliers are all matching failures, not misalignment: crowns of 0.6–7 m² (ids 14, 18, 28: 0.4–2.2 m) and one grass window (mean CHM 0.4 m, 0.47 m). The checkerboard (`02_checkerboard.png`) shows crowns and dead-branch skeletons continuous across tile edges.
+
+**Caveats.** (1) Estimator A uses the L2 camera's point colours, so it checks the colourised cloud. The geometry-only checks (B, plus the GT outlines in `01_inputs.png` sitting on the RGB crowns) agree but are weaker. (2) One plot only; repeat on 207–210, 256, 257 and on 153/161/170/264 (the `asnorthnorth` flight, 2025-03-17). (3) Manual tie-points (§15.5) not yet collected.
+
+## 16. LiDAR GT geometry: visible vs full footprint (2026-11-10)
+
+### 16.1 Why GT crowns look like they overlap at their edges
+
+`scripts/analyse_gt_edges.py` (outputs in `output/gt_edges/`) measured the visible GT layer on all five plots. **There is no area overlap**: Σ crown area equals the union on every plot, and the largest pairwise intersection is 7×10⁻¹¹ m² (floating-point noise). What reads as overlap in QGIS has two causes, both from how `extract_crown_hulls.py` builds the visible layer:
+
+1. **Shared, coincident edges.** `resolve_top_view` places crowns tallest-first and replaces each shorter crown by `raw − ⋃ taller raws`, so the shorter crown's new edge *is* the taller crown's outline, vertex for vertex. 182 of 207 crowns share part of their outline with a neighbour (median 22–55 % of the perimeter, by plot), and QGIS draws both strokes on the same line. Before the clip, the raw masks overlapped by 160 m² (≈ 4 % of GT area; 151 of 207 crowns clipped); the band removed is a median **0.18 m** deep (IQR 0.12–0.27 m), i.e. about one 0.15 m raster cell plus the 0.225 m smoothing buffer — consistent with mask dilation rather than genuine 3D interlocking.
+2. **Thin slivers.** Where a shorter crown's mask reached into the gap between two taller crowns, the clip leaves a narrow wedge pinched between them: 111 parts narrower than 0.4 m in clipped crowns vs 6 in unclipped ones, 94 % touching a taller crown, median width 4.5 cm, 5.7 m² in total (0.14 % of GT area).
+
+Neither double-counts area, so §2–§14 are unaffected. The systematic effect is that every contested edge goes to the taller tree. For training masks the slivers (1–2 px at 0.045–0.07 m) are worth removing or re-assigning to the neighbour they touch.
+
+### 16.2 Two GT layers
+
+ForestMamba `tools/extract_crown_hulls.py` now writes two footprints per plot (`--footprint both`, the default; see ForestMamba `readme_crowns.md`):
+
+| Layer | Path | Built from | Overlap | Overtopped trees |
+|---|---|---|---|---|
+| **visible** (the GT used everywhere above) | `data/lidar_masks/asnortheast_plot_{…}_gt_crowns_gt.gpkg` | top 1 m of canopy, then clipped by taller neighbours | none | no polygon (`below_canopy`) |
+| **full** | `data/lidar_masks_full/asnortheast_plot_{…}_gt_crowns_full_gt.gpkg` | every leaf point, no clip | wherever trees overlap in plan view | whole crown |
+
+Both use the same mask and smoothing settings and carry a `footprint` column; join on `instance_id`. The full layer lives in its own directory because `eval_crown_overlap.py` globs every `*.gpkg` in `--gt-dir`.
+
+| Plot | visible crowns | full crowns | visible area (m²) | full Σ area (m²) | full union (m²) |
+|---|---|---|---|---|---|
+| 203 | 43 | 44 | 643 | 782 | 650 |
+| 207 | 57 | 85 | 981 | 1 579 | 993 |
+| 208 | 26 | 50 | 1 133 | 1 621 | 1 140 |
+| 209 | 37 | 38 | 381 | 408 | 382 |
+| 210 | 44 | 55 | 962 | 1 380 | 973 |
+
+The full layer recovers the 65 `below_canopy` / `occluded` / `empty_mask` trees the visible layer cannot show (1 on 203, 28 on 207, 24 on 208, 1 on 209, 11 on 210). Its union is within ~1 % of the visible area, so the extra Σ area is almost entirely stacked crowns: 42–59 % of the union is covered by more than one full crown on 207/208/210, 7 % on 209.
+
+**Which to evaluate against.** The visible layer is the right GT for an RGB orthomosaic: the camera only sees the top of the canopy, and §2's recall-oriented metrics assume disjoint GT. The full layer is the target if CanopyRS3D is meant to predict whole crowns from LiDAR, and it breaks the disjointness invariant in §13, so `eval_crown_overlap.py` must not be pointed at it unchanged.

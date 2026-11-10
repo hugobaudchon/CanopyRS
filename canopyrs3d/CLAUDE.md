@@ -26,10 +26,11 @@ canopyRS3D/                    outer working directory
 
 | Path | What it is | Role |
 |---|---|---|
-| `data/lidar_masks/asnortheast_plot_{209,210}_gt_crowns_gt.gpkg` | Top-view crown polygons projected from hand-annotated airborne LiDAR. Produced by `ForestMamba/tools/extract_crown_hulls.py --gt` from the annotated `.las` plots in `2026_AS_lidar/annotated_plots_AS/`. Layer `crowns`. | **ground truth** |
-| `data/rgb_masks/20250318_asnortheast_50mm_p1_rgb_gr0p07_infer.gpkg` | CanopyRS aggregator output on a 5 cm RGB orthomosaic (0.07 m/px inference). Identity column is `canopyrs_object_id`. | **predictions** |
+| `data/lidar_masks/asnortheast_plot_{203,207,208,209,210}_gt_crowns_gt.gpkg` | **Visible** top-view crown polygons from hand-annotated airborne LiDAR: top 1 m of canopy, clipped by taller neighbours, never overlapping. Produced by `ForestMamba/tools/extract_crown_hulls.py --gt` (defaults, `--orig-dir work_dirs/original_pc`) from `ForestMamba/data/groundtruths/asnortheast_plot_*_gt.ply`. Layer `crowns`. | **ground truth** |
+| `data/lidar_masks_full/asnortheast_plot_{…}_gt_crowns_full_gt.gpkg` | **Full** crown footprints from the same run: every leaf point, no clip, so crowns overlap and overtopped trees are included. Not disjoint — do not point `eval_crown_overlap.py` at it. See `plan.md` §16. | reference only |
+| `data/rgb_masks/20250318_asnortheast_50mm_p1_rgb_sf1p0_inferfinal.gpkg` | CanopyRS final output on the 1.1 cm RGB orthomosaic `../../rgb_ortho/20250318_asnortheast_50mm_p1_rgb.cog.tif` (0.045 m/px inference; run in `../../output_CanopyRS/`). Identity column is `canopyrs_object_id`. | **predictions** |
 
-Both are EPSG:32617 (UTM 17N, metres) and are verified to be well co-registered — no XY alignment step is needed.
+All are EPSG:32617 (UTM 17N, metres). Data regenerated 2026-11-10; the previous GT and the old 0.07 m/px predictions are kept in `data/_previous_2026-11-10/`. RGB ↔ LiDAR raster co-registration was measured on plot 203 at ~5 cm, no correction needed (`plan.md` §15.9); other plots not yet measured.
 
 `output/` holds regenerable evaluation artefacts. Nothing in it is an input.
 
