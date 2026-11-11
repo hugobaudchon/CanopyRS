@@ -266,7 +266,7 @@ plus the cluster-type histograms in §7, and `tau_floor = 0.05` removing 0 edges
 
 ## 14. Results
 
-> **Data regenerated 2026-11-10 — the table below is the previous data set.** Predictions are now `data/rgb_masks/20250318_asnortheast_50mm_p1_rgb_sf1p0_inferfinal.gpkg` (new CanopyRS run at 0.045 m/px, 3 502 masks site-wide) instead of `…_gr0p07_infer.gpkg` (0.07 m/px, 4 644 masks), and the GT was re-extracted with ForestMamba `extract_crown_hulls.py --gt` defaults (§16; same crown counts, outlines differ by ≤ 0.05 m² per crown). The old files are kept locally in `data/_previous_2026-11-10/`. Re-run at defaults, pooled: `mIoU_cluster` 0.414 → **0.394**, `mCov_cluster` 0.464 → 0.449, `mIoU_cluster_area` 0.589 → 0.603, `mIoU_1to1` 0.362 → 0.334, `IoU_global_linked` 0.671 → 0.690, Recall@IoU 0.75 0.03 → 0.05. Per plot `mIoU_cluster`: 203 0.296, 207 0.474, 208 0.542, 209 0.276, 210 0.424. Predictions surviving the AOI filter drop on every plot (203 28→24, 207 80→67, 208 30→29, 209 35→27, 210 49→41) while GT counts are unchanged, so the §13 end-to-end regression targets describe the previous data and no longer apply. Full detail in `output/summary.json`.
+> **Data regenerated 2026-11-10 — the table below is the previous data set.** Predictions are now `data/rgb_masks/20250318_asnortheast_50mm_p1_rgb_sf1p0_inferfinal.gpkg` (new CanopyRS run at 0.045 m/px, 3 502 masks site-wide) instead of `…_gr0p07_infer.gpkg` (0.07 m/px, 4 644 masks), and the GT was re-extracted with ForestMamba `extract_crown_hulls.py --gt` defaults (§16; same crown counts, outlines differ by ≤ 0.05 m² per crown). The old files are kept locally in `data/_previous_2026-11-10/`. Re-run at defaults, pooled: `mIoU_cluster` 0.414 → **0.394**, `mCov_cluster` 0.464 → 0.449, `mIoU_cluster_area` 0.589 → 0.603, `mIoU_1to1` 0.362 → 0.334, `IoU_global_linked` 0.671 → 0.690, Recall@IoU 0.75 0.03 → 0.05. Per plot `mIoU_cluster`: 203 0.296, 207 0.474, 208 0.542, 209 0.276, 210 0.424. **Since 2026-11-11 the GT is shifted per plot onto the ortho (§15.10); current pooled `mIoU_cluster` is 0.404 (210: 0.463).** Predictions surviving the AOI filter drop on every plot (203 28→24, 207 80→67, 208 30→29, 209 35→27, 210 49→41) while GT counts are unchanged, so the §13 end-to-end regression targets describe the previous data and no longer apply. Full detail in `output/summary.json`.
 
 Five plots, produced by `scripts/eval_crown_overlap.py` at defaults (`tau_link=0.5`). Full detail in `output/summary.json`; every regression target in §13 reproduced exactly, and adding plots 203/207/208 left the 209/210 figures bit-identical.
 
@@ -303,9 +303,9 @@ Cluster types, pooled: 95 `one_to_one`, 43 `missed`, 25 `split`, 7 `merge`, 3 `t
 6. **Ground-truth attrition is severe and uneven.** Plot 207 keeps 51 of 85 annotated trees and plot 208 keeps 21 of 50 — mostly `below_canopy` (23 and 21 respectively), i.e. trees the LiDAR annotated that never reach the canopy top and so are invisible from above by construction. Plot 208's headline 0.496 therefore rests on 21 crowns. Read every figure next to its `n_gt`.
 7. **58 unmatched RGB masks (442 m²) are excluded from every metric except `IoU_global`**, per §2 and the caveat in §9. Within GT-anchored clusters, linked masks put only 1.3–4.5 % of their area outside any annotated crown, so the documented lower-bound effect on `mIoU_cluster` is real but small. Plot 207 alone contributes 23. Reviewing what share are genuinely unannotated trees remains the highest-value next step, since it bounds how pessimistic these numbers are.
 
-## 15. RGB ↔ LiDAR raster co-registration (planned)
+## 15. RGB ↔ LiDAR raster co-registration
 
-Everything above compares *polygons*. Fine-tuning CanopyRS on stacked RGB + LiDAR channels needs the **rasters** to agree at pixel level, which is a much stricter requirement. This section plans how to measure and, if needed, correct that. Status: **Phase 2 implemented (`scripts/check_alignment.py`); plot 203 measured (§15.9); other plots pending.**
+Everything above compares *polygons*. Fine-tuning CanopyRS on stacked RGB + LiDAR channels needs the **rasters** to agree at pixel level, which is a much stricter requirement. This section plans how to measure and, if needed, correct that. Status: **Phase 2 done for all eight `asnortheast` plots (§15.9, §15.10); Phase 3 rigid per-plot shift applied to the GT (§15.10); height-dependent residual on plot 210 not yet corrected.**
 
 ### 15.1 Why the §3 probe is not enough
 
@@ -394,6 +394,37 @@ Apply the same transform to the GT crown polygons so evaluation and training sta
 **Verdict: aligned; no correction needed.** The constant offset is ~5 cm (1 px at 0.05 m, < 1 px at the 0.07 m training GSD). The p95 of 0.15 m sits at the §15.6 tolerance (0.14 m) but is dominated by noise in the estimator itself (cross-camera NCC peaks of only 0.2–0.4). No offset grows with tree height, so the ortho behaves like a true ortho (DSM-based); relief displacement is not a concern on this plot. The large outliers are all matching failures, not misalignment: crowns of 0.6–7 m² (ids 14, 18, 28: 0.4–2.2 m) and one grass window (mean CHM 0.4 m, 0.47 m). The checkerboard (`02_checkerboard.png`) shows crowns and dead-branch skeletons continuous across tile edges.
 
 **Caveats.** (1) Estimator A uses the L2 camera's point colours, so it checks the colourised cloud. The geometry-only checks (B, plus the GT outlines in `01_inputs.png` sitting on the RGB crowns) agree but are weaker. (2) One plot only; repeat on 207–210, 256, 257 and on 153/161/170/264 (the `asnorthnorth` flight, 2025-03-17). (3) Manual tie-points (§15.5) not yet collected.
+
+### 15.10 All `asnortheast` plots, and the per-plot shift (2026-11-11)
+
+`check_alignment.py` on the eight annotated `asnortheast` plots (outputs in `output/alignment/plot_<p>/`). One rigid shift per plot = median of the trusted 10 m windows of estimator A (robust to the windows that lock onto the wrong feature); estimator C (per crown) agrees with it on every plot that has GT. Estimator B (CHM only) has weakly defined peaks (distinctness 0.02–0.08) and is a cross-check only — it disagrees in sign on 208 and is off by up to 0.5 m on 203, which A, C and the visuals do not support.
+
+| Plot | shift (dx, dy) m | \|d\| m | windows trusted | C median (dx, dy) m | GT shifted |
+|---|---|---|---|---|---|
+| 203 | (+0.032, −0.041) | 0.05 | 45/60 | (+0.03, −0.04) | yes |
+| 206 | (+0.011, −0.055) | 0.06 | 49/57 | — | no GT |
+| 207 | (+0.104, −0.029) | 0.11 | 50/57 | (+0.17, −0.02) | yes |
+| 208 | (+0.067, +0.110) | 0.13 | 49/57 | (+0.06, +0.12) | yes |
+| 209 | (−0.047, −0.049) | 0.07 | 48/57 | (−0.02, −0.03) | yes |
+| **210** | **(+0.261, −0.228)** | **0.35** | 29/57 | (+0.29, −0.22) | yes |
+| 256 | (+0.017, −0.075) | 0.08 | 49/58 | — | no GT |
+| 257 | (−0.070, −0.109) | 0.13 | 54/59 | — | no GT |
+
+Shifts are written to `output/alignment/plot_shifts.csv`. `scripts/apply_plot_shifts.py` translates both GT layers by (+dx, +dy) — reading from `data/lidar_masks_unshifted/` and `data/lidar_masks_full_unshifted/`, so it is idempotent — moves `centroid_x/y` with the geometry, keeps each feature's geometry type, and records `shift_dx_m` / `shift_dy_m` on every feature. Verified: each output is an exact translation of its source (same rows, attributes, types).
+
+**Residual after the shift** (re-measured with `check_alignment.py --lidar-shift dx dy`, outputs in `output/alignment/verify_plot_<p>/`):
+
+| Plot | global residual | windows p50 / p95 \|d\| |
+|---|---|---|
+| 203 | 0.019 m | 0.06 / 0.12 m |
+| 207 | 0.015 m | 0.12 / 0.26 m |
+| 208 | 0.002 m | 0.11 / 0.45 m |
+| 209 | 0.010 m | 0.03 / 0.13 m |
+| 210 | 0.014 m | 0.22 / 0.65 m (was 0.43 / 0.93 m) |
+
+The rigid part is gone everywhere (≤ 2 cm). 203 and 209 now meet the §15.6 tolerance (p95 ≤ 0.14 m). 207, 208 and 210 keep a spatially varying residual a single shift cannot remove. On **plot 210** it is height-dependent: before the shift, per-crown dx grew +0.082 m/m (Theil–Sen 95 % CI 0.014–0.146, Spearman p = 0.004) and dy −0.057 m/m (CI −0.103…−0.002, p = 0.04) over 11–22 m crowns, and dy still shows −0.1 m/m after it. That is the relief-displacement signature (tall crowns displaced south-east in the ortho; plot 210 is dense 20 m canopy, plot 203 mostly open and low). Correcting it needs a height-aware warp or a true ortho on a LiDAR DSM (§15.6), not a translation.
+
+**Effect on §14** (shifted vs unshifted GT, same predictions): pooled `mIoU_cluster` 0.394 → **0.404**, `mCov_cluster` 0.449 → 0.452, `mIoU_1to1` 0.334 → 0.338, Recall@IoU 0.5 0.364 → 0.370. Almost all of it is plot 210: `mIoU_cluster` 0.424 → 0.463, Recall@IoU 0.5 0.289 → 0.342; other plots move by ≤ 0.013. Polygon-overlap shift search (the §3 method) could not have found this: its objective is flat to within 0.5 % on every plot.
 
 ## 16. LiDAR GT geometry: visible vs full footprint (2026-11-10)
 

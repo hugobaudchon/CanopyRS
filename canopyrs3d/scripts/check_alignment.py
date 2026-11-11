@@ -57,7 +57,7 @@ def make_grid(las_files, res, pad):
     return from_origin(x0, y1, res, res), (h, w)
 
 
-def rasterise_lidar(las_files, transform, shape, zclip=(-3.0, 60.0)):
+def rasterise_lidar(las_files, transform, shape, zclip=(-3.0, 60.0), shift=(0.0, 0.0)):
     """Top-of-canopy height, colour of the top point, and point count per cell."""
     h, w = shape
     res = transform.a
@@ -69,6 +69,7 @@ def rasterise_lidar(las_files, transform, shape, zclip=(-3.0, 60.0)):
     for f in las_files:
         las = laspy.read(f)
         x, y, z = np.asarray(las.x), np.asarray(las.y), np.asarray(las.z, dtype=np.float32)
+        x, y = x + shift[0], y + shift[1]
         keep = (z >= zclip[0]) & (z <= zclip[1])
         n_total += len(z)
         n_clipped += int((~keep).sum())
@@ -186,7 +187,12 @@ def main():
     ap.add_argument("--plot", required=True)
     ap.add_argument("--las-dir", required=True)
     ap.add_argument("--ortho", required=True)
-    ap.add_argument("--gt", required=True, help="GT crown polygons (gpkg, layer 'crowns')")
+    ap.add_argument("--gt", default=None,
+                    help="GT crown polygons (gpkg, layer 'crowns'); optional -- without it the "
+                         "per-crown estimator C is skipped")
+    ap.add_argument("--lidar-shift", type=float, nargs=2, default=(0.0, 0.0), metavar=("DX", "DY"),
+                    help="translate the LiDAR points (and --gt crowns) by this many metres before "
+                         "measuring -- to verify a correction: the residual should be ~0")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--res", type=float, default=0.05, help="analysis grid, m/px")
     ap.add_argument("--max-shift", type=float, default=3.0, help="global search radius, m")
@@ -205,13 +211,19 @@ def main():
     transform, shape = make_grid(las_files, res, pad=args.max_shift + 1.5)
     print(f"[grid] {shape[1]}x{shape[0]} px at {res} m, {len(las_files)} LAS files")
 
-    chm, lrgb, foot, count, lstats = rasterise_lidar(las_files, transform, shape)
+    chm, lrgb, foot, count, lstats = rasterise_lidar(las_files, transform, shape,
+                                                     shift=tuple(args.lidar_shift))
     print(f"[lidar] {lstats}")
     orgb, ovalid, native_res = read_ortho(args.ortho, transform, shape)
     print(f"[ortho] native {native_res:.4f} m/px, valid {ovalid.mean():.3f} of grid")
 
-    gt = gpd.read_file(args.gt, layer="crowns")
-    gt = gt[gt.geometry.notna() & ~gt.geometry.is_empty].copy()
+    if args.gt:
+        gt = gpd.read_file(args.gt, layer="crowns")
+        gt = gt[gt.geometry.notna() & ~gt.geometry.is_empty].copy()
+        if any(args.lidar_shift):
+            gt["geometry"] = gt.geometry.translate(*args.lidar_shift)
+    else:
+        gt = gpd.GeoDataFrame({"instance_id": [], "height_m": []}, geometry=[], crs="EPSG:32617")
 
     # Band-passed inputs. Texture scale ~ crown parts; CHM uses a wider high-pass.
     m_l = foot
@@ -222,6 +234,7 @@ def main():
     O_chm = highpass(lum(orgb), m_o, sigma_hp_px=px(2.0))
 
     summary = dict(plot=args.plot, res_m=res, ortho=os.path.abspath(args.ortho),
+                   lidar_shift_applied_m=list(args.lidar_shift),
                    ortho_native_res_m=native_res, lidar=lstats,
                    convention="(dx,dy): feature at LiDAR (x,y) appears in ortho at (x+dx, y+dy)")
 
@@ -312,7 +325,8 @@ def main():
                          cx=g.geometry.centroid.x, cy=g.geometry.centroid.y,
                          dx=dx, dy=dy, norm=float(np.hypot(dx, dy)), ncc=d["ncc"],
                          distinct=d["distinct"], edge=d["on_edge"]))
-    cr = pd.DataFrame(crow)
+    cr = pd.DataFrame(crow, columns=["instance_id", "height_m", "area_m2", "cx", "cy", "dx", "dy",
+                                     "norm", "ncc", "distinct", "edge"]).astype({"edge": bool})
     cr.to_csv(os.path.join(args.out_dir, "crowns.csv"), index=False)
     ok = cr[(cr.distinct >= args.min_distinct) & ~cr.edge]
     cs = dict(n=int(len(ok)), n_total=int(len(cr)))

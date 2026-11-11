@@ -30,7 +30,9 @@ canopyRS3D/                    outer working directory
 | `data/lidar_masks_full/asnortheast_plot_{…}_gt_crowns_full_gt.gpkg` | **Full** crown footprints from the same run: every leaf point, no clip, so crowns overlap and overtopped trees are included. Not disjoint — do not point `eval_crown_overlap.py` at it. See `plan.md` §16. | reference only |
 | `data/rgb_masks/20250318_asnortheast_50mm_p1_rgb_sf1p0_inferfinal.gpkg` | CanopyRS final output on the 1.1 cm RGB orthomosaic `../../rgb_ortho/20250318_asnortheast_50mm_p1_rgb.cog.tif` (0.045 m/px inference; run in `../../output_CanopyRS/`). Identity column is `canopyrs_object_id`. | **predictions** |
 
-All are EPSG:32617 (UTM 17N, metres). Data regenerated 2026-11-10; the previous GT and the old 0.07 m/px predictions are kept in `data/_previous_2026-11-10/`. RGB ↔ LiDAR raster co-registration was measured on plot 203 at ~5 cm, no correction needed (`plan.md` §15.9); other plots not yet measured.
+All are EPSG:32617 (UTM 17N, metres). Data regenerated 2026-11-10; the previous GT and the old 0.07 m/px predictions are kept in `data/_previous_2026-11-10/`.
+
+**Both GT layers are shifted per plot onto the RGB ortho** (2026-11-11, `plan.md` §15.10): offsets of 5–13 cm, except plot 210 at 35 cm. Each feature carries `shift_dx_m` / `shift_dy_m`. The unshifted originals are in `data/lidar_masks_unshifted/` and `data/lidar_masks_full_unshifted/`. Never edit `data/lidar_masks*/` by hand: regenerate the unshifted layers, then rerun `scripts/apply_plot_shifts.py`, which always reads from `*_unshifted/`.
 
 `output/` holds regenerable evaluation artefacts. Nothing in it is an input.
 
